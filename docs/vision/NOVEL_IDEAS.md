@@ -1,6 +1,6 @@
 # NOVEL_IDEAS.md — Inventions and novel-mechanism log
 
-> **Status: empty.** No N-NNN entries filed yet.
+> **Status: 7 entries filed (N-001..N-007), all from E-1.2 vision grooming round 1 (2026-04-26). All approved by the user for public master commit — no patent-priority hold requested.**
 >
 > ⚠️ **Public-repo warning.** This repository is public from day 1 (decision D-005). A novel idea committed here is *publicly disclosed* the moment it lands on `master`. If you want to preserve patent options for an idea, **file an N-NNN entry in a feature branch first, talk to counsel, and only then merge the branch to master.** The `knowledge-curator` skill defers to this rule by opening a PR rather than auto-merging.
 
@@ -57,4 +57,159 @@ Number monotonically (`N-001`, `N-002`, …). Never renumber. Never delete an en
 
 ## Entries
 
-*(none yet)*
+### N-001 — Hybrid pipeline with explicit narrative-arc judgment stage (2026-04-26)
+
+**Status:** proposed — published on master per user instruction (no patent-priority hold)
+
+**Inventor(s):** Rahul Singh Khokhar
+
+**Background.** Most photo / video curation systems score and select per-image (or per-frame) using a quality signal, then either deduplicate or rank. Highlight-detection literature in research adds learned per-clip importance scores. Neither dimension reasons about the *narrative shape* of the candidate set as a whole.
+
+**The invention.** As the final stage of the hybrid curation pipeline (D-009), after deterministic pre-filter (perceptual-hash → quality floor → scene segmentation) and after rich per-photo / per-scene metadata extraction, run a dedicated **narrative-arc judgment** call. The input is the full candidate set with metadata; the output is an ordered subsequence chosen and ordered to satisfy a narrative shape (e.g. setup → escalation → climax → denouement; or for a music-video sub-mode per D-010, music-section-aligned beats).
+
+The narrative judge is implemented as a multimodal-LLM call with structured input (the candidate metadata table) and structured output (an ordered subsequence with per-pick rationale). It operates over the *whole candidate set* rather than scoring items independently — so it can refuse a high-quality photo because it duplicates the narrative role already filled by another, or accept a lower-quality photo because it is the only candidate that establishes a needed beat.
+
+**Why we think it is novel.** The narrative-shape-as-an-explicit-stage formulation is research-adjacent (story summarization, video summarization with arc constraints exist as research topics), but the **packaged combination** — hybrid pipeline + LLM-as-narrative-judge + per-pick rationale + per-mode arc template (standard / music-video) in a consumer media app — is not, to the inventor's knowledge, deployed in current consumer products.
+
+**Where it lives in the system.** Will land in the curation engine module. Specified by D-009; concrete implementation belongs to E-1.3 architecture grooming and a future Story under the Curation Engine epic.
+
+**Disclosure trail.** First surfaced 2026-04-26 in E-1.2 vision grooming round 1. Filed as N-cand-A in the round-1 plan. User-approved for public master commit on 2026-04-26.
+
+**Linked items.** D-009, D-010, A-013.
+
+---
+
+### N-002 — Operation-aware LLM router (2026-04-26)
+
+**Status:** proposed — published on master per user instruction (no patent-priority hold)
+
+**Inventor(s):** Rahul Singh Khokhar
+
+**Background.** Existing local-vs-remote LLM routing systems route at the *call* boundary: a whole inference call is either local or remote, decided by a policy looking at provider availability, cost, latency, or quota. Cascade routing (cheap-model-first, escalate to large-model on uncertainty) exists in research but still routes whole calls.
+
+**The invention.** Route at the **sub-operation** boundary inside a single curation pass. The orchestrator (D-017) decomposes a curation job into typed sub-operations: *embed*, *caption*, *scene-segment*, *quality-score*, *metadata-extract*, *narrative-judge*, *render-prep*. Each sub-operation has a declared compute profile (latency-bound vs. throughput-bound; semantic richness required; sensitivity to model quality). The router maps each sub-operation to a target — local model class, specific remote provider, or a sub-cascade — using a per-operation policy.
+
+Concretely: `embed` and `quality-score` may run on a local 7B model; `metadata-extract` may run on a remote VLM (Claude / GPT-4o / Gemini); `narrative-judge` (N-001) may run on the largest remote model the user's quota supports. The same job spans multiple providers and multiple modalities of model in one logical pass.
+
+**Why we think it is novel.** The per-sub-operation routing granularity inside one curation pass — combined with a typed sub-operation decomposition that comes from the orchestrator's tool schema — is, to the inventor's knowledge, fresh. Closest prior art is the cascade-routing literature (which still routes per-call) and the multi-tool-call agent patterns (which don't formalize per-tool routing policy).
+
+**Where it lives in the system.** Will land between the orchestrator (D-017) tool dispatch layer and the model-call boundary. Specified informally by D-016 (gates the local-first v1 commitment). Will be a Story under E-1.3 architecture or under a future LLM-Routing epic.
+
+**Disclosure trail.** First surfaced 2026-04-26 in E-1.2 vision grooming round 1. Filed as N-cand-B in the round-1 plan. User-approved for public master commit on 2026-04-26.
+
+**Linked items.** D-009, D-016, D-017, N-001.
+
+---
+
+### N-003 — Project as a git-like versioned artifact (2026-04-26)
+
+**Status:** proposed — published on master per user instruction (no patent-priority hold)
+
+**Inventor(s):** Rahul Singh Khokhar
+
+**Background.** Media-editing apps typically present projects as mutable workspaces with a linear undo/redo stack. Versioning, when present, is often a separate concept (template snapshots, save-as). git's snapshot-and-branch model is ubiquitous in code but rarely applied to media projects.
+
+**The invention.** A project (A-001) is a content-addressed, versioned tree. Each *preview* of a Story Video is a snapshot node (referencing input media hashes per A-010, the orchestrator's tool-call trace, and the rendered artifact hash). Each *approve-and-publish* event is a publish node tagged with a YouTube video ID and timestamp (per A-003). Each *refine* (D-011 refine-loop, when on per D-020) creates a branch from the current snapshot. Multi-version comparison (A-006) becomes a diff between two snapshot nodes — falling out for free.
+
+Concretely, the project's persistent state is a DAG of snapshots; the UI exposes "history" naturally (chronological), "branches" (parallel refines), and "publish events" (decorated nodes). Users can revert to any snapshot, fork from any snapshot, and re-render from any snapshot.
+
+**Why we think it is novel.** Mildly novel as a media-app pattern; clearly inspired by git, but applying the model to media projects with first-class publish-event nodes and refine-as-branch semantics is, to the inventor's knowledge, not present in current consumer media tools.
+
+**Where it lives in the system.** The project / job storage layer (A-001, A-005). Concrete schema and implementation are deferred to E-1.3 (storage decisions) and a future Story under the Project Model epic.
+
+**Disclosure trail.** First surfaced 2026-04-26 in E-1.2 vision grooming round 1. Filed as N-cand-C in the round-1 plan. User-approved for public master commit on 2026-04-26.
+
+**Linked items.** A-001, A-003, A-005, A-006, D-011, D-020.
+
+---
+
+### N-004 — Reference-media style fingerprint extraction (2026-04-26)
+
+**Status:** proposed — published on master per user instruction (no patent-priority hold)
+
+**Inventor(s):** Rahul Singh Khokhar
+
+**Background.** Style-transfer for video editing exists in research and in some niche tools (e.g., applying the look of a reference film). Most published work targets *render-time* style application — color grading, LUT transfer, stylization filters.
+
+**The invention.** Extract a structured, **instructable style descriptor** from any reference media (uploaded files, public URLs subject to ToS, prior projects). The descriptor is multi-axis: color palette (dominant colors, contrast curve), pacing (cut frequency, scene-length distribution), framing (composition tendencies — close vs. wide, subject placement), music feel (tempo, mode, energy if music is present), narrative shape (arc template extracted via N-001-like analysis applied to the reference).
+
+The fingerprint is then applied to the **curation stage** (D-009) — not just the render stage — by adding a "style match" objective to the narrative judgment (N-001). The judge is told: "Pick and order the candidate set so the resulting Story Video has a fingerprint close to this reference." This makes the style influence the *what gets included*, not just the *how it looks at render time*.
+
+**Why we think it is novel.** Style transfer at render time is well-explored. The novel angle is the **fingerprint-as-instructable-vector applied to curation**, not just render. To the inventor's knowledge, no current consumer media tool extracts a structured style descriptor from a reference and uses it as a curation objective.
+
+**Where it lives in the system.** Reference-media style learning feature (A-014). Implementation lands in v1; specified informally now. Concrete model choice and descriptor schema deferred to E-1.3.
+
+**Disclosure trail.** First surfaced 2026-04-26 in E-1.2 vision grooming round 1. Filed as N-cand-D in the round-1 plan. User-approved for public master commit on 2026-04-26.
+
+**Linked items.** A-014, D-009, N-001.
+
+---
+
+### N-005 — Live-job pattern (2026-04-26)
+
+**Status:** proposed — published on master per user instruction (no patent-priority hold) — **strongest novelty candidate**
+
+**Inventor(s):** Rahul Singh Khokhar
+
+**Background.** Existing photo / video curation tools operate in batch mode: user finishes a trip, dumps the media in, and processes it after the fact. There are real-time photo-stream tools (cloud uploads, auto-organize) but they organize and tag — they do not curate-and-publish artifacts during the event.
+
+**The invention.** A "live job" is a long-lived job set up *before* an event begins. It declares one or more outputs (per-location reels, an overall YouTube Story Video, collages per mini-event), each targeting a platform with a publish gate (D-020). The job opens an ingest source (smartphone camera roll watcher, OneDrive folder, iCloud / Google Photos shared bucket) and listens for new media. As media arrives, the curation pipeline runs incrementally — updating the candidate set, refreshing per-output narrative arcs, queuing per-output render passes. The job can publish *during* the event when a per-output trigger fires (e.g., "render and publish a daily reel every evening", "publish the collage when a new location is detected").
+
+The job is conversationally configured at creation. The orchestrator (D-017) negotiates the multi-output declaration with the user in natural language ("How many days? What outputs do you want? Which platforms?") and persists the resulting plan as part of the project state (N-003).
+
+**Why we think it is novel.** Strong novelty candidate — the inventor is not aware of a consumer-app product that does *all* of: continuous-ingest from cloud / camera-roll sources, multi-purpose (multiple outputs from one source set), multi-platform (per-output platform targeting), *during-event* publish gates, and conversationally configured at the start of a long event.
+
+**Where it lives in the system.** Live-job feature (A-012) — v1 commitment. The MVP architecture must leave a clean feature flag for this (per the A-012 verdict): the project / job model and the orchestrator are designed for one-or-many jobs per project and one-or-many outputs per job from MVP day one.
+
+**Disclosure trail.** First surfaced 2026-04-26 in E-1.2 vision grooming round 1. Filed as N-cand-E in the round-1 plan. User-approved for public master commit on 2026-04-26 ("publish all N-cands on public, doesn't matter").
+
+**Linked items.** A-001, A-012, D-017, D-019, D-020, N-003.
+
+---
+
+### N-006 — Effort-level UX with agentic max-permissible recommendation (2026-04-26)
+
+**Status:** proposed — published on master per user instruction (no patent-priority hold)
+
+**Inventor(s):** Rahul Singh Khokhar
+
+**Background.** Tier-based UIs (free / pro / enterprise) and cost calculators (per-API-call price estimators) exist independently. Some media tools surface a quality / time / cost dial. None, to the inventor's knowledge, packages the combination as an agentic surface that reads the user's actual configuration and reasons about feasibility.
+
+**The invention.** The product defines 3–5 effort levels (D-013) (e.g., L1 ≈ 10 photos + 1 short video; L5 ≈ 10000 photos + 500 long videos). The orchestrator (D-017), at job-creation time, reads the user's LLM configuration (local model class, remote provider quotas) and **computes the max permissible level** for the job — the highest level the configuration can support within the wall-clock ceiling (D-012, D-014). The recommendation is surfaced after task details + media selection.
+
+When the user requests a level beyond max permissible but within possible, the orchestrator generates a **transparent cost explanation** ("this will cost approximately $X in remote-API charges and take ~Y hours; here's why"). When the user requests a level beyond what the current config can support at all, the orchestrator generates an **upgrade-path explanation** ("to support L4, you would need either provider tier T or local model class M; here's how to configure it"). Both explanations are agentic / GenAI-generated, not static templated copy.
+
+**Why we think it is novel.** Mildly novel as a packaged UX pattern. Components exist in isolation (cost calculators, tier UIs, configuration coaches). The combination — agentic max-permissible recommendation + transparent cost projection + agentic upgrade-path explanation — for a media-AI app is, to the inventor's knowledge, fresh.
+
+**Where it lives in the system.** Effort-level UX feature (A-015). MVP ships L1–L3 + recommendation; full v1 ships L4–L5 + cost-transparency UI + upgrade-path agent. The recommendation engine sits inside the orchestrator (D-017).
+
+**Disclosure trail.** First surfaced 2026-04-26 in E-1.2 vision grooming round 1. Filed as N-cand-F in the round-1 plan. User-approved for public master commit on 2026-04-26.
+
+**Linked items.** A-004, A-015, D-012, D-013, D-016, D-017.
+
+---
+
+### N-007 — Cross-job content-addressed analysis cache schema (2026-04-26)
+
+**Status:** proposed — published on master per user instruction (no patent-priority hold)
+
+**Inventor(s):** Rahul Singh Khokhar
+
+**Background.** Content-addressed caching is a well-established engineering pattern (git, Bazel, ccache, etc.). Per-asset analysis caches (e.g., remember the embedding of a photo) appear in image-search systems. What is less well-explored is a **schema for partial-result reuse across heterogeneous downstream tasks** — i.e., reusing an embedding even when the task-context-specific tags must be recomputed for a new job.
+
+**The invention.** The cache (A-011) is keyed by the content hash (A-010) of the source media. For each cached entry, the schema separates results by **reuse class**:
+
+- *Universal* — embeddings, perceptual hashes, dedup signals; always reusable.
+- *Model-versioned* — captions, quality scores; reusable so long as the underlying model version matches; auto-invalidated on model bump.
+- *Task-context-specific* — tags generated under a specific user-task brief; not reused across jobs by default but flagged as candidate priors that can be re-scored cheaply.
+- *Time-bounded* — anything where the value drifts (e.g., privacy-policy-derived flags); refreshed on access if older than a configured TTL.
+
+The cache exposes a **partial-hit semantics**: a job querying a hash gets back the universal + model-versioned entries (free), can opt to consume task-context-specific entries as priors, and triggers re-extraction only for what's missing.
+
+**Why we think it is novel.** As an engineering pattern in isolation, content-addressed caching is not novel. The novelty here is the **reuse-class taxonomy + partial-hit semantics** specialized for media-curation pipelines, plus the explicit treatment of task-context-specific results as cheap-rescoreable priors.
+
+**Where it lives in the system.** The cache layer underneath the metadata-extraction stage (D-009). MVP-lite version (A-011 phase tag) implements universal + model-versioned classes; full v1 implements all four classes with partial-hit semantics. Concrete schema lands in E-1.3.
+
+**Disclosure trail.** First surfaced 2026-04-26 in E-1.2 vision grooming round 1. Filed as N-cand-G in the round-1 plan. User-approved for public master commit on 2026-04-26.
+
+**Linked items.** A-010, A-011, D-009, D-016.
