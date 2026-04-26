@@ -32,9 +32,9 @@ Without the foundation, every later session burns time re-establishing context, 
 
 ## Children
 
-- E-1.1 — Repo scaffolding (in-progress, this session)
-- E-1.2 — Vision grooming (todo)
-- E-1.3 — Architecture grooming (todo, blocked by E-1.2)
+- E-1.1 — Repo scaffolding (done)
+- E-1.2 — Vision grooming (done)
+- E-1.3 — Architecture grooming (todo, ready — unblocked by E-1.2)
 - E-1.4 — Roadmap and MVP scoping (todo, blocked by E-1.3)
 
 ## Linked decisions and ADRs
@@ -47,3 +47,4 @@ Without the foundation, every later session burns time re-establishing context, 
 ## Activity log
 
 - 2026-04-25 — created; status → in-progress
+- 2026-04-26 — E-1.2 done (vision grooming round 1 closed: 15 D-NNN + 15 A-NNN + 7 N-NNN entries queued for knowledge-curator PR; GROOMED_FEATURES populated; MVP partial-fill); E-1.3 now ready
