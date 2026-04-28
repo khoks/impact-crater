@@ -1,6 +1,6 @@
 # ADR-0003 — Session housekeeping skills with branch-and-PR flow
 
-**Status:** Accepted
+**Status:** Accepted; **the "never auto-merge" clause is superseded by [ADR-0004](./ADR-0004-skill-pr-auto-merge.md) (2026-04-26).** The branch-and-PR flow itself remains in force.
 **Deciders:** Rahul Singh Khokhar
 **Date:** 2026-04-25
 **Phase:** scaffolding
@@ -31,7 +31,7 @@ Both skills follow a strict **branch-and-PR flow**:
 - Commits are made on the branch with Conventional Commits messages (`docs(...)`, `chore(project): ...`).
 - The branch is pushed to `origin`.
 - A pull request is opened against `master` via `gh pr create`, with a generated body summarizing what changed and why.
-- The skills **never auto-merge.** The user reviews and merges manually.
+- The skills **auto-merge** their PRs with `gh pr merge --squash --delete-branch` immediately after opening (per [ADR-0004](./ADR-0004-skill-pr-auto-merge.md), 2026-04-26 — supersedes the original "never auto-merge" stance from this ADR). Review happens live in the session as the changes are made; merged PRs remain fully revertible via `gh pr revert`.
 
 If a session contained nothing capture-worthy, each skill exits as an explicit no-op with a one-line message saying so. No empty branches and no empty PRs.
 

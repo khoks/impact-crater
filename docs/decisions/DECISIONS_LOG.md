@@ -391,3 +391,39 @@ The recommendation, cost-explanation, and upgrade-path UX are **agentic + GenAI-
 **Consequences.** The MVP UI must always render the preview-and-approve screen between render-complete and YouTube upload. The publish action is a deliberate user click, never an automatic step. The refine toggle appears at job creation alongside mode (standard vs. music-video) and effort level (D-013); when OFF, the post-render UI is preview → approve → publish. When ON, the post-render UI inserts a refine pass between preview and approve.
 
 **Linked items.** D-011, D-014, A-006 (multi-version artifact comparison — only valuable when refine is on), [`project/tasks/T-1.2.1.4-job-model-scale-success-criterion.md`](../../project/tasks/T-1.2.1.4-job-model-scale-success-criterion.md).
+
+---
+
+### D-021 — All Claude-generated PRs auto-merge with `--squash --delete-branch` (2026-04-26)
+
+**Status:** accepted (supersedes the "never auto-merge" clause of D-004 / ADR-0003)
+
+**Context.** D-004 / ADR-0003 established that the `knowledge-curator` and `work-tracker` skills open a PR against `master` and never merge it — the user reviews and merges by hand. After running the flow once end-to-end (E-1.2 round 1 closure, session a974bff1), the user concluded the manual-merge step adds friction without adding value at this phase: the PR diff is reviewable inside the session as the changes are made (every Edit / Write tool call is visible live), the PR description and per-commit messages already capture the audit trail, and merged PRs remain fully revertible with `gh pr revert` / `git revert`. Branches accumulate when PRs sit waiting, polluting `gh pr list` and the GitHub branches view.
+
+**Decision.** **All Claude-generated PRs auto-merge by default**, immediately after opening, with `gh pr merge <N> --squash --delete-branch`. This applies to:
+
+1. `knowledge-curator` PRs (docs).
+2. `work-tracker` PRs (project tracking).
+3. **Feature PRs** opened from any future development session.
+
+The user's verbatim directive (2026-04-26): *"PRs should be automerged be it the work tracker or knowledge curator or actual work PRs."*
+
+The branch-and-PR flow itself stays — no direct commits to `master`. Conventional Commits messages still required. Hooks still run. No `--no-verify`. Merge strategy is `--squash` (linear master history, one-commit-per-PR) and `--delete-branch` (clean `gh pr list`).
+
+**Alternatives considered.**
+- *Auto-merge only for housekeeping skills; manual merge for feature PRs.* Splits the model: contributors have to learn which PRs auto-merge and which don't. Rejected — the user explicitly named feature PRs in the directive.
+- *Auto-merge with a CI gate.* Sound long-term, but no CI is configured at this phase. Rejected for now; revisit when CI lands (likely E-1.3 or first feature work).
+- *Use `--merge` (preserve per-commit history on master) instead of `--squash`.* Preserves more context but bloats master history with WIP / fix-typo commits as sessions evolve. Rejected — squash is cleaner for one-PR-per-coherent-change flow.
+- *Use `--rebase` for linear no-merge-commits history.* Equivalent to squash for single-commit PRs but worse for multi-commit PRs (preserves intermediate commits without the squash hygiene). Rejected.
+- *Hold the original "never auto-merge" stance.* Costs friction the user concluded was redundant. Rejected.
+
+**Consequences.**
+- The two SKILL.md files and the `post-session-housekeeping.sh` hook block-reason are updated to describe the new flow.
+- ADR-0003 status header is updated to point to ADR-0004; ADR-0003's "never auto-merge" decision-list bullet is rewritten to reflect the supersession.
+- CLAUDE.md "Decisions locked" row for skill git autonomy is updated; the "Things to never do" list drops the "Merge an auto-generated PR" line and adds two stricter rules (no direct commits to master; no `--merge` / `--rebase` on the auto-merge step).
+- `gh pr list` stays empty between sessions; master is the canonical state at every session end.
+- The in-session conversation transcript becomes the authoritative review log — the user's directives + the model's reasoning + each Edit / Write tool call form the record. No second-pass async review.
+- A bad change can land immediately, mitigated by the same revert path that always existed plus the user's right to say "hold this PR open" mid-session for high-stakes changes.
+- Branch protection on `master` cannot require external code review under this model. Acceptable at this phase; revisit when the project has more than one human contributor.
+
+**Linked items.** D-004 (the originally-decided "never auto-merge" stance, now superseded), [`docs/architecture/ADR-0003-session-housekeeping-skills.md`](../architecture/ADR-0003-session-housekeeping-skills.md) (status header updated), [`docs/architecture/ADR-0004-skill-pr-auto-merge.md`](../architecture/ADR-0004-skill-pr-auto-merge.md) (the formal ADR for this decision), [`.claude/skills/work-tracker/SKILL.md`](../../.claude/skills/work-tracker/SKILL.md), [`.claude/skills/knowledge-curator/SKILL.md`](../../.claude/skills/knowledge-curator/SKILL.md), [`.claude/hooks/post-session-housekeeping.sh`](../../.claude/hooks/post-session-housekeeping.sh), `CLAUDE.md`, project items E-1.5 / S-1.5.1 / T-1.5.1.1.
