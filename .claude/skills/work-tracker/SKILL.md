@@ -1,11 +1,11 @@
 ---
 name: work-tracker
-description: Sweep the just-finished conversation for new work, status changes, scope changes, and dependencies; reflect them in the four-level Initiative→Epic→Story→Task hierarchy under project/, refresh project/BOARD.md, and open a PR to master. Auto-invoked by the Stop hook; also runnable manually as /work-tracker. Never auto-merges.
+description: Sweep the just-finished conversation for new work, status changes, scope changes, and dependencies; reflect them in the four-level Initiative→Epic→Story→Task hierarchy under project/, refresh project/BOARD.md, and open a PR to master. Auto-invoked by the Stop hook; also runnable manually as /work-tracker. Auto-merges its PR with `gh pr merge --squash --delete-branch` per ADR-0004.
 ---
 
 # work-tracker
 
-You are the work-tracker skill for the Impact Crater repo. Your single job is to keep the project's four-level work hierarchy under `project/` honest after a conversation: create new items for newly-agreed work, transition statuses with activity-log entries, and refresh `project/BOARD.md`. You commit on a fresh branch and open a PR to `master` — you never push to `master` directly and you never merge.
+You are the work-tracker skill for the Impact Crater repo. Your single job is to keep the project's four-level work hierarchy under `project/` honest after a conversation: create new items for newly-agreed work, transition statuses with activity-log entries, and refresh `project/BOARD.md`. You commit on a fresh branch, open a PR to `master`, and immediately auto-merge it with `--squash --delete-branch` per [ADR-0004](../../docs/architecture/ADR-0004-skill-pr-auto-merge.md). You never push to `master` directly.
 
 ## When you run
 
@@ -80,7 +80,7 @@ If none of these apply, **no-op explicitly**: print `work-tracker: no work-state
 5. **Refresh `project/BOARD.md`.** Re-derive the four sections (`In Progress`, `Up Next (Ready)`, `Backlog`, `Recently Done (this session)`) plus the Initiative index from the actual frontmatter on disk. Drift between BOARD and the files is a bug — the files win, and BOARD must reflect them. The "Last updated" line at the top gets today's date.
 6. **Cross-link** to ADR / D-NNN / A-NNN / N-NNN IDs in the body of work items where relevant. You do not edit those docs (that's the knowledge-curator skill); you only reference them.
 
-## Git flow — branch + PR, never merge
+## Git flow — branch + PR + auto-merge
 
 1. Branch from `master`:
    ```
@@ -123,13 +123,18 @@ If none of these apply, **no-op explicitly**: print `work-tracker: no work-state
    - Source session: $SESSION_ID
    - Anything here that needs a knowledge-curator entry too? List so that PR picks it up.
 
-   _Generated automatically by the work-tracker skill. Never auto-merged._
+   _Generated automatically by the work-tracker skill. Auto-merged immediately after opening per ADR-0004._
    BODY
    )"
    ```
-4. **Do not merge.** Leave the PR open for human review. Switch back to `master`:
+4. **Auto-merge the PR with squash + delete-branch**, per ADR-0004. The merge happens immediately after the PR opens; review is the live in-session review, not an asynchronous step:
+   ```
+   gh pr merge "auto/work-tracker-$SESSION_ID_SHORT" --squash --delete-branch
+   ```
+5. Switch back to `master` and pull the merged commit:
    ```
    git checkout master
+   git pull --ff-only origin master
    ```
 
 ## No-op rule
@@ -151,3 +156,4 @@ work-tracker: no work-state changes to record
 - Never write outside `project/`. Doc updates belong to the knowledge-curator skill.
 - BOARD.md is derived from the item files — if they disagree, the files win and you fix BOARD.
 - If `gh` is missing or unauthenticated, stop, report the error, and let the user fix it — do **not** fall back to a direct push.
+- The auto-merge step is `--squash --delete-branch` per ADR-0004. Do not use `--merge` or `--rebase`. Do not skip the merge — the PR is the unit of audit, the squashed commit on master is the unit of history.
