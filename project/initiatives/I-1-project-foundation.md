@@ -52,3 +52,4 @@ Without the foundation, every later session burns time re-establishing context, 
 - 2026-04-25 — created; status → in-progress
 - 2026-04-26 — E-1.2 done (vision grooming round 1 closed: 15 D-NNN + 15 A-NNN + 7 N-NNN entries persisted via knowledge-curator PR; GROOMED_FEATURES populated; MVP partial-fill); E-1.3 now ready
 - 2026-04-26 — E-1.5 created and closed in the same session per user directive *"PRs should be automerged"*; D-021 + ADR-0004 land the new policy; ADR-0003's "never auto-merge" clause partially superseded
+- 2026-04-26 — same-day refinement to E-1.5: branch-protection on master required a review, blocking the auto-merge step. User chose to pin `--admin` in the standing merge command. ADR-0004 gained a "Branch-protection compatibility" section; SKILL.md files, hook, and CLAUDE.md updated accordingly. E-1.5 stays `done`.
