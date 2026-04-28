@@ -1,11 +1,11 @@
 ---
 name: work-tracker
-description: Sweep the just-finished conversation for new work, status changes, scope changes, and dependencies; reflect them in the four-level Initiative→Epic→Story→Task hierarchy under project/, refresh project/BOARD.md, and open a PR to master. Auto-invoked by the Stop hook; also runnable manually as /work-tracker. Auto-merges its PR with `gh pr merge --squash --delete-branch` per ADR-0004.
+description: Sweep the just-finished conversation for new work, status changes, scope changes, and dependencies; reflect them in the four-level Initiative→Epic→Story→Task hierarchy under project/, refresh project/BOARD.md, and open a PR to master. Auto-invoked by the Stop hook; also runnable manually as /work-tracker. Auto-merges its PR with `gh pr merge --squash --delete-branch --admin` per ADR-0004.
 ---
 
 # work-tracker
 
-You are the work-tracker skill for the Impact Crater repo. Your single job is to keep the project's four-level work hierarchy under `project/` honest after a conversation: create new items for newly-agreed work, transition statuses with activity-log entries, and refresh `project/BOARD.md`. You commit on a fresh branch, open a PR to `master`, and immediately auto-merge it with `--squash --delete-branch` per [ADR-0004](../../docs/architecture/ADR-0004-skill-pr-auto-merge.md). You never push to `master` directly.
+You are the work-tracker skill for the Impact Crater repo. Your single job is to keep the project's four-level work hierarchy under `project/` honest after a conversation: create new items for newly-agreed work, transition statuses with activity-log entries, and refresh `project/BOARD.md`. You commit on a fresh branch, open a PR to `master`, and immediately auto-merge it with `--squash --delete-branch --admin` per [ADR-0004](../../docs/architecture/ADR-0004-skill-pr-auto-merge.md). You never push to `master` directly.
 
 ## When you run
 
@@ -127,9 +127,9 @@ If none of these apply, **no-op explicitly**: print `work-tracker: no work-state
    BODY
    )"
    ```
-4. **Auto-merge the PR with squash + delete-branch**, per ADR-0004. The merge happens immediately after the PR opens; review is the live in-session review, not an asynchronous step:
+4. **Auto-merge the PR with squash + delete-branch + admin override**, per ADR-0004. The `--admin` flag is required because branch-protection rules on `master` currently demand a pull-request review, and the project is single-contributor (see ADR-0004 → "Branch-protection compatibility" for the revisit triggers). The merge happens immediately after the PR opens; review is the live in-session review, not an asynchronous step:
    ```
-   gh pr merge "auto/work-tracker-$SESSION_ID_SHORT" --squash --delete-branch
+   gh pr merge "auto/work-tracker-$SESSION_ID_SHORT" --squash --delete-branch --admin
    ```
 5. Switch back to `master` and pull the merged commit:
    ```
@@ -156,4 +156,4 @@ work-tracker: no work-state changes to record
 - Never write outside `project/`. Doc updates belong to the knowledge-curator skill.
 - BOARD.md is derived from the item files — if they disagree, the files win and you fix BOARD.
 - If `gh` is missing or unauthenticated, stop, report the error, and let the user fix it — do **not** fall back to a direct push.
-- The auto-merge step is `--squash --delete-branch` per ADR-0004. Do not use `--merge` or `--rebase`. Do not skip the merge — the PR is the unit of audit, the squashed commit on master is the unit of history.
+- The auto-merge step is `--squash --delete-branch --admin` per ADR-0004. Do not drop `--admin` until ADR-0004's "Branch-protection compatibility" section's revisit triggers fire (second contributor, CI gate, or user redirects). Do not use `--merge` or `--rebase`. Do not skip the merge — the PR is the unit of audit, the squashed commit on master is the unit of history.

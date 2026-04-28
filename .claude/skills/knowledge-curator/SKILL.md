@@ -1,11 +1,11 @@
 ---
 name: knowledge-curator
-description: Sweep the just-finished conversation for new vision items, architecture / scaling / infra / tech-stack decisions, crucial product or engineering decisions, and novel or patentable ideas — then persist each to the right doc and open a PR to master. Auto-invoked by the Stop hook; also runnable manually as /knowledge-curator. Auto-merges its PR with `gh pr merge --squash --delete-branch` per ADR-0004.
+description: Sweep the just-finished conversation for new vision items, architecture / scaling / infra / tech-stack decisions, crucial product or engineering decisions, and novel or patentable ideas — then persist each to the right doc and open a PR to master. Auto-invoked by the Stop hook; also runnable manually as /knowledge-curator. Auto-merges its PR with `gh pr merge --squash --delete-branch --admin` per ADR-0004.
 ---
 
 # knowledge-curator
 
-You are the knowledge-curator skill for the Impact Crater repo. Your single job is to harvest *what was learned or decided in this conversation* and write it into the long-lived doc set so it isn't lost when the chat ends. You commit on a fresh branch, open a PR to `master`, and immediately auto-merge it with `--squash --delete-branch` per [ADR-0004](../../docs/architecture/ADR-0004-skill-pr-auto-merge.md). You never push to `master` directly.
+You are the knowledge-curator skill for the Impact Crater repo. Your single job is to harvest *what was learned or decided in this conversation* and write it into the long-lived doc set so it isn't lost when the chat ends. You commit on a fresh branch, open a PR to `master`, and immediately auto-merge it with `--squash --delete-branch --admin` per [ADR-0004](../../docs/architecture/ADR-0004-skill-pr-auto-merge.md). You never push to `master` directly.
 
 ## When you run
 
@@ -129,9 +129,9 @@ Filename `docs/architecture/ADR-NNNN-short-slug.md`. Standard shape: Status / Co
    BODY
    )"
    ```
-4. **Auto-merge the PR with squash + delete-branch**, per ADR-0004. The merge happens immediately after the PR opens; review is the live in-session review, not an asynchronous step:
+4. **Auto-merge the PR with squash + delete-branch + admin override**, per ADR-0004. The `--admin` flag is required because branch-protection rules on `master` currently demand a pull-request review, and the project is single-contributor (see ADR-0004 → "Branch-protection compatibility" for the revisit triggers). The merge happens immediately after the PR opens; review is the live in-session review, not an asynchronous step:
    ```
-   gh pr merge "auto/knowledge-curator-$SESSION_ID_SHORT" --squash --delete-branch
+   gh pr merge "auto/knowledge-curator-$SESSION_ID_SHORT" --squash --delete-branch --admin
    ```
 5. Switch back to `master` and pull the merged commit so the session ends on a clean, up-to-date master:
    ```
@@ -158,4 +158,4 @@ knowledge-curator: no knowledge to curate this session
 - Never reuse an ID.
 - Never invent IDs without grepping for the current max first.
 - If `gh` is missing or unauthenticated, stop, report the error, and let the user fix it — do **not** fall back to a direct push.
-- The auto-merge step is `--squash --delete-branch` per ADR-0004. Do not use `--merge` or `--rebase`. Do not skip the merge — the PR is the unit of audit, the squashed commit on master is the unit of history.
+- The auto-merge step is `--squash --delete-branch --admin` per ADR-0004. Do not drop `--admin` until ADR-0004's "Branch-protection compatibility" section's revisit triggers fire (second contributor, CI gate, or user redirects). Do not use `--merge` or `--rebase`. Do not skip the merge — the PR is the unit of audit, the squashed commit on master is the unit of history.
