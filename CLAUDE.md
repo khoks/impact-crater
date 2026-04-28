@@ -19,7 +19,7 @@ Impact Crater is an AI-driven photo and video curator. The user feeds it a batch
 | Repo visibility | GitHub public from day 1 | User chose openness over IP secrecy; novel ideas must be filed in `NOVEL_IDEAS.md` *before* the public commit if pre-publication priority matters |
 | Work-tracking shape | 4-level Initiative → Epic → Story → Task, file-per-item, hierarchical IDs (`I-1`, `E-1.2`, `S-1.2.3`, `T-1.2.3.4`) | Mirrors what the user asked for; supports multi-quarter north-stars sitting above sprint-scale epics |
 | Session housekeeping | Two project-local skills (`knowledge-curator`, `work-tracker`) auto-run via the `Stop` hook in `.claude/settings.json` | Persists session knowledge into the right docs and into `project/` without relying on conversation history |
-| Skill git autonomy | Branch + commit + push + open a PR against `master` via `gh` — never auto-merge | User retains review checkpoint on every session-generated diff |
+| Skill git autonomy | Branch + commit + push + open a PR against `master` via `gh`, then **auto-merge with `--squash --delete-branch`** (per [ADR-0004](./docs/architecture/ADR-0004-skill-pr-auto-merge.md)) | Live in-session review is the authoritative review; merged PRs remain revertible via `gh pr revert`; branches don't accumulate. Applies to skill PRs *and* feature PRs. |
 | Primary OS for dev | Windows 11 (WSL2 for any Docker work) | User's machine; macOS/Linux supported via OS adapter scripts later |
 
 Tech stack, MVP scope, agent harness shape, vision-model choices, sandbox approach for media processing, storage layout, and connector strategy are **all deferred** to grooming sessions — and will be locked one-at-a-time as ADRs in `docs/architecture/`.
@@ -56,7 +56,7 @@ Every session that touches code or scope follows this loop:
 
 Conventions and frontmatter schema live in [`project/README.md`](./project/README.md). Templates are in [`project/TEMPLATES/`](./project/TEMPLATES/).
 
-The `work-tracker` skill (under `.claude/skills/`) automates this loop at end-of-session and opens a PR with the resulting board changes. Never auto-merges.
+The `work-tracker` skill (under `.claude/skills/`) automates this loop at end-of-session, opens a PR with the resulting board changes, and immediately auto-merges it with `--squash --delete-branch` per [ADR-0004](./docs/architecture/ADR-0004-skill-pr-auto-merge.md).
 
 ---
 
@@ -70,7 +70,7 @@ The `knowledge-curator` skill (under `.claude/skills/`) runs on the `Stop` hook 
 - Novel mechanism / non-obvious idea → `docs/vision/NOVEL_IDEAS.md` as a new N-NNN entry
 - Long verbatim user dumps → `docs/vision/notes/YYYY-MM-DD-slug.md`
 
-It commits on a fresh branch, pushes, opens a PR against `master` via `gh`, and never auto-merges. If the session contained nothing capture-worthy, it exits as an explicit no-op.
+It commits on a fresh branch, pushes, opens a PR against `master` via `gh`, and immediately auto-merges it with `--squash --delete-branch` per [ADR-0004](./docs/architecture/ADR-0004-skill-pr-auto-merge.md). If the session contained nothing capture-worthy, it exits as an explicit no-op.
 
 ---
 
@@ -133,7 +133,8 @@ Every "while we're at it…" idea is a chance to bloat the MVP into oblivion. Re
 ## Things to never do (without explicit user approval)
 
 - Force-push to `master` (or any branch the user is sharing)
-- Merge an auto-generated PR (the skills open them; you do not merge them)
+- Commit directly to `master` — every change goes through a branch + PR, even if the PR is auto-merged immediately after opening (per [ADR-0004](./docs/architecture/ADR-0004-skill-pr-auto-merge.md))
+- Use `--merge` or `--rebase` on the auto-merge step — it must be `--squash --delete-branch`
 - Run `pnpm install` / `npm install` / `pip install` / `cargo build` and materialize dependency trees
 - Pull large model weights or media samples into the repo
 - Commit with `--no-verify` or any hook bypass
