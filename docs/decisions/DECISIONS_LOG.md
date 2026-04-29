@@ -504,5 +504,29 @@ This is a UX-shape change, not a scope change — the refine functionality itsel
 
 **Linked items.** ADR-0006, ADR-0005, A-001, A-003, A-005, A-010, A-011, N-003, N-007, D-011, D-012, [`project/tasks/T-1.3.1.2-adr-0006-storage-layout.md`](../../project/tasks/T-1.3.1.2-adr-0006-storage-layout.md).
 
+---
+
+### D-025 — Remote-LLM abstraction = LLMClient protocol; MVP providers = Anthropic + Google (2026-04-28)
+
+**Status:** accepted (formalized in ADR-0007)
+
+**Context.** D-016 commits to remote-first MVP with the routing abstraction in place from day one. The user's E-1.3 redirect (2026-04-28): at least two providers at MVP so the abstraction is exercised under more than one shape; user accepted Anthropic + Google.
+
+**Decision.** Single `LLMClient` Python `Protocol` with typed async methods per operation (`embed_image`, `caption_image`, `extract_metadata_image`, `score_image`, `caption_video_scene`, `extract_metadata_video_scene`, `judge_narrative_arc`, `parse_user_brief`, `recommend_effort_level`, `explain_cost`, `explain_upgrade_path`, `tool_call`, `stream_chat`). MVP implementations: `AnthropicLLMClient` (`anthropic` SDK) and `GoogleLLMClient` (`google-generativeai` SDK). Routing dispatch = a static YAML config at `config/llm-routing.yaml` mapping `Operation -> (Provider, Model)`. The v1 N-002 operation-aware router replaces this static dict with an agentic resolver against the same `Operation` taxonomy. Failure model: structured retry + hard ceiling, raise `LLMOperationFailed` on permanent errors. Observability: every call emits `LLMCallEvent` to `telemetry.jsonl` (consumed by ADR-0015 / A-015 cost-transparency UI). Caching: read-through against the `cache_index` table per ADR-0006 with cache key = sha256(content_hash + provider + model + model_version + operation + prompt_version + params_canonical).
+
+**Alternatives considered.**
+- *Single-provider MVP (Anthropic only).* Doesn't validate abstraction is genuinely pluggable. Rejected per user redirect.
+- *Three-plus providers at MVP.* Marginal value over two; deferred to v1.
+- *Single fat `call_llm(operation, ...)` method.* Loses structured-output type safety. Rejected.
+- *LangChain.* Costs control over prompt-versioning / caching / observability. Rejected.
+- *Per-call provider override.* Caller-side provider knowledge defeats abstraction. Rejected.
+- *No protocol — duck typing only.* Loses static type checking. Rejected.
+- *Separate `EmbeddingsClient`.* Embeddings are just another operation. Rejected.
+
+**Consequences.** Adding a third provider in v1 is one new file. The static routing dict is the seed for the v1 agentic resolver — no call-site changes when N-002 lands. Async-only with explicit sync wrappers at boundaries. Embeddings normalized as `numpy.ndarray (D,) float32`. Each provider has its own auth (`ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`); single-provider degraded mode supported with UX warning. Prompt templates versioned in `prompts/{operation}/{provider}_{model}.jinja2`; prompt_version is a hash of template content. Structured-output ops reject schema mismatches (catches provider drift). Cost estimation is provider-specific with versioned rate cards.
+
+**Linked items.** ADR-0007, ADR-0005, ADR-0006, D-016, D-017, D-009, D-013, A-004, A-015, A-007, N-001, N-002, [`project/tasks/T-1.3.1.3-adr-0007-remote-llm-abstraction.md`](../../project/tasks/T-1.3.1.3-adr-0007-remote-llm-abstraction.md).
+
+
 
 
