@@ -35,7 +35,7 @@ Without the foundation, every later session burns time re-establishing context, 
 
 - E-1.1 — Repo scaffolding (done)
 - E-1.2 — Vision grooming (done)
-- E-1.3 — Architecture grooming (todo, ready — unblocked by E-1.2)
+- E-1.3 — Architecture grooming (in-progress — round 1 foundation + LLM stack)
 - E-1.4 — Roadmap and MVP scoping (todo, blocked by E-1.3)
 - E-1.5 — Auto-merge policy (done — adopted mid-flight 2026-04-26)
 
@@ -54,3 +54,4 @@ Without the foundation, every later session burns time re-establishing context, 
 - 2026-04-26 — E-1.5 created and closed in the same session per user directive *"PRs should be automerged"*; D-021 + ADR-0004 land the new policy; ADR-0003's "never auto-merge" clause partially superseded
 - 2026-04-26 — same-day refinement to E-1.5: branch-protection on master required a review, blocking the auto-merge step. User chose to pin `--admin` in the standing merge command. ADR-0004 gained a "Branch-protection compatibility" section; SKILL.md files, hook, and CLAUDE.md updated accordingly. E-1.5 stays `done`.
 - 2026-04-28 — E-1.2 round-2 redirect (post-closure): user redirected the refine-loop UX entry point. D-022 filed superseding the refine-loop half of D-020; refine is now offered alongside Approve at the post-render moment, not toggled at job creation. GROOMED_FEATURES.md + MVP.md + T-1.2.1.4 / S-1.2.1 / E-1.2 activity logs updated. User reaffirmed N-001..N-007 OK on public master, no patent-priority hold. E-1.2 remains `done` (this is an append-only post-closure tightening, not new scope); E-1.3 still Up Next.
+- 2026-04-28 — E-1.3 picked up; status → in-progress for E-1.3 (initiative I-1 already in-progress). Round-1 Story S-1.3.1 + 5 Tasks (T-1.3.1.1..5) created, scoping foundation + LLM stack ADRs (ADR-0005..0009).

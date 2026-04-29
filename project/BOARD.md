@@ -1,6 +1,6 @@
 # Board
 
-> **Last updated:** 2026-04-28 — E-1.2 round-2 post-closure redirect: D-022 filed superseding the refine-loop half of D-020 (refine offered alongside Approve at the post-render moment, not toggled at job creation). GROOMED_FEATURES.md + MVP.md + T-1.2.1.4 / S-1.2.1 / E-1.2 / I-1 activity logs appended. E-1.3 still Up Next.
+> **Last updated:** 2026-04-28 — E-1.3 picked up. Round-1 Story S-1.3.1 + 5 Tasks (T-1.3.1.1..5) created scoping foundation + LLM stack ADRs (ADR-0005..0009). Filing each ADR + matching D-NNN now.
 > **How to read this:** Hand-maintained mirror of frontmatter `status:` values. The `work-tracker` skill refreshes this file at end-of-session. If you see drift, re-derive from `grep -l "status:" project/{initiatives,epics,stories,tasks}/*.md`.
 
 ---
@@ -10,12 +10,19 @@
 | ID | Title | Type | Priority | Phase |
 |---|---|---|---|---|
 | [I-1](./initiatives/I-1-project-foundation.md) | Project foundation | Initiative | P0 | scaffolding |
+| [E-1.3](./epics/E-1.3-architecture-grooming.md) | Architecture grooming | Epic | P1 | scaffolding |
+| [S-1.3.1](./stories/S-1.3.1-architecture-grooming-round-1.md) | Architecture grooming — round 1: foundation + LLM stack | Story | P1 | scaffolding |
+| [T-1.3.1.1](./tasks/T-1.3.1.1-adr-0005-process-topology-language-stack.md) | ADR-0005 process topology + language stack | Task | P1 | scaffolding |
+| [T-1.3.1.2](./tasks/T-1.3.1.2-adr-0006-storage-layout.md) | ADR-0006 storage layout | Task | P1 | scaffolding |
+| [T-1.3.1.3](./tasks/T-1.3.1.3-adr-0007-remote-llm-abstraction.md) | ADR-0007 remote-LLM abstraction + provider list | Task | P1 | scaffolding |
+| [T-1.3.1.4](./tasks/T-1.3.1.4-adr-0008-local-llm-runtime-slot.md) | ADR-0008 local-LLM runtime slot | Task | P1 | scaffolding |
+| [T-1.3.1.5](./tasks/T-1.3.1.5-adr-0009-cost-tiered-model-lineup.md) | ADR-0009 cost-tiered per-operation model lineup | Task | P1 | scaffolding |
 
 ## Up Next (Ready)
 
 | ID | Title | Type | Priority | Phase | Blocked by |
 |---|---|---|---|---|---|
-| [E-1.3](./epics/E-1.3-architecture-grooming.md) | Architecture grooming | Epic | P1 | scaffolding | — (E-1.2 done) |
+| (round 2 of E-1.3) | Architecture grooming round 2 — media + curation | Story | P1 | scaffolding | round 1 done |
 
 ## Backlog (scaffolding-phase, queued)
 
