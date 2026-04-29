@@ -548,6 +548,39 @@ This is a UX-shape change, not a scope change — the refine functionality itsel
 
 **Linked items.** ADR-0008, ADR-0007, ADR-0005, ADR-0006, D-016, A-015, N-002, CLAUDE.md mission, [`project/tasks/T-1.3.1.4-adr-0008-local-llm-runtime-slot.md`](../../project/tasks/T-1.3.1.4-adr-0008-local-llm-runtime-slot.md).
 
+---
+
+### D-027 — Cost-tiered per-operation model lineup at MVP: Tier-S Gemini Flash, Tier-M Sonnet 4.7, Tier-L Opus 4.7 (2026-04-28)
+
+**Status:** accepted (formalized in ADR-0009)
+
+**Context.** Per the user redirect (2026-04-28), cost-tiering applies across every LLM operation, not only the vision call. At MVP scale (1000 photos + 50 videos per job), bulk-op cost compounds: a Sonnet-class model on bulk captioning is ~30× the cost of Flash for marginally-better one-line captions. The savings on bulk fund a heavier model (Opus) on the one operation where reasoning quality genuinely matters: narrative-arc judgment (N-001).
+
+**Decision.** Three cost tiers with a per-operation static routing table:
+
+- **Tier-S** (cheapest, bulk) = Gemini 2.5 Flash. Used for high-volume low-stakes-per-call ops: caption_image, score_image, caption_video_scene.
+- **Tier-M** (mid, structured) = Claude Sonnet 4.7. Used for structured-output ops + agentic UX prose + the orchestrator's tool-call loop: extract_metadata_image, extract_metadata_video_scene, parse_user_brief, recommend_effort_level, explain_cost, explain_upgrade_path, orchestrator_reasoning.
+- **Tier-L** (heavy reasoning) = Claude Opus 4.7. Used for one-call-per-job heavy ops: judge_narrative_arc.
+- Embeddings (image + text) = Google text-embedding-004 (or current Google embedding model at session time) — separate from the S/M/L axis.
+
+Routing config = `config/llm-routing.yaml` (a flat `operation: {provider, model}` map), loaded by the `LLMRouter` (ADR-0007). Per-user overrides via SQLite settings table (ADR-0006). Per-job overrides via the effort-level UX (D-013): always-Opus / always-Flash / per-op-select. The v1 N-002 router replaces the static lookup with an agentic resolver against the same Operation taxonomy.
+
+Per-job MVP cost envelope estimate (rough): $7–22 USD per full-scale job before A-011 cache hits.
+
+**Alternatives considered.**
+- *One model for everything (Sonnet across the board).* ~30× cost overhead on Tier-S calls. Rejected per user redirect.
+- *Anthropic-only with Haiku for bulk.* Loses multi-provider abstraction validation; Gemini Flash is at-or-below Haiku cost at MVP-relevant quality. Rejected.
+- *Always-Opus for the orchestrator.* Orchestrator runs ~20–80 turns per job; per-call cost compounds. Sonnet sufficient for tool dispatch. Rejected.
+- *Per-operation model picks made by the user upfront.* Too much UX complexity for MVP; effort-level overrides cover the cases that matter. Rejected.
+- *Cost-tier as a runtime parameter (cheap mode / quality mode) rather than per-op static.* Black-box quality slider; loses per-op rationale. Rejected.
+- *Use Gemini 2.5 Pro for mid-tier instead of Sonnet.* Sonnet's structured-output and tool-use reliability more proven at session time. Rejected; revisit in v1 with eval data.
+- *Skip cost-transparency UI at MVP.* A-015 says it's MVP scope. Out of scope here.
+
+**Consequences.** Per-job cost is bounded by the table; A-004 per-day cap consumes the telemetry. v1 N-002 router replaces the static dict. Adding a new operation = update ADR-0009 + config + prompt template. Cache hits are highest on Tier-S + embedding ops (content-keyed); Tier-M re-uses on unchanged metadata; Tier-L always re-runs (per-job inputs). The 32B local-tier (v1) replaces only Tier-S calls (and selectively Tier-M); Tier-L stays remote because no ≤32B model meets Opus-class quality reliably as of session time. Single-provider degraded mode routes everything to the available provider with a UX warning.
+
+**Linked items.** ADR-0009, ADR-0007, ADR-0008, D-009, D-013, D-016, D-017, N-001, N-002, N-006, A-004, A-007, A-011, A-015, [`project/tasks/T-1.3.1.5-adr-0009-cost-tiered-model-lineup.md`](../../project/tasks/T-1.3.1.5-adr-0009-cost-tiered-model-lineup.md).
+
+
 
 
 
