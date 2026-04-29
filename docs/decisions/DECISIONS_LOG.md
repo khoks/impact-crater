@@ -527,6 +527,28 @@ This is a UX-shape change, not a scope change — the refine functionality itsel
 
 **Linked items.** ADR-0007, ADR-0005, ADR-0006, D-016, D-017, D-009, D-013, A-004, A-015, A-007, N-001, N-002, [`project/tasks/T-1.3.1.3-adr-0007-remote-llm-abstraction.md`](../../project/tasks/T-1.3.1.3-adr-0007-remote-llm-abstraction.md).
 
+---
+
+### D-026 — Local-LLM runtime slot (architecture-only at MVP); v1 candidate Ollama (2026-04-28)
+
+**Status:** accepted (formalized in ADR-0008; runtime selection deferred to v1)
+
+**Context.** D-016 commits to remote-first MVP with v1 adding a local-first config flip. The local-LLM landscape (Ollama, llama.cpp, vLLM, ExLlamaV2, MLX) is moving fast; locking the runtime now risks committing before the v1 N-002 router findings inform the choice. The 32B parameter cap is from CLAUDE.md mission.
+
+**Decision.** A `LocalLLMClient` slot in the same provider registry as the remote clients (ADR-0007). MVP ships the slot as an empty stub with `NotImplementedError`-raising methods that document the contract. Routing config maps no operations to `provider: local` at MVP. Hardware detection is v1. Recommended v1 runtime: **Ollama** (single-binary, OpenAI-compatible API, pull-by-name model management, cross-platform, active community). Alternatives kept open until v1: llama.cpp Python bindings (finer control), vLLM (best throughput, server-class), MLX (Apple Silicon). v1 hardware-tier mapping placeholder: no-GPU → remote-only; 8–12 GB → ≤7B local for Tier-S; 16–24 GB → up to 13B local for Tier-S, sometimes Tier-M; 32+ GB → up to 32B local for Tier-S + Tier-M; Tier-L always remote (no ≤32B model meets Opus-class quality reliably). 32B cap enforced at model-load time as a hard refusal.
+
+**Alternatives considered.**
+- *Lock the runtime now (Ollama at MVP).* Premature; v1 N-002 findings should inform the choice. Rejected.
+- *No local slot in MVP.* Breaks D-016's "abstraction in place from day one" and forces a v1 refactor. Rejected.
+- *Local as a deployment toggle without abstraction.* Parallel call sites for local vs. remote — exactly what D-016 forbids. Rejected.
+- *Multiple local clients (one per runtime) at MVP.* Premature; pick one in v1, add others as registry entries later. Deferred.
+- *No 32B cap enforcement at the runtime layer.* Pushes policy into config / docs / CI — weaker. Rejected.
+
+**Consequences.** v1 work is "implement `LocalLLMClient` + ship the runtime + extend routing config" — no protocol or call-site changes. N-002 router is the v1 unit of work for splitting ops between local and remote. Hardware detection is v1. 32B cap is hard-enforced at model load. Multiple local runtimes can coexist in the registry. MVP startup does not touch any local runtime.
+
+**Linked items.** ADR-0008, ADR-0007, ADR-0005, ADR-0006, D-016, A-015, N-002, CLAUDE.md mission, [`project/tasks/T-1.3.1.4-adr-0008-local-llm-runtime-slot.md`](../../project/tasks/T-1.3.1.4-adr-0008-local-llm-runtime-slot.md).
+
+
 
 
 
