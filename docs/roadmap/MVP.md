@@ -1,6 +1,6 @@
 # MVP.md — Impact Crater MVP scope
 
-> **Status: partially locked (E-1.2 round 1, 2026-04-26).** Five of the eight original open questions are answered (artifact, platform, routing default, scale envelope, success criterion); three remain open and will be locked in E-1.3 (architecture grooming) and E-1.4 (full roadmap lock). The MVP scope below reflects what is locked.
+> **Status: partially locked (E-1.2 round 1, 2026-04-26); refine-loop UX redirected 2026-04-28 (D-022 supersedes the refine-loop half of D-020).** Five of the eight original open questions are answered (artifact, platform, routing default, scale envelope, success criterion); three remain open and will be locked in E-1.3 (architecture grooming) and E-1.4 (full roadmap lock). The MVP scope below reflects what is locked.
 
 The MVP is the **single thinnest end-to-end slice** that proves the core loop: *user uploads media → AI curates → user reviews preview → user approves publish*. Everything beyond that thinnest slice goes to v1 or later.
 
@@ -10,7 +10,7 @@ The MVP is the **single thinnest end-to-end slice** that proves the core loop: *
 
 > *User drops up to 1000 photos and 50 videos from a single trip / build / event, describes in a paragraph what kind of YouTube video they want and what kind of music, picks a target duration, and gets a publish-ready **Story Video** to their connected YouTube Studio account within 2–5 hours.*
 
-The user can opt into a refine-and-approve gate before publish (per D-011, D-020).
+The user can opt into a refine pass after seeing the rendered result, alongside Approve at the post-render moment (per D-011, D-022 — supersedes the refine-loop half of D-020).
 
 ---
 
@@ -22,14 +22,14 @@ The user can opt into a refine-and-approve gate before publish (per D-011, D-020
 | 2 | **One platform connector, end-to-end:** YouTube via the user's connected YouTube Studio account | [D-007](../decisions/DECISIONS_LOG.md) |
 | 3 | **One LLM routing default, end-to-end:** remote-first; routing abstraction in place from day one so local-first is a v1 config flip, not a rewrite | [D-016](../decisions/DECISIONS_LOG.md) |
 | 4 | **Project / job model:** persistent, async, resumable. Closing the laptop and re-opening must restore state | [D-011](../decisions/DECISIONS_LOG.md), [A-001](../vision/RECOMMENDED_ADDITIONS.md), [A-005](../vision/RECOMMENDED_ADDITIONS.md) |
-| 5 | **Preview → approve → publish:** approval gate always on, no opt-out | [D-020](../decisions/DECISIONS_LOG.md) |
+| 5 | **Preview → approve → publish:** approval gate always on, no opt-out. Post-render UI surfaces twin actions: **Approve (primary)** and **Refine this result (secondary)** | [D-020](../decisions/DECISIONS_LOG.md) (publish-approval-always-on half), [D-022](../decisions/DECISIONS_LOG.md) |
 | 6 | **Scale envelope:** up to 1000 photos + 50 videos per job, 2–5 hour wall-clock ceiling | [D-012](../decisions/DECISIONS_LOG.md), [D-014](../decisions/DECISIONS_LOG.md) |
 | 7 | **Curation pipeline:** hybrid (deterministic pre-filter → multimodal-LLM judgment) with rich per-photo / per-scene metadata; scene segmentation for video | [D-009](../decisions/DECISIONS_LOG.md) |
 | 8 | **Music modes:** standard mode (background music) + music-video sub-mode (basic beat alignment); user-supplied music only at MVP | [D-010](../decisions/DECISIONS_LOG.md), [D-018](../decisions/DECISIONS_LOG.md), [A-013](../vision/RECOMMENDED_ADDITIONS.md) |
 | 9 | **Effort-level UX:** L1–L3 + agentic max-permissible recommendation | [D-013](../decisions/DECISIONS_LOG.md), [A-015](../vision/RECOMMENDED_ADDITIONS.md) |
 | 10 | **Agent harness:** single orchestrator with structured tool calls | [D-017](../decisions/DECISIONS_LOG.md) |
 | 11 | **Mobile posture:** desktop-only at MVP. Mobile is its own v2 epic. (Optional desktop-side cloud-folder watcher is a stretch.) | [D-019](../decisions/DECISIONS_LOG.md) |
-| 12 | **Refine loop:** opt-in at job creation, default OFF | [D-011](../decisions/DECISIONS_LOG.md), [D-020](../decisions/DECISIONS_LOG.md) |
+| 12 | **Refine loop:** offered post-render alongside Approve as the secondary action; not a job-creation toggle. Per-render, not per-job (every render-complete surfaces the offer again) | [D-011](../decisions/DECISIONS_LOG.md), [D-022](../decisions/DECISIONS_LOG.md) |
 | 13 | **Privacy posture:** explicit consent / strip-EXIF / blur-faces controls — load-bearing because remote-first sends images off-device | [A-002](../vision/RECOMMENDED_ADDITIONS.md), [D-016](../decisions/DECISIONS_LOG.md) |
 | 14 | **Publishing audit log:** append-only record per project | [A-003](../vision/RECOMMENDED_ADDITIONS.md) |
 | 15 | **Cross-job analysis cache (MVP-lite):** universal + model-versioned reuse classes; partial-result reuse → v1 | [A-011](../vision/RECOMMENDED_ADDITIONS.md), [N-007](../vision/NOVEL_IDEAS.md) |
