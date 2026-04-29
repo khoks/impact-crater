@@ -482,4 +482,27 @@ This is a UX-shape change, not a scope change — the refine functionality itsel
 
 **Linked items.** ADR-0005, D-014 (success criterion), D-016 (routing default), D-017 (orchestrator), D-019 (desktop-only), D-020 + D-022 (preview-approve + refine UX), N-003 (project as versioned artifact substrate), A-005 (failure recovery), [`project/tasks/T-1.3.1.1-adr-0005-process-topology-language-stack.md`](../../project/tasks/T-1.3.1.1-adr-0005-process-topology-language-stack.md).
 
+---
+
+### D-024 — Storage layout: per-project tree under ~/.impact-crater, SQLite metadata, content-hash-referenced source media (2026-04-28)
+
+**Status:** accepted (formalized in ADR-0006)
+
+**Context.** The project / job model (D-011, A-001), versioned-artifact substrate (N-003), cross-job cache (A-011, N-007), failure recovery (A-005), and audit log (A-003) all need a coherent storage shape. Source media is large at MVP scale (10s of GB per D-012); copying it into projects would waste disk.
+
+**Decision.** Per-project tree under `~/.impact-crater/projects/{project_id}/` with `manifest.json`, `sources/` (JSON sidecars), `snapshots/{snapshot_id}/` (immutable per-render directories with `plan.json`, `metadata/`, `candidates/`, `render.mp4`, `parent.txt`), `renders/`, `cache/`. SQLite at `~/.impact-crater/db/impact-crater.sqlite` for metadata (projects, media, project_media, snapshots, audit, settings, cache_index). Source media referenced by `(source_path, content_hash=SHA-256)`, not copied. Cross-project cache at `~/.impact-crater/cache/{content_hash}/{provider}_{model}_{version}/...`. Append-only JSONL audit log at `~/.impact-crater/audit.jsonl` (mirrored in the SQLite `audit` table for query convenience). All paths overridable via `IMPACT_CRATER_HOME`.
+
+**Alternatives considered.**
+- *Copy source media into the project.* Doubles disk usage; portability gain not worth it for MVP. Rejected (revisit pin-to-project as a post-MVP option).
+- *Postgres / server database.* Deployment dependency. Rejected for MVP; v3 hosted-service swaps Postgres in.
+- *No projects/ subdivision (single global store).* Breaks N-003 cleanly. Rejected.
+- *JSON-on-disk instead of SQLite.* Doesn't scale to A-011 cache lookups. Rejected.
+- *Pure content-addressed object-store layout.* Over-engineered for desktop MVP; users expect "my project is a folder" mental model. Rejected for MVP.
+- *Embed cache inside per-project tree (no cross-project cache).* Loses A-011 reuse. Rejected.
+
+**Consequences.** Source-path moves trigger content-hash fallback search at re-open (matches Lightroom/Photos UX). Snapshots are immutable; refine produces a new snapshot. Cache key = content-hash + provider + model + model-version + operation = exactly N-007's schema. Audit log is append-only out-of-band JSONL for crash safety. Schema migrations are Alembic-driven once code lands. v3 hosted-service mode swaps disk → object storage and SQLite → Postgres; schema transfers unchanged.
+
+**Linked items.** ADR-0006, ADR-0005, A-001, A-003, A-005, A-010, A-011, N-003, N-007, D-011, D-012, [`project/tasks/T-1.3.1.2-adr-0006-storage-layout.md`](../../project/tasks/T-1.3.1.2-adr-0006-storage-layout.md).
+
+
 
