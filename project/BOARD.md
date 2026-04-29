@@ -1,6 +1,6 @@
 # Board
 
-> **Last updated:** 2026-04-26 — E-1.2 closed (round 1); E-1.5 (auto-merge policy) created and closed mid-session per user directive; E-1.3 architecture grooming now Up Next.
+> **Last updated:** 2026-04-28 — E-1.2 round-2 post-closure redirect: D-022 filed superseding the refine-loop half of D-020 (refine offered alongside Approve at the post-render moment, not toggled at job creation). GROOMED_FEATURES.md + MVP.md + T-1.2.1.4 / S-1.2.1 / E-1.2 / I-1 activity logs appended. E-1.3 still Up Next.
 > **How to read this:** Hand-maintained mirror of frontmatter `status:` values. The `work-tracker` skill refreshes this file at end-of-session. If you see drift, re-derive from `grep -l "status:" project/{initiatives,epics,stories,tasks}/*.md`.
 
 ---

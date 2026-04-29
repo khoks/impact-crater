@@ -1,6 +1,6 @@
 # GROOMED_FEATURES.md — Impact Crater feature catalog
 
-> **Status: round 1 grooming closed (E-1.2, 2026-04-26).** Phase-tagged feature catalog populated. **MVP critical artifact = Story Video** (single themed video with background music, published to YouTube). Subsequent rounds of E-1.2 (if needed) and E-1.4 (roadmap) may revise phase tags. Tech-stack choices for any feature listed here are deferred to E-1.3.
+> **Status: round 1 grooming closed (E-1.2, 2026-04-26); round-2 redirect 2026-04-28 (D-022) — refine-loop entry point moved from job-creation toggle to post-render offer.** Phase-tagged feature catalog populated. **MVP critical artifact = Story Video** (single themed video with background music, published to YouTube). Subsequent rounds of E-1.2 (if needed) and E-1.4 (roadmap) may revise phase tags. Tech-stack choices for any feature listed here are deferred to E-1.3.
 
 This document is the groomed, phase-tagged view of every feature the product should ship over time. It is the bridge between the user's raw brain dump (`RAW_VISION.md`) and what actually gets built. Every feature here is tagged with a target phase: `mvp`, `mvp-lite`, `v1`, `v2`, or `v3`.
 
@@ -25,8 +25,8 @@ Cross-references:
 | 3 | App computes max-permissible level + cost preview; user confirms | D-013, A-015 |
 | 4 | Job runs async (user free to leave) | D-011, A-005 |
 | 5 | Pipeline: deterministic pre-filter → rich metadata extraction → narrative-arc judgment → render with music sync | D-009, N-001, A-013 |
-| 6 | Preview-and-approve UI shows the rendered Story Video | D-020 |
-| 7 | (Optional) refine pass if user opted in at job creation | D-011, D-020 |
+| 6 | Preview-and-approve UI shows the rendered Story Video, with **two clear actions: Approve (primary) and Refine (secondary)** | D-020 (publish-approval-always-on half), D-022 |
+| 7 | (Optional) refine pass — user clicks "Refine this result" alongside Approve at the post-render moment; produces a new render and the same offer again | D-011, D-022 |
 | 8 | User approves; app publishes to connected YouTube Studio account | D-007, D-020, A-003 |
 
 ---
@@ -83,9 +83,9 @@ Cross-references:
 
 | Feature | Phase | One-line | Linked |
 |---|---|---|---|
-| Preview-and-approve UI (always on, no opt-out) | mvp | Foundational trust gate | D-020 |
-| Refine loop (opt-in at job creation, default OFF) | mvp | Power-user pass between preview and approve | D-011, D-020 |
-| Multi-version artifact comparison | v1 | Side-by-side after refine | A-006, N-003 |
+| Preview-and-approve UI (always on, no opt-out) | mvp | Foundational trust gate; surfaces Approve + Refine as twin actions | D-020 (publish-approval half), D-022 |
+| Refine loop (offered post-render, alongside Approve) | mvp | Optional second-place action on the result; not a job-creation toggle | D-011, D-022 |
+| Multi-version artifact comparison | v1 | Side-by-side after refine; natural home for comparing original vs. refined renders | A-006, N-003 |
 | Publish to YouTube via connected Studio account | mvp | The single MVP platform | D-007 |
 | Publishing audit log | mvp | Append-only record per project | A-003 |
 | Multi-platform publish (Instagram, Facebook, X) | v1 | One per-platform connector at a time | D-007 |

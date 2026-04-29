@@ -375,7 +375,7 @@ The recommendation, cost-explanation, and upgrade-path UX are **agentic + GenAI-
 
 ### D-020 — Publish-approval gate always on; refine-loop opt-in default OFF (2026-04-26)
 
-**Status:** accepted (formalizes one half of D-011; codifies the user-facing defaults)
+**Status:** superseded by [D-022](#d-022) (2026-04-28) for the refine-loop half. The publish-approval-always-on half remains in force.
 
 **Context.** D-011 set the job model's coarse shape (async, refine-loop opt-in, publish-approval always on). This decision pins the user-facing defaults precisely so the MVP UI design has nothing to negotiate.
 
@@ -427,3 +427,37 @@ The branch-and-PR flow itself stays — no direct commits to `master`. Conventio
 - Branch protection on `master` cannot require external code review under this model. Acceptable at this phase; revisit when the project has more than one human contributor.
 
 **Linked items.** D-004 (the originally-decided "never auto-merge" stance, now superseded), [`docs/architecture/ADR-0003-session-housekeeping-skills.md`](../architecture/ADR-0003-session-housekeeping-skills.md) (status header updated), [`docs/architecture/ADR-0004-skill-pr-auto-merge.md`](../architecture/ADR-0004-skill-pr-auto-merge.md) (the formal ADR for this decision), [`.claude/skills/work-tracker/SKILL.md`](../../.claude/skills/work-tracker/SKILL.md), [`.claude/skills/knowledge-curator/SKILL.md`](../../.claude/skills/knowledge-curator/SKILL.md), [`.claude/hooks/post-session-housekeeping.sh`](../../.claude/hooks/post-session-housekeeping.sh), `CLAUDE.md`, project items E-1.5 / S-1.5.1 / T-1.5.1.1.
+
+---
+
+### D-022 — Refine-loop is offered post-render, not toggled at job creation (2026-04-28)
+
+**Status:** accepted (supersedes the refine-loop half of [D-020](#d-020); the publish-approval-always-on half of D-020 stays in force)
+
+**Context.** D-020 (2026-04-26) pinned the refine-loop default as *opt-in at job creation, default OFF*: the user toggles refine ON/OFF when they create the job, then either flows through the refine UI or skips straight to approve after render. On reviewing the round-1 grooming output (2026-04-28), the user redirected the UX shape: instead of asking the user to make a decision *before* they have any information about the output, the app should render the result first and then **offer the refine option alongside the final result**. The user's verbatim direction: *"the refine loop could be an optional thing proposed to the user in the end with the final result."*
+
+This is a UX-shape change, not a scope change — the refine functionality itself is still in MVP, the publish-approval gate is still always on, and the underlying job-model durability requirements (D-011) are unchanged.
+
+**Decision.** **The refine-loop is offered to the user after the rendered Story Video is shown, not as a per-job toggle at job-creation time.** Concretely:
+
+1. **Job creation** no longer asks about refine. Mode (standard vs. music-video — D-010, A-013), effort level (D-013), target duration (D-014), and music input (D-018) remain the only at-creation knobs.
+2. **Post-render UI** is now: render-complete → preview-and-approve screen (D-020 publish-approval half) with **two clear actions**: (a) "Approve and publish" — the happy-path, one-click action; and (b) "Refine this result" — the opt-in route that takes the user into the refine UI and produces a new candidate version (the multi-version comparison surface in A-006 becomes natural here once it lands in v1).
+3. **Refine is still optional, not mandatory.** Most users will click Approve on the first result; the refine button is the second-place action, visually clear but not pre-selected and not blocking.
+4. **Refine is per-render, not per-job.** Every render-complete event surfaces the offer. A user who refines once gets a new render and the same offer again on the new result.
+
+**Alternatives considered.**
+- *Keep D-020 as-is (toggle at job creation).* Forces the user to predict whether they'll want to refine *before* they've seen anything. Adds a decision point at the worst time (information-poor moment). Rejected per user redirect.
+- *Refine always-on, skip-button to approve.* Functionally equivalent in flow, but signals "we expect you to refine" which biases the user into extra work. Rejected — Approve should be the visually primary action.
+- *Refine offered only when a quality / confidence heuristic flags the result as low-confidence.* Sound long-term, but requires a calibrated quality model that is itself v1 work (A-007). Rejected for MVP — re-evaluate when A-007 lands.
+- *Hide refine behind a settings toggle the user opts into.* Adds a settings-management surface for a feature that should be discoverable from the result. Rejected.
+
+**Consequences.**
+- **MVP UI.** Job-creation form drops the refine toggle. Post-render UI gains a second action button ("Refine this result") next to Approve. The refine UI itself is unchanged in scope from D-020; only the entry point moves.
+- **D-011 narrative is unchanged** — the job model is still async, refine is still opt-in (just opt-in *later*), and the publish-approval gate is still always on.
+- **D-014 (success criterion) is unchanged in wording** — the criterion already says "user can opt into a refine-and-approve gate before publish." The interpretation is now "opt-in at the post-render moment" rather than "opt-in at job creation," which is consistent with the verbatim text.
+- **A-006 (multi-version artifact comparison)** becomes the natural UX home for showing original-vs-refined renders. A-006 stays v1, but the MVP refine UI should produce the version-graph data structure A-006 will consume.
+- **Architecture impact** is minimal — N-003 (project as a versioned artifact) already implies every render is a node and refine produces a new node. The change is purely the user-facing entry point.
+- **Linked work-items.** T-1.2.1.4 (job model + scale + success criterion + effort levels) gets a same-day-redirect activity-log entry. The story S-1.2.1 and epic E-1.2 stay `done` — the original decisions were captured correctly and are being refined here, not reopened.
+
+**Linked items.** D-011 (job-model frame), D-014 (success criterion — wording unchanged), [D-020](#d-020) (superseded for the refine-loop half), A-006 (multi-version comparison — natural home for refined renders), N-003 (project as versioned artifact — substrate), [`docs/vision/GROOMED_FEATURES.md`](../vision/GROOMED_FEATURES.md) (Refine-loop row updated), [`docs/roadmap/MVP.md`](../roadmap/MVP.md) (constraints updated), [`project/tasks/T-1.2.1.4-job-model-scale-success-criterion.md`](../../project/tasks/T-1.2.1.4-job-model-scale-success-criterion.md) (activity log appended).
+

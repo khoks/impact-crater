@@ -7,7 +7,7 @@ priority: P0
 phase: scaffolding
 tags: [foundation, scaffolding]
 created: 2026-04-25
-updated: 2026-04-26
+updated: 2026-04-28
 ---
 
 ## North-star outcome
@@ -45,7 +45,7 @@ Without the foundation, every later session burns time re-establishing context, 
 - ADR-0002 (work-tracking hierarchy)
 - ADR-0003 (session-housekeeping skills — partially superseded by ADR-0004)
 - ADR-0004 (auto-merge policy for skill and feature PRs)
-- D-001 through D-005, D-006 through D-020 (E-1.2 round 1), D-021 (auto-merge policy)
+- D-001 through D-005, D-006 through D-020 (E-1.2 round 1), D-021 (auto-merge policy), D-022 (E-1.2 round 2: refine-loop UX redirect)
 
 ## Activity log
 
@@ -53,3 +53,4 @@ Without the foundation, every later session burns time re-establishing context, 
 - 2026-04-26 — E-1.2 done (vision grooming round 1 closed: 15 D-NNN + 15 A-NNN + 7 N-NNN entries persisted via knowledge-curator PR; GROOMED_FEATURES populated; MVP partial-fill); E-1.3 now ready
 - 2026-04-26 — E-1.5 created and closed in the same session per user directive *"PRs should be automerged"*; D-021 + ADR-0004 land the new policy; ADR-0003's "never auto-merge" clause partially superseded
 - 2026-04-26 — same-day refinement to E-1.5: branch-protection on master required a review, blocking the auto-merge step. User chose to pin `--admin` in the standing merge command. ADR-0004 gained a "Branch-protection compatibility" section; SKILL.md files, hook, and CLAUDE.md updated accordingly. E-1.5 stays `done`.
+- 2026-04-28 — E-1.2 round-2 redirect (post-closure): user redirected the refine-loop UX entry point. D-022 filed superseding the refine-loop half of D-020; refine is now offered alongside Approve at the post-render moment, not toggled at job creation. GROOMED_FEATURES.md + MVP.md + T-1.2.1.4 / S-1.2.1 / E-1.2 activity logs updated. User reaffirmed N-001..N-007 OK on public master, no patent-priority hold. E-1.2 remains `done` (this is an append-only post-closure tightening, not new scope); E-1.3 still Up Next.
