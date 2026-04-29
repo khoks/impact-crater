@@ -461,3 +461,25 @@ This is a UX-shape change, not a scope change — the refine functionality itsel
 
 **Linked items.** D-011 (job-model frame), D-014 (success criterion — wording unchanged), [D-020](#d-020) (superseded for the refine-loop half), A-006 (multi-version comparison — natural home for refined renders), N-003 (project as versioned artifact — substrate), [`docs/vision/GROOMED_FEATURES.md`](../vision/GROOMED_FEATURES.md) (Refine-loop row updated), [`docs/roadmap/MVP.md`](../roadmap/MVP.md) (constraints updated), [`project/tasks/T-1.2.1.4-job-model-scale-success-criterion.md`](../../project/tasks/T-1.2.1.4-job-model-scale-success-criterion.md) (activity log appended).
 
+---
+
+### D-023 — Process topology + language stack: Python/FastAPI backend, TypeScript+React frontend, pip-install packaging (2026-04-28)
+
+**Status:** accepted (formalized in ADR-0005)
+
+**Context.** The MVP critical path needs to mix deterministic media operations (ffmpeg, OpenCV, perceptual hashing, scene segmentation) with LLM-driven curation, on a desktop-only target (D-019), as a self-hosted-first install. The CV/ML ecosystem the project depends on is Python-first; the UI surface (D-020 / D-022 preview-and-approve with twin Approve+Refine actions) is browser-first and TypeScript+React-shaped.
+
+**Decision.** Backend = Python 3.11+ with FastAPI (async, websocket support). Frontend = TypeScript + React, served as static assets from the FastAPI process. Heavy lifting = Python subprocess workers spawned by the orchestrator, with an in-process queue at MVP. Packaging = `pip install impact-crater` + `impact-crater` CLI command that starts the local server and opens the browser. Single primary process; no separate frontend server in production.
+
+**Alternatives considered.**
+- *Node-everything (TypeScript backend).* CV/ML ecosystem is materially weaker; would subprocess Python anyway → net more complexity. Rejected.
+- *Tauri / Electron native frontend.* Browser UI is sufficient for MVP; native chrome can bolt on later as a packaging-only change. Deferred.
+- *Rust + Python.* Premature optimization; LLM calls + ffmpeg are the bottleneck, not perceptual-hash speed. Rejected for MVP.
+- *Go backend.* Same CV/ML disadvantage as Node, plus weaker LLM SDKs. Rejected.
+- *CLI-only (no UI server).* Doesn't fit the preview-and-approve UX. Rejected.
+
+**Consequences.** Single-language backend; one pip install + one command for end users; async-first I/O; subprocess workers managed by the orchestrator; native frontend later is a packaging change, not a rewrite; v1 local LLMs plug into the same Python process via ADR-0008's slot; v3 hosted-service is a Postgres-swap config flip.
+
+**Linked items.** ADR-0005, D-014 (success criterion), D-016 (routing default), D-017 (orchestrator), D-019 (desktop-only), D-020 + D-022 (preview-approve + refine UX), N-003 (project as versioned artifact substrate), A-005 (failure recovery), [`project/tasks/T-1.3.1.1-adr-0005-process-topology-language-stack.md`](../../project/tasks/T-1.3.1.1-adr-0005-process-topology-language-stack.md).
+
+
