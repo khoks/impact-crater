@@ -228,19 +228,25 @@ Each addition gets a heading with an `A-NNN` ID (monotonically incrementing, nev
 
 ---
 
-### A-013 — Music-video output mode (2026-04-26)
+### A-013 — Music-video output mode (2026-04-26; section-to-media NL mapping pulled into MVP 2026-05-02)
 
-**Status:** accepted — phase **MVP** (sub-mode of Story Video; section-to-media natural-language mapping → v1)
+**Status:** accepted — phase **MVP** (full version, including section-to-media natural-language mapping). *Originally classified as "MVP basic + v1 NL section mapping"; reclassified to full-MVP per D-031 during E-1.3 round-2 grooming.*
 
 **Why this matters.** Distinct from "background music under a curated video" (standard mode), music-video mode treats the music as the primary structure and assembles media around it. Two-mode design from day one keeps the product flexible to user intent without forking the pipeline.
 
-**What it would look like.** At job creation, the user picks "standard" or "music-video" mode. In music-video mode, the user supplies music (per D-018), and the renderer beat-aligns scene cuts to the music structure. **MVP version:** music sync + simple beat alignment. **v1:** section-to-media natural-language mapping ("the chorus should be the summit footage; the bridge should be the rest stop with my partner").
+**What it would look like.** At job creation, the user picks "standard" or "music-video" mode. In music-video mode, the user supplies music (per D-018), and the renderer beat-aligns scene cuts to the music structure. The user can also describe in natural language which sections of the music should be built from which media ("intro = scenic shots; chorus = summit footage; bridge = friends laughing; outro = sunset"). The user's NL spec passes verbatim to the Tier-L Opus narrative judge (per ADR-0012); the judge handles the prose natively, no structured-parse stage required.
 
-**Open questions.** Beat-detection / music-structure-analysis tech (deferred to E-1.3). UX for declaring section-to-media mappings.
+**MVP scope after reclassification:**
+- Beat detection via Madmom; section detection via librosa; cuts snap to a tempo-aware beat grid (per ADR-0012).
+- Section-to-media NL mapping is a free-text field at job creation, optional. The Tier-L judge consumes the spec alongside brief + music structure to produce a section-aware `ArcJudgment` with structured `section_mapping`.
 
-**Tradeoff against scope.** Basic beat-alignment is cheap once the renderer exists. Section-to-media is a meaningful v1 add.
+**v1 follow-on work (still v1):** royalty-free music starter pack, licensed-library integration, conversational section adjustments via chat ("make the bridge feel more contemplative" — interactive refinement of an already-existing section spec).
 
-**Linked items.** D-010, D-018, [`project/tasks/T-1.2.1.3-music-modes-sourcing.md`](../../project/tasks/T-1.2.1.3-music-modes-sourcing.md).
+**Open questions resolved in E-1.3:** beat-detection tech = Madmom (per ADR-0012, D-030); UX for declaring section-to-media mappings = single optional NL textarea at job creation (per ADR-0012).
+
+**Tradeoff against scope.** The section-to-media NL mapping was reclassified from v1 to MVP because the Opus-tier judge handles the prose natively — adding it to MVP is one prose field on the project, no architectural debt, no extra pipeline stage.
+
+**Linked items.** D-010, D-018, **D-031** (this scope reclassification), ADR-0012 (architectural realization), [`project/tasks/T-1.2.1.3-music-modes-sourcing.md`](../../project/tasks/T-1.2.1.3-music-modes-sourcing.md), [`project/tasks/T-1.3.2.3-adr-0012-music-alignment.md`](../../project/tasks/T-1.3.2.3-adr-0012-music-alignment.md).
 
 ---
 

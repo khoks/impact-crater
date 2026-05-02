@@ -1,6 +1,6 @@
 # MVP.md — Impact Crater MVP scope
 
-> **Status: partially locked (E-1.2 round 1, 2026-04-26); refine-loop UX redirected 2026-04-28 (D-022 supersedes the refine-loop half of D-020).** Five of the eight original open questions are answered (artifact, platform, routing default, scale envelope, success criterion); three remain open and will be locked in E-1.3 (architecture grooming) and E-1.4 (full roadmap lock). The MVP scope below reflects what is locked.
+> **Status: partially locked (E-1.2 round 1, 2026-04-26); refine-loop UX redirected 2026-04-28 (D-022 supersedes the refine-loop half of D-020); A-013 section-to-media NL mapping pulled into MVP 2026-05-02 (D-031, via E-1.3 round-2 architecture grooming).** All eight original product-shape questions are answered; tech-stack ADRs landing through E-1.3 rounds 1+2 (foundation + LLM stack + media + curation). E-1.3 round 3 (connectors + harness + cross-cutting) and E-1.4 (full roadmap lock) still pending. The MVP scope below reflects what is locked.
 
 The MVP is the **single thinnest end-to-end slice** that proves the core loop: *user uploads media → AI curates → user reviews preview → user approves publish*. Everything beyond that thinnest slice goes to v1 or later.
 
@@ -25,7 +25,7 @@ The user can opt into a refine pass after seeing the rendered result, alongside 
 | 5 | **Preview → approve → publish:** approval gate always on, no opt-out. Post-render UI surfaces twin actions: **Approve (primary)** and **Refine this result (secondary)** | [D-020](../decisions/DECISIONS_LOG.md) (publish-approval-always-on half), [D-022](../decisions/DECISIONS_LOG.md) |
 | 6 | **Scale envelope:** up to 1000 photos + 50 videos per job, 2–5 hour wall-clock ceiling | [D-012](../decisions/DECISIONS_LOG.md), [D-014](../decisions/DECISIONS_LOG.md) |
 | 7 | **Curation pipeline:** hybrid (deterministic pre-filter → multimodal-LLM judgment) with rich per-photo / per-scene metadata; scene segmentation for video | [D-009](../decisions/DECISIONS_LOG.md) |
-| 8 | **Music modes:** standard mode (background music) + music-video sub-mode (basic beat alignment); user-supplied music only at MVP | [D-010](../decisions/DECISIONS_LOG.md), [D-018](../decisions/DECISIONS_LOG.md), [A-013](../vision/RECOMMENDED_ADDITIONS.md) |
+| 8 | **Music modes:** standard mode (background music) + music-video sub-mode (full version, including section-to-media NL mapping); user-supplied music only at MVP. Beat detection via Madmom; section detection via librosa | [D-010](../decisions/DECISIONS_LOG.md), [D-018](../decisions/DECISIONS_LOG.md), [D-030](../decisions/DECISIONS_LOG.md), [D-031](../decisions/DECISIONS_LOG.md), [A-013](../vision/RECOMMENDED_ADDITIONS.md), [ADR-0012](../architecture/ADR-0012-music-alignment-strategy.md) |
 | 9 | **Effort-level UX:** L1–L3 + agentic max-permissible recommendation | [D-013](../decisions/DECISIONS_LOG.md), [A-015](../vision/RECOMMENDED_ADDITIONS.md) |
 | 10 | **Agent harness:** single orchestrator with structured tool calls | [D-017](../decisions/DECISIONS_LOG.md) |
 | 11 | **Mobile posture:** desktop-only at MVP. Mobile is its own v2 epic. (Optional desktop-side cloud-folder watcher is a stretch.) | [D-019](../decisions/DECISIONS_LOG.md) |
@@ -48,7 +48,7 @@ The full feature catalog with phase tags lives in [`GROOMED_FEATURES.md`](../vis
 - Live-job pattern (v1 — A-012, N-005).
 - Reference-media style learning (v1 — A-014, N-004).
 - Operation-aware LLM router (v1 — N-002, gates the local-first v1 commitment).
-- Section-to-media natural-language mapping inside music-video mode (v1 — A-013).
+<!-- Section-to-media NL mapping inside music-video mode reclassified v1 → MVP per D-031 (2026-05-02). It is now part of constraint #8 above; removed from this not-list. -->
 - L4 / L5 effort levels, full cost-transparency UI, upgrade-path agent (v1 — A-015).
 - Auto photo / video editing (v1 — per RAW_VISION).
 - Multi-version artifact comparison (v1 — A-006).

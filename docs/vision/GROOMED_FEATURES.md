@@ -1,6 +1,6 @@
 # GROOMED_FEATURES.md — Impact Crater feature catalog
 
-> **Status: round 1 grooming closed (E-1.2, 2026-04-26); round-2 redirect 2026-04-28 (D-022) — refine-loop entry point moved from job-creation toggle to post-render offer.** Phase-tagged feature catalog populated. **MVP critical artifact = Story Video** (single themed video with background music, published to YouTube). Subsequent rounds of E-1.2 (if needed) and E-1.4 (roadmap) may revise phase tags. Tech-stack choices for any feature listed here are deferred to E-1.3.
+> **Status: round 1 grooming closed (E-1.2, 2026-04-26); round-2 redirect 2026-04-28 (D-022) — refine-loop entry point moved from job-creation toggle to post-render offer; cross-cut 2026-05-02 (D-031) — A-013 section-to-media NL mapping reclassified v1 → MVP via E-1.3 round-2 architecture grooming.** Phase-tagged feature catalog populated. **MVP critical artifact = Story Video** (single themed video with background music, published to YouTube). E-1.4 (roadmap) may revise remaining phase tags. Round-1 + round-2 of E-1.3 (architecture grooming) have settled the tech stack; round 3 still pending.
 
 This document is the groomed, phase-tagged view of every feature the product should ship over time. It is the bridge between the user's raw brain dump (`RAW_VISION.md`) and what actually gets built. Every feature here is tagged with a target phase: `mvp`, `mvp-lite`, `v1`, `v2`, or `v3`.
 
@@ -61,8 +61,8 @@ Cross-references:
 | Feature | Phase | One-line | Linked |
 |---|---|---|---|
 | Standard mode (background music under curated video) | mvp | The default Story Video mode | D-006, D-010 |
-| Music-video sub-mode (basic beat alignment) | mvp | User-supplied music drives sequencing | D-010, A-013 |
-| Section-to-media natural-language mapping | v1 | "Chorus → summit footage; bridge → rest stop" | A-013 |
+| Music-video sub-mode (full version) | mvp | User-supplied music drives sequencing; cuts beat-snap; section-to-media NL spec consumed by N-001 narrative judge | D-010, A-013, D-031, ADR-0012 |
+| Section-to-media natural-language mapping | mvp | "Chorus → summit footage; bridge → rest stop" — passed verbatim to N-001 judge (reclassified from v1 → MVP, D-031) | A-013, D-031, ADR-0012 |
 | User-chosen target duration | mvp | Per-job knob | D-014 |
 | Music sourcing — user-supplied | mvp | User uploads or links audio file | D-018 |
 | Music sourcing — royalty-free starter pack | v1 | Curated catalog ships in-app | D-018 |

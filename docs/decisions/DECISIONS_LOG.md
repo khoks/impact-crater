@@ -580,6 +580,126 @@ Per-job MVP cost envelope estimate (rough): $7–22 USD per full-scale job befor
 
 **Linked items.** ADR-0009, ADR-0007, ADR-0008, D-009, D-013, D-016, D-017, N-001, N-002, N-006, A-004, A-007, A-011, A-015, [`project/tasks/T-1.3.1.5-adr-0009-cost-tiered-model-lineup.md`](../../project/tasks/T-1.3.1.5-adr-0009-cost-tiered-model-lineup.md).
 
+---
+
+### D-028 — Media pipeline framework: Pillow + pillow-heif + rawpy + ffmpeg + imagehash + scenedetect + smartcrop.py; person-library face recognition via reference collage (2026-05-02)
+
+**Status:** accepted (formalized in ADR-0010)
+
+**Context.** The deterministic media-handling layer (decoders, perceptual hash, scene segmentation, face detection, smart-crop, render execution) needs concrete library picks. Two MVP-relevant nuances surfaced in round-2 grooming: HEIC/RAW support is required because iPhone is HEIC-default; face *recognition* (not just detection) significantly enriches narrative-arc judgment, and the user proposed a novel approach (N-008) to avoid carrying a separate face-recognition stack.
+
+**Decision.** Photo decode = Pillow + pillow-heif + rawpy; working colorspace at metadata extraction = sRGB; EXIF via pyexiv2. Video decode = ffmpeg via ffmpeg-python; scene-representative frames extracted as PNG, no full re-encode at analysis. Thumbnails = 256 + 1024 px JPEG cached at ingest. Perceptual hash = imagehash (pHash + dHash). Dedup posture = off-by-default with surfaced suggestion. Scene segmentation = scenedetect ContentDetector with 50/video cap. Smart-crop = smartcrop.py with face-bbox bias. Aspect ratios at MVP = 16:9 only (YouTube). Render = in-process ffmpeg, max-1-concurrency at MVP.
+
+**Face recognition (N-008 architectural realization):** vision LLM is the only face stack; person library in SQLite (`persons` + `person_face_photos` tables, default 5 photos/person, 3-10 range); reference collage constructed at recognition time and passed as second image input to `extract_metadata_image`; structured-output schema gains `recognized_persons` field with confidence scores. Cache key includes `library_version_hash` for correct invalidation.
+
+**Worker pool:** asyncio task pool with cpu/ffmpeg/network worker classes; backpressure surfaced via job-progress websocket; cancellation via `JobCancelled` propagation; resume reads snapshot's `plan.json`.
+
+**Alternatives considered.**
+- *Skip HEIC at MVP.* Rejected — iPhone is HEIC-default; manual conversion is hostile UX.
+- *Skip RAW at MVP.* Considered. rawpy adds one dep, unlocks power-user segment. Accepted.
+- *Auto-remove duplicates at ingest.* Rejected — hostile UX.
+- *InsightFace / FaceNet / DeepFace for face recognition.* Rejected — heavy dep, separate model file, doesn't integrate with LLM-driven metadata stage. N-008 collage approach achieves same outcome with zero new dependencies.
+- *GPU-accelerated perceptual hashing.* Premature; CPU is fast enough at MVP scale.
+- *Container-isolated render (Docker sidecar).* Rejected at MVP — packaging burden; revisit at v3 hosted-service.
+- *moviepy / imageio* for video orchestration. Rejected — higher overhead, less encoder control than ffmpeg-python.
+
+**Consequences.** HEIC + RAW deps in the install path (both pip-installable wheels). Person library = UI surface needing design work; SQLite schema locked here. Cache invalidation around library is non-trivial; library_version_hash on cache key keeps it correct. Reference collage bounded to ~20 persons (pagination = v1 enhancement). Scene-count cap (50/video) constrains long-form footage; effort-level UX raises it. Render concurrency (max 1) is conservative; revisit if testing shows render is the bottleneck. Privacy posture (A-002) interactions are formalized in ADR-0016.
+
+**Linked items.** ADR-0010, ADR-0005, ADR-0006, ADR-0007, ADR-0009, D-009, D-012, D-019, A-002, A-005, A-010, A-011, A-015, **N-008** (novel mechanism), [`project/tasks/T-1.3.2.1-adr-0010-media-pipeline.md`](../../project/tasks/T-1.3.2.1-adr-0010-media-pipeline.md).
+
+---
+
+### D-029 — Curation engine = 9-stage pipeline with floor/ceiling pre-filter, orchestrator second-guess (with user reconfirm), and agentic refinement (2026-05-02)
+
+**Status:** accepted (formalized in ADR-0011)
+
+**Context.** D-009 fixed the high-level hybrid shape; N-001 surfaced narrative-arc judgment as the load-bearing mechanism. Round-2 grooming surfaced three user-redirected behaviors: pre-filter must respect a floor + ≤80% ceiling; refine pass should be agentic (orchestrator chooses partial fix vs full reprocess vs additional input — N-009); orchestrator can second-guess the judge but must reconfirm with the user before applying overrides.
+
+**Decision.** Pipeline = 9 stages: (1) ingest + content-hash + scene-segment + thumbnails (deterministic); (2) bulk per-asset ops — embed + caption + score (Tier-S + embedding); (3) rich metadata extraction with N-008 person recognition (Tier-M); (4) pre-filter — quality + dedup + cluster + rank → candidate set; (5) narrative-arc judgment producing structured `ArcJudgment` (Tier-L Opus, single call); (6) plan compilation + orchestrator second-guess + music alignment (deterministic + Tier-M); (7) render (ffmpeg); (8) preview UI with twin Approve/Refine; (9) agentic refinement (N-009).
+
+**Stage 4 floor + ceiling math:** floor = max(50, target_duration_seconds × 2); ceiling = floor(input_count × 0.80); default_target = clamp(input × 30%, floor, ceiling). User overrides via effort-level UX, hard-capped within [floor, ceiling].
+
+**Stage 6 orchestrator second-guess:** Tier-M sanity-check call produces `SecondGuessResult` with proposed `Override`s + confidence; if non-empty AND confidence > 0.6, surface to user via websocket; user picks Apply / Skip / Modify-with-NL per override; choices persist on snapshot.
+
+**Stage 9 refinement (N-009):** Tier-M tool-call loop with tools `re_run_stage_5_with_addendum`, `re_extract_metadata_for`, `re_run_pre_filter_with_overrides`, `request_user_input`, `explain_why_not_possible`. Bounded at 10 turns. Cancelable. Most refinements re-run Stages 5–7; bulk Stage 2/3 cost reused. Cost envelope per refinement ~$1–5 USD vs $7–22 for full job (per ADR-0009).
+
+**Cache reuse story:** Stages 1–3 typically cached on re-run + on refine; Stage 5 always re-runs on refine (refinement message changes input); Stage 6/7 always re-run.
+
+**Alternatives considered.**
+- *Skip Stage 4 pre-filter.* Tier-L would drown at 1000 photos. Rejected.
+- *Skip orchestrator second-guess.* Rejected per Q7 — small valuable safety net.
+- *Always second-guess silently (no user reconfirm).* Rejected — breaks trust model.
+- *Refine = simple Stage-5-rerun with parent ArcJudgment.* Round-1 proposal version. Rejected per Q6 — user wants agentic plan generation.
+- *Refine = full reprocess always.* Wastes cache. Rejected.
+- *Brief-aware narrative-relevance in Stage 3 instead of Stage 2.* Kept in Stage 2; cheap Tier-S call suffices.
+- *Quality floor fixed (no user override).* User wedding photos vs summit-attempt photos have different floors. Made overridable.
+- *Stage 6 LLM-driven (not deterministic).* Kept deterministic for predictability; second-guess is the LLM hook.
+
+**Consequences.** Stage 5 = highest-cost LLM call (Tier-L Opus, 1/job); cache key wide-enough-but-narrow-enough. Stage 6 user-prompt UI surface needed (post-round-3 design work). Stage 9 bounded at 10 turns. N-009 is novel-mechanism-class. Brief-change invalidates narrative-relevance scores. Snapshot persists orchestrator-override decisions for v1 learning. The 9-stage shape is canonical; v1 features (A-006/007/014) plug into specific stages without reshaping.
+
+**Linked items.** ADR-0011, ADR-0005, ADR-0006, ADR-0007, ADR-0009, ADR-0010, D-009, D-011, D-013, D-014, D-016, D-017, D-022, A-001, A-005, A-006, A-007, A-011, A-013, A-014, A-015, **N-001** (narrative-arc judgment — Stage 5), **N-008** (face recognition via collage — Stage 3), **N-009** (agentic refinement — Stage 9), [`project/tasks/T-1.3.2.2-adr-0011-curation-engine.md`](../../project/tasks/T-1.3.2.2-adr-0011-curation-engine.md).
+
+---
+
+### D-030 — Music alignment: Madmom for beats + librosa for sections; agentic duration mismatch handling; full A-013 NL section-mapping in MVP (2026-05-02)
+
+**Status:** accepted (formalized in ADR-0012)
+
+**Context.** D-010 fixed two music modes (standard, music-video). D-018 fixed user-supplied music at MVP. A-013 originally classified section-to-media NL mapping as v1; round-2 grooming pulled it into MVP per Q10. Beat-detection accuracy materially affects music-video-mode quality; per Q8 user picked Madmom over librosa. Per Q9 duration mismatch handling is agentic at runtime, not a fixed default.
+
+**Decision.** Audio ingest = ffmpeg-decoded to 22050 Hz mono WAV for analysis. Music structure analysis = Madmom (RNN-based beat + downbeat detection) + librosa (sections via `librosa.segment.agglomerative` + RMS energy curve via `librosa.feature.rms`). `MusicAnalyzer` abstraction makes the libraries swappable; MVP implements `MadmomLibrosaAnalyzer`.
+
+**Beat-grid generation:** default cut every 4 beats (1 bar at 4/4); tempo-adjusted (slow → 2-bar; fast → 2-bar to keep clips reasonable); section-boundary snapping if cut would land within 200ms of boundary; user override via effort-level UX.
+
+**Section-to-media NL mapping (A-013 in MVP):** the user's free-text spec ("intro = scenic, chorus = summit") is a first-class input to Stage 5 (narrative judge, ADR-0011) — passed verbatim alongside brief + music structure to the Tier-L Opus call. No structured-parse stage; the judge handles the prose natively. `ArcJudgment.section_mapping` is the structured output.
+
+**Music duration mismatch handling = agentic at runtime (Q9):** Tier-M `analyze_music_duration_mismatch(music, target_duration) → DurationStrategy` tool call. Strategies: `fade_out`, `loop_with_crossfade`, `truncate_at_section`, `loop_then_truncate`. Orchestrator's reasoning considers section boundaries, loopability, target_duration deviation. Strategy + rationale recorded on snapshot and surfaced via cost-transparency UI.
+
+**Render-time alignment:** standard mode = audio under entire video at -16 LUFS; music-video mode = cuts snap to `CutGrid.cut_points_ms`; two-pass `loudnorm` for YouTube-friendly loudness on both modes.
+
+**Alternatives considered.**
+- *librosa for beat detection only.* Convenient but materially lower accuracy than Madmom for music-video cuts. Rejected per Q8.
+- *BeatNet or other recent beat detector.* Considered as fallback; `MusicAnalyzer` abstraction makes swap trivial. Not chosen at MVP — Madmom's accuracy is well-known and stable.
+- *Fixed default for duration mismatch (always fade-out).* Rejected per Q9 — different combinations want different strategies.
+- *Loop infinitely under long target.* Boring; rejected as default.
+- *Section-to-media NL parsed into structured sections at job creation.* Rejected — Tier-L judge handles prose natively; structured parse is unnecessary intermediate work.
+- *Section-to-media NL deferred to v1 (original A-013 classification).* Rejected per Q10 — full version is one prose field, no architectural debt.
+- *Royalty-free starter pack widening in MVP.* Out of scope; D-018 holds.
+
+**Consequences.** Madmom is heavier dep with C extensions; pre-built wheels exist for common platforms but edge cases may need attention; `MusicAnalyzer` abstraction is insurance against Madmom maintenance friction. librosa section labels are heuristic; user's NL spec grounds placement. `analyze_music_duration_mismatch` joins the orchestrator's tool surface (formalized in ADR-0014 round 3). Section-to-media NL is one extra textarea at job creation, optional. Two-pass loudnorm adds ~10s to render time. **A-013 reclassification (v1 → MVP) recorded as D-031** and propagated into GROOMED_FEATURES.md + MVP.md + RECOMMENDED_ADDITIONS.md by the same round-2 PR.
+
+**Linked items.** ADR-0012, ADR-0007, ADR-0009, ADR-0010, ADR-0011, D-010, D-014, D-018, D-022, A-013, [`project/tasks/T-1.3.2.3-adr-0012-music-alignment.md`](../../project/tasks/T-1.3.2.3-adr-0012-music-alignment.md), [D-031](#d-031) (A-013 v1 → MVP).
+
+---
+
+### D-031 — A-013 section-to-media NL mapping reclassified from v1 → MVP (2026-05-02)
+
+**Status:** accepted — scope reclassification (cross-cuts E-1.2 vision grooming and E-1.3 architecture grooming)
+
+**Context.** A-013 (music-video output mode) originally had two phase tags: "MVP basic" (beat alignment of cuts to user-supplied music) plus "v1 add" (the section-to-media natural-language mapping where the user can describe which music sections should come from which media — "chorus = summit footage; bridge = rest stop"). During E-1.3 round-2 architecture grooming (Q10), the user redirected: pull the full version into MVP.
+
+**Decision.** A-013 is **MVP in full**, including section-to-media natural-language mapping. The user's NL spec passes verbatim to the Tier-L Opus narrative judge (per ADR-0012 + ADR-0011 Stage 5); the judge handles the prose natively as one additional input alongside the brief + music structure. No structured-parse stage is required at MVP.
+
+The v1 follow-on for A-013 narrows to: royalty-free music starter pack, licensed-library integration, and *conversational* section adjustments at chat-refine time ("make the bridge feel more contemplative"). The base section-to-media NL mapping is MVP.
+
+**Alternatives considered.**
+- *Keep section-to-media NL mapping at v1 (original A-013 plan).* The simpler MVP version — "music-video sub-mode with basic beat alignment only, no NL section mapping" — would have shipped first; full version arrives in v1. Rejected per Q10: pulling the full version into MVP is one prose field on the project; the Opus-tier judge handles it natively; no architectural debt. The user judged the differentiation worth the slight scope expansion.
+- *Half-version at MVP (free-text "hint" passed to the judge but no first-class `section_mapping` output).* A middle ground from the round-2 proposal. Rejected — the structured `ArcJudgment.section_mapping` field is small and free; doing the half-version saves nothing and makes the v1 step ambiguous.
+- *Reclassify in a follow-up post-E-1.3 cycle.* Rejected — the architectural surface is being pinned now in ADR-0012, so the scope reclassification belongs in this PR for self-consistency.
+
+**Consequences.**
+- `RECOMMENDED_ADDITIONS.md` A-013 entry's status reads "phase MVP (full version)" with a footnote noting the reclassification.
+- `GROOMED_FEATURES.md` Story Video generation theme moves the section-to-media row from v1 to MVP.
+- `MVP.md` adds the section-to-media NL spec to the locked must-do constraint set; the "Out of MVP scope" list drops the corresponding line.
+- ADR-0012 carries the architectural realization (Stage 5 prompt assembly).
+- The user's section-to-media spec is a single optional textarea at job creation. Empty spec = the judge proceeds without it (the original "music-video without NL mapping" flow).
+
+**Linked items.** A-013 (entry updated), ADR-0012, ADR-0011, D-010, D-018, D-030 (the music-alignment ADR's record), [`docs/vision/GROOMED_FEATURES.md`](../vision/GROOMED_FEATURES.md), [`docs/roadmap/MVP.md`](../roadmap/MVP.md), [`project/tasks/T-1.3.2.3-adr-0012-music-alignment.md`](../../project/tasks/T-1.3.2.3-adr-0012-music-alignment.md).
+
+
+
+
+
 
 
 
