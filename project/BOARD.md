@@ -1,6 +1,6 @@
 # Board
 
-> **Last updated:** 2026-04-28 — E-1.3 round 1 closed. ADR-0005..0009 (foundation + LLM stack) + D-023..D-027 filed. ARCHITECTURE.md refreshed. E-1.3 stays in-progress for rounds 2 + 3 (media + curation; connectors + harness + cross-cutting).
+> **Last updated:** 2026-05-02 — E-1.3 round 2 picked up. S-1.3.2 + T-1.3.2.1..3 in flight, scoping ADR-0010 media pipeline + ADR-0011 curation engine + ADR-0012 music alignment. Two novel mechanisms (N-008 person-library face recognition; N-009 agentic refinement) being filed. A-013 reclassifying v1 → MVP.
 > **How to read this:** Hand-maintained mirror of frontmatter `status:` values. The `work-tracker` skill refreshes this file at end-of-session. If you see drift, re-derive from `grep -l "status:" project/{initiatives,epics,stories,tasks}/*.md`.
 
 ---
@@ -11,12 +11,16 @@
 |---|---|---|---|---|
 | [I-1](./initiatives/I-1-project-foundation.md) | Project foundation | Initiative | P0 | scaffolding |
 | [E-1.3](./epics/E-1.3-architecture-grooming.md) | Architecture grooming | Epic | P1 | scaffolding |
+| [S-1.3.2](./stories/S-1.3.2-architecture-grooming-round-2.md) | Architecture grooming — round 2: media + curation | Story | P1 | scaffolding |
+| [T-1.3.2.1](./tasks/T-1.3.2.1-adr-0010-media-pipeline.md) | ADR-0010 media pipeline framework | Task | P1 | scaffolding |
+| [T-1.3.2.2](./tasks/T-1.3.2.2-adr-0011-curation-engine.md) | ADR-0011 curation engine algorithm | Task | P1 | scaffolding |
+| [T-1.3.2.3](./tasks/T-1.3.2.3-adr-0012-music-alignment.md) | ADR-0012 music alignment strategy | Task | P1 | scaffolding |
 
 ## Up Next (Ready)
 
 | ID | Title | Type | Priority | Phase | Blocked by |
 |---|---|---|---|---|---|
-| (round 2 of E-1.3) | Architecture grooming round 2 — media + curation (ADR-0010..0012) | Story (TBC) | P1 | scaffolding | — (round 1 done) |
+| (round 3 of E-1.3) | Architecture grooming round 3 — connectors + harness + cross-cutting (ADR-0013..0016) | Story (TBC) | P1 | scaffolding | round 2 done |
 
 ## Backlog (scaffolding-phase, queued)
 
