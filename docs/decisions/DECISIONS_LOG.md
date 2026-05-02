@@ -607,6 +607,39 @@ Per-job MVP cost envelope estimate (rough): $7–22 USD per full-scale job befor
 
 **Linked items.** ADR-0010, ADR-0005, ADR-0006, ADR-0007, ADR-0009, D-009, D-012, D-019, A-002, A-005, A-010, A-011, A-015, **N-008** (novel mechanism), [`project/tasks/T-1.3.2.1-adr-0010-media-pipeline.md`](../../project/tasks/T-1.3.2.1-adr-0010-media-pipeline.md).
 
+---
+
+### D-029 — Curation engine = 9-stage pipeline with floor/ceiling pre-filter, orchestrator second-guess (with user reconfirm), and agentic refinement (2026-05-02)
+
+**Status:** accepted (formalized in ADR-0011)
+
+**Context.** D-009 fixed the high-level hybrid shape; N-001 surfaced narrative-arc judgment as the load-bearing mechanism. Round-2 grooming surfaced three user-redirected behaviors: pre-filter must respect a floor + ≤80% ceiling; refine pass should be agentic (orchestrator chooses partial fix vs full reprocess vs additional input — N-009); orchestrator can second-guess the judge but must reconfirm with the user before applying overrides.
+
+**Decision.** Pipeline = 9 stages: (1) ingest + content-hash + scene-segment + thumbnails (deterministic); (2) bulk per-asset ops — embed + caption + score (Tier-S + embedding); (3) rich metadata extraction with N-008 person recognition (Tier-M); (4) pre-filter — quality + dedup + cluster + rank → candidate set; (5) narrative-arc judgment producing structured `ArcJudgment` (Tier-L Opus, single call); (6) plan compilation + orchestrator second-guess + music alignment (deterministic + Tier-M); (7) render (ffmpeg); (8) preview UI with twin Approve/Refine; (9) agentic refinement (N-009).
+
+**Stage 4 floor + ceiling math:** floor = max(50, target_duration_seconds × 2); ceiling = floor(input_count × 0.80); default_target = clamp(input × 30%, floor, ceiling). User overrides via effort-level UX, hard-capped within [floor, ceiling].
+
+**Stage 6 orchestrator second-guess:** Tier-M sanity-check call produces `SecondGuessResult` with proposed `Override`s + confidence; if non-empty AND confidence > 0.6, surface to user via websocket; user picks Apply / Skip / Modify-with-NL per override; choices persist on snapshot.
+
+**Stage 9 refinement (N-009):** Tier-M tool-call loop with tools `re_run_stage_5_with_addendum`, `re_extract_metadata_for`, `re_run_pre_filter_with_overrides`, `request_user_input`, `explain_why_not_possible`. Bounded at 10 turns. Cancelable. Most refinements re-run Stages 5–7; bulk Stage 2/3 cost reused. Cost envelope per refinement ~$1–5 USD vs $7–22 for full job (per ADR-0009).
+
+**Cache reuse story:** Stages 1–3 typically cached on re-run + on refine; Stage 5 always re-runs on refine (refinement message changes input); Stage 6/7 always re-run.
+
+**Alternatives considered.**
+- *Skip Stage 4 pre-filter.* Tier-L would drown at 1000 photos. Rejected.
+- *Skip orchestrator second-guess.* Rejected per Q7 — small valuable safety net.
+- *Always second-guess silently (no user reconfirm).* Rejected — breaks trust model.
+- *Refine = simple Stage-5-rerun with parent ArcJudgment.* Round-1 proposal version. Rejected per Q6 — user wants agentic plan generation.
+- *Refine = full reprocess always.* Wastes cache. Rejected.
+- *Brief-aware narrative-relevance in Stage 3 instead of Stage 2.* Kept in Stage 2; cheap Tier-S call suffices.
+- *Quality floor fixed (no user override).* User wedding photos vs summit-attempt photos have different floors. Made overridable.
+- *Stage 6 LLM-driven (not deterministic).* Kept deterministic for predictability; second-guess is the LLM hook.
+
+**Consequences.** Stage 5 = highest-cost LLM call (Tier-L Opus, 1/job); cache key wide-enough-but-narrow-enough. Stage 6 user-prompt UI surface needed (post-round-3 design work). Stage 9 bounded at 10 turns. N-009 is novel-mechanism-class. Brief-change invalidates narrative-relevance scores. Snapshot persists orchestrator-override decisions for v1 learning. The 9-stage shape is canonical; v1 features (A-006/007/014) plug into specific stages without reshaping.
+
+**Linked items.** ADR-0011, ADR-0005, ADR-0006, ADR-0007, ADR-0009, ADR-0010, D-009, D-011, D-013, D-014, D-016, D-017, D-022, A-001, A-005, A-006, A-007, A-011, A-013, A-014, A-015, **N-001** (narrative-arc judgment — Stage 5), **N-008** (face recognition via collage — Stage 3), **N-009** (agentic refinement — Stage 9), [`project/tasks/T-1.3.2.2-adr-0011-curation-engine.md`](../../project/tasks/T-1.3.2.2-adr-0011-curation-engine.md).
+
+
 
 
 
