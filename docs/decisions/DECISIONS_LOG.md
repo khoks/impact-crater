@@ -461,3 +461,127 @@ This is a UX-shape change, not a scope change — the refine functionality itsel
 
 **Linked items.** D-011 (job-model frame), D-014 (success criterion — wording unchanged), [D-020](#d-020) (superseded for the refine-loop half), A-006 (multi-version comparison — natural home for refined renders), N-003 (project as versioned artifact — substrate), [`docs/vision/GROOMED_FEATURES.md`](../vision/GROOMED_FEATURES.md) (Refine-loop row updated), [`docs/roadmap/MVP.md`](../roadmap/MVP.md) (constraints updated), [`project/tasks/T-1.2.1.4-job-model-scale-success-criterion.md`](../../project/tasks/T-1.2.1.4-job-model-scale-success-criterion.md) (activity log appended).
 
+---
+
+### D-023 — Process topology + language stack: Python/FastAPI backend, TypeScript+React frontend, pip-install packaging (2026-04-28)
+
+**Status:** accepted (formalized in ADR-0005)
+
+**Context.** The MVP critical path needs to mix deterministic media operations (ffmpeg, OpenCV, perceptual hashing, scene segmentation) with LLM-driven curation, on a desktop-only target (D-019), as a self-hosted-first install. The CV/ML ecosystem the project depends on is Python-first; the UI surface (D-020 / D-022 preview-and-approve with twin Approve+Refine actions) is browser-first and TypeScript+React-shaped.
+
+**Decision.** Backend = Python 3.11+ with FastAPI (async, websocket support). Frontend = TypeScript + React, served as static assets from the FastAPI process. Heavy lifting = Python subprocess workers spawned by the orchestrator, with an in-process queue at MVP. Packaging = `pip install impact-crater` + `impact-crater` CLI command that starts the local server and opens the browser. Single primary process; no separate frontend server in production.
+
+**Alternatives considered.**
+- *Node-everything (TypeScript backend).* CV/ML ecosystem is materially weaker; would subprocess Python anyway → net more complexity. Rejected.
+- *Tauri / Electron native frontend.* Browser UI is sufficient for MVP; native chrome can bolt on later as a packaging-only change. Deferred.
+- *Rust + Python.* Premature optimization; LLM calls + ffmpeg are the bottleneck, not perceptual-hash speed. Rejected for MVP.
+- *Go backend.* Same CV/ML disadvantage as Node, plus weaker LLM SDKs. Rejected.
+- *CLI-only (no UI server).* Doesn't fit the preview-and-approve UX. Rejected.
+
+**Consequences.** Single-language backend; one pip install + one command for end users; async-first I/O; subprocess workers managed by the orchestrator; native frontend later is a packaging change, not a rewrite; v1 local LLMs plug into the same Python process via ADR-0008's slot; v3 hosted-service is a Postgres-swap config flip.
+
+**Linked items.** ADR-0005, D-014 (success criterion), D-016 (routing default), D-017 (orchestrator), D-019 (desktop-only), D-020 + D-022 (preview-approve + refine UX), N-003 (project as versioned artifact substrate), A-005 (failure recovery), [`project/tasks/T-1.3.1.1-adr-0005-process-topology-language-stack.md`](../../project/tasks/T-1.3.1.1-adr-0005-process-topology-language-stack.md).
+
+---
+
+### D-024 — Storage layout: per-project tree under ~/.impact-crater, SQLite metadata, content-hash-referenced source media (2026-04-28)
+
+**Status:** accepted (formalized in ADR-0006)
+
+**Context.** The project / job model (D-011, A-001), versioned-artifact substrate (N-003), cross-job cache (A-011, N-007), failure recovery (A-005), and audit log (A-003) all need a coherent storage shape. Source media is large at MVP scale (10s of GB per D-012); copying it into projects would waste disk.
+
+**Decision.** Per-project tree under `~/.impact-crater/projects/{project_id}/` with `manifest.json`, `sources/` (JSON sidecars), `snapshots/{snapshot_id}/` (immutable per-render directories with `plan.json`, `metadata/`, `candidates/`, `render.mp4`, `parent.txt`), `renders/`, `cache/`. SQLite at `~/.impact-crater/db/impact-crater.sqlite` for metadata (projects, media, project_media, snapshots, audit, settings, cache_index). Source media referenced by `(source_path, content_hash=SHA-256)`, not copied. Cross-project cache at `~/.impact-crater/cache/{content_hash}/{provider}_{model}_{version}/...`. Append-only JSONL audit log at `~/.impact-crater/audit.jsonl` (mirrored in the SQLite `audit` table for query convenience). All paths overridable via `IMPACT_CRATER_HOME`.
+
+**Alternatives considered.**
+- *Copy source media into the project.* Doubles disk usage; portability gain not worth it for MVP. Rejected (revisit pin-to-project as a post-MVP option).
+- *Postgres / server database.* Deployment dependency. Rejected for MVP; v3 hosted-service swaps Postgres in.
+- *No projects/ subdivision (single global store).* Breaks N-003 cleanly. Rejected.
+- *JSON-on-disk instead of SQLite.* Doesn't scale to A-011 cache lookups. Rejected.
+- *Pure content-addressed object-store layout.* Over-engineered for desktop MVP; users expect "my project is a folder" mental model. Rejected for MVP.
+- *Embed cache inside per-project tree (no cross-project cache).* Loses A-011 reuse. Rejected.
+
+**Consequences.** Source-path moves trigger content-hash fallback search at re-open (matches Lightroom/Photos UX). Snapshots are immutable; refine produces a new snapshot. Cache key = content-hash + provider + model + model-version + operation = exactly N-007's schema. Audit log is append-only out-of-band JSONL for crash safety. Schema migrations are Alembic-driven once code lands. v3 hosted-service mode swaps disk → object storage and SQLite → Postgres; schema transfers unchanged.
+
+**Linked items.** ADR-0006, ADR-0005, A-001, A-003, A-005, A-010, A-011, N-003, N-007, D-011, D-012, [`project/tasks/T-1.3.1.2-adr-0006-storage-layout.md`](../../project/tasks/T-1.3.1.2-adr-0006-storage-layout.md).
+
+---
+
+### D-025 — Remote-LLM abstraction = LLMClient protocol; MVP providers = Anthropic + Google (2026-04-28)
+
+**Status:** accepted (formalized in ADR-0007)
+
+**Context.** D-016 commits to remote-first MVP with the routing abstraction in place from day one. The user's E-1.3 redirect (2026-04-28): at least two providers at MVP so the abstraction is exercised under more than one shape; user accepted Anthropic + Google.
+
+**Decision.** Single `LLMClient` Python `Protocol` with typed async methods per operation (`embed_image`, `caption_image`, `extract_metadata_image`, `score_image`, `caption_video_scene`, `extract_metadata_video_scene`, `judge_narrative_arc`, `parse_user_brief`, `recommend_effort_level`, `explain_cost`, `explain_upgrade_path`, `tool_call`, `stream_chat`). MVP implementations: `AnthropicLLMClient` (`anthropic` SDK) and `GoogleLLMClient` (`google-generativeai` SDK). Routing dispatch = a static YAML config at `config/llm-routing.yaml` mapping `Operation -> (Provider, Model)`. The v1 N-002 operation-aware router replaces this static dict with an agentic resolver against the same `Operation` taxonomy. Failure model: structured retry + hard ceiling, raise `LLMOperationFailed` on permanent errors. Observability: every call emits `LLMCallEvent` to `telemetry.jsonl` (consumed by ADR-0015 / A-015 cost-transparency UI). Caching: read-through against the `cache_index` table per ADR-0006 with cache key = sha256(content_hash + provider + model + model_version + operation + prompt_version + params_canonical).
+
+**Alternatives considered.**
+- *Single-provider MVP (Anthropic only).* Doesn't validate abstraction is genuinely pluggable. Rejected per user redirect.
+- *Three-plus providers at MVP.* Marginal value over two; deferred to v1.
+- *Single fat `call_llm(operation, ...)` method.* Loses structured-output type safety. Rejected.
+- *LangChain.* Costs control over prompt-versioning / caching / observability. Rejected.
+- *Per-call provider override.* Caller-side provider knowledge defeats abstraction. Rejected.
+- *No protocol — duck typing only.* Loses static type checking. Rejected.
+- *Separate `EmbeddingsClient`.* Embeddings are just another operation. Rejected.
+
+**Consequences.** Adding a third provider in v1 is one new file. The static routing dict is the seed for the v1 agentic resolver — no call-site changes when N-002 lands. Async-only with explicit sync wrappers at boundaries. Embeddings normalized as `numpy.ndarray (D,) float32`. Each provider has its own auth (`ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`); single-provider degraded mode supported with UX warning. Prompt templates versioned in `prompts/{operation}/{provider}_{model}.jinja2`; prompt_version is a hash of template content. Structured-output ops reject schema mismatches (catches provider drift). Cost estimation is provider-specific with versioned rate cards.
+
+**Linked items.** ADR-0007, ADR-0005, ADR-0006, D-016, D-017, D-009, D-013, A-004, A-015, A-007, N-001, N-002, [`project/tasks/T-1.3.1.3-adr-0007-remote-llm-abstraction.md`](../../project/tasks/T-1.3.1.3-adr-0007-remote-llm-abstraction.md).
+
+---
+
+### D-026 — Local-LLM runtime slot (architecture-only at MVP); v1 candidate Ollama (2026-04-28)
+
+**Status:** accepted (formalized in ADR-0008; runtime selection deferred to v1)
+
+**Context.** D-016 commits to remote-first MVP with v1 adding a local-first config flip. The local-LLM landscape (Ollama, llama.cpp, vLLM, ExLlamaV2, MLX) is moving fast; locking the runtime now risks committing before the v1 N-002 router findings inform the choice. The 32B parameter cap is from CLAUDE.md mission.
+
+**Decision.** A `LocalLLMClient` slot in the same provider registry as the remote clients (ADR-0007). MVP ships the slot as an empty stub with `NotImplementedError`-raising methods that document the contract. Routing config maps no operations to `provider: local` at MVP. Hardware detection is v1. Recommended v1 runtime: **Ollama** (single-binary, OpenAI-compatible API, pull-by-name model management, cross-platform, active community). Alternatives kept open until v1: llama.cpp Python bindings (finer control), vLLM (best throughput, server-class), MLX (Apple Silicon). v1 hardware-tier mapping placeholder: no-GPU → remote-only; 8–12 GB → ≤7B local for Tier-S; 16–24 GB → up to 13B local for Tier-S, sometimes Tier-M; 32+ GB → up to 32B local for Tier-S + Tier-M; Tier-L always remote (no ≤32B model meets Opus-class quality reliably). 32B cap enforced at model-load time as a hard refusal.
+
+**Alternatives considered.**
+- *Lock the runtime now (Ollama at MVP).* Premature; v1 N-002 findings should inform the choice. Rejected.
+- *No local slot in MVP.* Breaks D-016's "abstraction in place from day one" and forces a v1 refactor. Rejected.
+- *Local as a deployment toggle without abstraction.* Parallel call sites for local vs. remote — exactly what D-016 forbids. Rejected.
+- *Multiple local clients (one per runtime) at MVP.* Premature; pick one in v1, add others as registry entries later. Deferred.
+- *No 32B cap enforcement at the runtime layer.* Pushes policy into config / docs / CI — weaker. Rejected.
+
+**Consequences.** v1 work is "implement `LocalLLMClient` + ship the runtime + extend routing config" — no protocol or call-site changes. N-002 router is the v1 unit of work for splitting ops between local and remote. Hardware detection is v1. 32B cap is hard-enforced at model load. Multiple local runtimes can coexist in the registry. MVP startup does not touch any local runtime.
+
+**Linked items.** ADR-0008, ADR-0007, ADR-0005, ADR-0006, D-016, A-015, N-002, CLAUDE.md mission, [`project/tasks/T-1.3.1.4-adr-0008-local-llm-runtime-slot.md`](../../project/tasks/T-1.3.1.4-adr-0008-local-llm-runtime-slot.md).
+
+---
+
+### D-027 — Cost-tiered per-operation model lineup at MVP: Tier-S Gemini Flash, Tier-M Sonnet 4.7, Tier-L Opus 4.7 (2026-04-28)
+
+**Status:** accepted (formalized in ADR-0009)
+
+**Context.** Per the user redirect (2026-04-28), cost-tiering applies across every LLM operation, not only the vision call. At MVP scale (1000 photos + 50 videos per job), bulk-op cost compounds: a Sonnet-class model on bulk captioning is ~30× the cost of Flash for marginally-better one-line captions. The savings on bulk fund a heavier model (Opus) on the one operation where reasoning quality genuinely matters: narrative-arc judgment (N-001).
+
+**Decision.** Three cost tiers with a per-operation static routing table:
+
+- **Tier-S** (cheapest, bulk) = Gemini 2.5 Flash. Used for high-volume low-stakes-per-call ops: caption_image, score_image, caption_video_scene.
+- **Tier-M** (mid, structured) = Claude Sonnet 4.7. Used for structured-output ops + agentic UX prose + the orchestrator's tool-call loop: extract_metadata_image, extract_metadata_video_scene, parse_user_brief, recommend_effort_level, explain_cost, explain_upgrade_path, orchestrator_reasoning.
+- **Tier-L** (heavy reasoning) = Claude Opus 4.7. Used for one-call-per-job heavy ops: judge_narrative_arc.
+- Embeddings (image + text) = Google text-embedding-004 (or current Google embedding model at session time) — separate from the S/M/L axis.
+
+Routing config = `config/llm-routing.yaml` (a flat `operation: {provider, model}` map), loaded by the `LLMRouter` (ADR-0007). Per-user overrides via SQLite settings table (ADR-0006). Per-job overrides via the effort-level UX (D-013): always-Opus / always-Flash / per-op-select. The v1 N-002 router replaces the static lookup with an agentic resolver against the same Operation taxonomy.
+
+Per-job MVP cost envelope estimate (rough): $7–22 USD per full-scale job before A-011 cache hits.
+
+**Alternatives considered.**
+- *One model for everything (Sonnet across the board).* ~30× cost overhead on Tier-S calls. Rejected per user redirect.
+- *Anthropic-only with Haiku for bulk.* Loses multi-provider abstraction validation; Gemini Flash is at-or-below Haiku cost at MVP-relevant quality. Rejected.
+- *Always-Opus for the orchestrator.* Orchestrator runs ~20–80 turns per job; per-call cost compounds. Sonnet sufficient for tool dispatch. Rejected.
+- *Per-operation model picks made by the user upfront.* Too much UX complexity for MVP; effort-level overrides cover the cases that matter. Rejected.
+- *Cost-tier as a runtime parameter (cheap mode / quality mode) rather than per-op static.* Black-box quality slider; loses per-op rationale. Rejected.
+- *Use Gemini 2.5 Pro for mid-tier instead of Sonnet.* Sonnet's structured-output and tool-use reliability more proven at session time. Rejected; revisit in v1 with eval data.
+- *Skip cost-transparency UI at MVP.* A-015 says it's MVP scope. Out of scope here.
+
+**Consequences.** Per-job cost is bounded by the table; A-004 per-day cap consumes the telemetry. v1 N-002 router replaces the static dict. Adding a new operation = update ADR-0009 + config + prompt template. Cache hits are highest on Tier-S + embedding ops (content-keyed); Tier-M re-uses on unchanged metadata; Tier-L always re-runs (per-job inputs). The 32B local-tier (v1) replaces only Tier-S calls (and selectively Tier-M); Tier-L stays remote because no ≤32B model meets Opus-class quality reliably as of session time. Single-provider degraded mode routes everything to the available provider with a UX warning.
+
+**Linked items.** ADR-0009, ADR-0007, ADR-0008, D-009, D-013, D-016, D-017, N-001, N-002, N-006, A-004, A-007, A-011, A-015, [`project/tasks/T-1.3.1.5-adr-0009-cost-tiered-model-lineup.md`](../../project/tasks/T-1.3.1.5-adr-0009-cost-tiered-model-lineup.md).
+
+
+
+
+
+
