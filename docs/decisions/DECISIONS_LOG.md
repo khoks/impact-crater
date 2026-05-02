@@ -639,6 +639,38 @@ Per-job MVP cost envelope estimate (rough): $7–22 USD per full-scale job befor
 
 **Linked items.** ADR-0011, ADR-0005, ADR-0006, ADR-0007, ADR-0009, ADR-0010, D-009, D-011, D-013, D-014, D-016, D-017, D-022, A-001, A-005, A-006, A-007, A-011, A-013, A-014, A-015, **N-001** (narrative-arc judgment — Stage 5), **N-008** (face recognition via collage — Stage 3), **N-009** (agentic refinement — Stage 9), [`project/tasks/T-1.3.2.2-adr-0011-curation-engine.md`](../../project/tasks/T-1.3.2.2-adr-0011-curation-engine.md).
 
+---
+
+### D-030 — Music alignment: Madmom for beats + librosa for sections; agentic duration mismatch handling; full A-013 NL section-mapping in MVP (2026-05-02)
+
+**Status:** accepted (formalized in ADR-0012)
+
+**Context.** D-010 fixed two music modes (standard, music-video). D-018 fixed user-supplied music at MVP. A-013 originally classified section-to-media NL mapping as v1; round-2 grooming pulled it into MVP per Q10. Beat-detection accuracy materially affects music-video-mode quality; per Q8 user picked Madmom over librosa. Per Q9 duration mismatch handling is agentic at runtime, not a fixed default.
+
+**Decision.** Audio ingest = ffmpeg-decoded to 22050 Hz mono WAV for analysis. Music structure analysis = Madmom (RNN-based beat + downbeat detection) + librosa (sections via `librosa.segment.agglomerative` + RMS energy curve via `librosa.feature.rms`). `MusicAnalyzer` abstraction makes the libraries swappable; MVP implements `MadmomLibrosaAnalyzer`.
+
+**Beat-grid generation:** default cut every 4 beats (1 bar at 4/4); tempo-adjusted (slow → 2-bar; fast → 2-bar to keep clips reasonable); section-boundary snapping if cut would land within 200ms of boundary; user override via effort-level UX.
+
+**Section-to-media NL mapping (A-013 in MVP):** the user's free-text spec ("intro = scenic, chorus = summit") is a first-class input to Stage 5 (narrative judge, ADR-0011) — passed verbatim alongside brief + music structure to the Tier-L Opus call. No structured-parse stage; the judge handles the prose natively. `ArcJudgment.section_mapping` is the structured output.
+
+**Music duration mismatch handling = agentic at runtime (Q9):** Tier-M `analyze_music_duration_mismatch(music, target_duration) → DurationStrategy` tool call. Strategies: `fade_out`, `loop_with_crossfade`, `truncate_at_section`, `loop_then_truncate`. Orchestrator's reasoning considers section boundaries, loopability, target_duration deviation. Strategy + rationale recorded on snapshot and surfaced via cost-transparency UI.
+
+**Render-time alignment:** standard mode = audio under entire video at -16 LUFS; music-video mode = cuts snap to `CutGrid.cut_points_ms`; two-pass `loudnorm` for YouTube-friendly loudness on both modes.
+
+**Alternatives considered.**
+- *librosa for beat detection only.* Convenient but materially lower accuracy than Madmom for music-video cuts. Rejected per Q8.
+- *BeatNet or other recent beat detector.* Considered as fallback; `MusicAnalyzer` abstraction makes swap trivial. Not chosen at MVP — Madmom's accuracy is well-known and stable.
+- *Fixed default for duration mismatch (always fade-out).* Rejected per Q9 — different combinations want different strategies.
+- *Loop infinitely under long target.* Boring; rejected as default.
+- *Section-to-media NL parsed into structured sections at job creation.* Rejected — Tier-L judge handles prose natively; structured parse is unnecessary intermediate work.
+- *Section-to-media NL deferred to v1 (original A-013 classification).* Rejected per Q10 — full version is one prose field, no architectural debt.
+- *Royalty-free starter pack widening in MVP.* Out of scope; D-018 holds.
+
+**Consequences.** Madmom is heavier dep with C extensions; pre-built wheels exist for common platforms but edge cases may need attention; `MusicAnalyzer` abstraction is insurance against Madmom maintenance friction. librosa section labels are heuristic; user's NL spec grounds placement. `analyze_music_duration_mismatch` joins the orchestrator's tool surface (formalized in ADR-0014 round 3). Section-to-media NL is one extra textarea at job creation, optional. Two-pass loudnorm adds ~10s to render time. **A-013 reclassification (v1 → MVP) recorded as D-031** and propagated into GROOMED_FEATURES.md + MVP.md + RECOMMENDED_ADDITIONS.md by the same round-2 PR.
+
+**Linked items.** ADR-0012, ADR-0007, ADR-0009, ADR-0010, ADR-0011, D-010, D-014, D-018, D-022, A-013, [`project/tasks/T-1.3.2.3-adr-0012-music-alignment.md`](../../project/tasks/T-1.3.2.3-adr-0012-music-alignment.md), [D-031](#d-031) (A-013 v1 → MVP).
+
+
 
 
 
