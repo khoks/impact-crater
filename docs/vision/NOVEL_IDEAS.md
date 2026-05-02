@@ -1,6 +1,6 @@
 # NOVEL_IDEAS.md — Inventions and novel-mechanism log
 
-> **Status: 7 entries filed (N-001..N-007), all from E-1.2 vision grooming round 1 (2026-04-26). All approved by the user for public master commit — no patent-priority hold requested.**
+> **Status: 9 entries filed (N-001..N-009). N-001..N-007 from E-1.2 vision grooming round 1 (2026-04-26); N-008..N-009 from E-1.3 round-2 architecture grooming (2026-05-02). All approved by the user for public master commit — no patent-priority hold requested.**
 >
 > ⚠️ **Public-repo warning.** This repository is public from day 1 (decision D-005). A novel idea committed here is *publicly disclosed* the moment it lands on `master`. If you want to preserve patent options for an idea, **file an N-NNN entry in a feature branch first, talk to counsel, and only then merge the branch to master.** The `knowledge-curator` skill defers to this rule by opening a PR rather than auto-merging.
 
@@ -213,3 +213,84 @@ The cache exposes a **partial-hit semantics**: a job querying a hash gets back t
 **Disclosure trail.** First surfaced 2026-04-26 in E-1.2 vision grooming round 1. Filed as N-cand-G in the round-1 plan. User-approved for public master commit on 2026-04-26.
 
 **Linked items.** A-010, A-011, D-009, D-016.
+
+---
+
+### N-008 — Vision-LLM face recognition via labeled reference collage (2026-05-02)
+
+**Status:** proposed — published on master per user instruction (no patent-priority hold)
+
+**Inventor(s):** Rahul Singh Khokhar
+
+**Background.** Standard face-recognition stacks (FaceNet, InsightFace, DeepFace, dlib's face-recognition) build identity vectors from face crops, then compute embedding distance against a gallery of known faces to identify matches. These stacks require a separate model file, are sensitive to angle/lighting variation in the gallery photos, and don't integrate with the LLM-driven metadata-extraction infrastructure already running in this product per ADR-0007 / ADR-0009.
+
+The natural alternative — "ask the vision LLM 'is this Alice?'" — fails because the vision LLM has no internal model of "Alice"; it's an open-domain visual reasoner, not an identity-database.
+
+**The invention.** Build a per-person library where each person is associated with **N unique face photos** (default N = 5; range 3–10 per the ADR-0010 cap). At face-recognition time, **construct a single labeled reference collage** — a tiled image that grids together the N face photos for each person, with each person's display name overlaid as a label above their strip. Pass this collage as a *second image input* to the vision LLM alongside the photo being analyzed. The LLM is asked, via a structured-output schema, to identify which (if any) of the labeled persons in the reference collage appear in the photo, with per-match confidence scores.
+
+The mechanism leverages the LLM's open-domain visual reasoning to do identity threading without an embedding model. The collage acts as in-context evidence: the LLM sees direct photographic examples of each person from multiple angles/lightings and reasons about identity holistically, the way a human would.
+
+**Why we think it is novel.** "Reference image as in-context grounding for vision-LLM identification" is an emerging pattern in research, but the specific combination here is fresh:
+
+- **Multiple reference photos per person** (collage, not a single canonical photo) — captures intra-person variability the LLM can use for matching robustness.
+- **Labeled collage as a single second-image input** — fits in a single LLM call alongside the analyzed photo; no per-person separate calls.
+- **Structured-output schema with confidence scores** — produces the same shape as embedding-distance recognition does, slot-compatible with downstream pipeline.
+- **Cache-correct integration** — the cache key includes a `library_version_hash` so collage changes invalidate exactly the relevant cached extractions and nothing else; reuses N-007's reuse-class taxonomy.
+- **Zero dependencies beyond the already-running LLM stack** — eliminates an entire class of engineering work (face-recognition library install, model weights, runtime).
+
+What is *not* novel here: the general idea of in-context-learning for identification has appeared in research; what's novel is the specific recipe (labeled collage + structured output + cache-correct integration) for an MVP-class media-curation product.
+
+**Where it lives in the system.** ADR-0010 §"Face detection + person-library recognition." The person library schema is in ADR-0006 (`persons` + `person_face_photos` SQLite tables). The recognition call site is ADR-0011 Stage 3 rich metadata extraction; the collage is constructed once per `library_version_hash` and cached alongside other media-pipeline artifacts.
+
+**Disclosure trail.** First surfaced 2026-05-02 in E-1.3 round-2 grooming as user redirect to Q3 ("vision-LLM only" extended with the optimization idea). User-approved for public master commit on 2026-05-02.
+
+**Linked items.** A-002 (privacy posture — face data flows through the LLM client), D-009 (rich metadata schema gains `recognized_persons` field), ADR-0010 (architectural realization), ADR-0011 (Stage-3 call site), N-007 (cache schema includes library_version_hash).
+
+---
+
+### N-009 — Agentic refinement with custom plan generation (2026-05-02)
+
+**Status:** proposed — published on master per user instruction (no patent-priority hold)
+
+**Inventor(s):** Rahul Singh Khokhar
+
+**Background.** "Refine my output" is a standard pattern in generative-AI products: the user reviews a result, types a natural-language adjustment, and the system tries again. Common implementations:
+
+- **Re-run-with-prompt:** the user's message is appended to the original prompt; the model re-generates from scratch. Wastes any work that didn't need changing; ignores per-stage costs in pipelined systems.
+- **Direct manipulation:** the system exposes structured editing controls (sliders, drag-and-drop) and the user edits the output directly. Avoids re-running but requires the user to do the work themselves; doesn't leverage AI judgment.
+- **Single-stage re-run:** the system re-runs only the stage closest to the output. Cheaper but doesn't help when the refinement requires upstream changes (e.g., re-extracting metadata for items the pre-filter dropped).
+
+None of these match how a thoughtful human collaborator would handle "more landscape, less faces" on a curation pipeline: a person would *think* about what the message implies (do we have landscape photos that got filtered out? do we need to re-extract metadata? is this a placement problem or a selection problem?), pick the cheapest viable approach, and explain their reasoning.
+
+**The invention.** Implement the refinement loop as an **agentic thinking step** that produces a **per-refinement custom plan**. The orchestrator (running on a Tier-M LLM) receives:
+
+- The user's natural-language refinement message.
+- The current state of the pipeline (`ArcJudgment`, `RenderPlan`, `SecondGuessResult` history, the user's brief, target_duration, mode, music spec).
+- The full Stage-3 rich metadata for the entire input set (not just the candidate set — for "more landscape" the orchestrator may want items the pre-filter previously dropped).
+- A toolkit of pipeline tools: `re_run_stage_5_with_addendum`, `re_extract_metadata_for`, `re_run_pre_filter_with_overrides`, `request_user_input`, `explain_why_not_possible`.
+
+The orchestrator's thinking step decides between five strategies:
+
+1. **Partial-fix-via-plan-edit** — re-run Stage 5 with a brief addendum reflecting the user's NL message. Cheapest; reuses Stage 1–4 cache fully.
+2. **Partial-fix-via-stage-3-rerun** — re-extract metadata for items the orchestrator believes are missing relevant info (e.g., "more landscape" might mean re-tagging items the prior extraction missed).
+3. **Full-reprocess** — re-run from Stage 4 onward.
+4. **Request-additional-input** — the refinement requires something the orchestrator can't produce from current inputs (e.g., "use a different music file" → ask the user to upload one).
+5. **Explain-why-not-possible** — some refinements aren't realizable with current media; the orchestrator explains rather than producing a worse result.
+
+The chosen plan is recorded on the new snapshot, the action executes, and a new render is produced. The thinking-step's reasoning is itself logged, surfaced to the user via the cost-transparency UI ("I chose partial-fix-via-plan-edit because the metadata already includes landscape tags; no re-extraction needed").
+
+**Why we think it is novel.** Agentic systems with tool calls are well-established. What is novel here:
+
+- **Refinement as planning, not as parameter-tweak.** The orchestrator chooses *how* to refine, not just *what* parameters to change. This sidesteps the brittleness of fixed refinement protocols.
+- **Tools cover the entire pipeline upstream of the failure point** — the orchestrator can climb back to Stage 3 (re-extract metadata), Stage 4 (re-pre-filter), or Stage 5 (re-judge with addendum) per the cheapest viable strategy. Most products only re-run the last stage.
+- **Cost-aware strategy selection.** The orchestrator's prompt biases toward cheaper strategies (cache-friendly), upgrading only when partial fixes would not work. Cost-envelope ratio: typical refinement costs ~10% of a full job vs a re-run-with-prompt approach.
+- **Per-snapshot persistence of the chosen plan + reasoning** — supports a v1 learning loop where successful refinement strategies inform future thinking-step priors.
+- **Bounded loop with explicit "give up" path.** Max 10 turns; `explain_why_not_possible` is a first-class outcome; prevents the system from churning on contradictory user requests.
+
+The combination of "agentic plan generation over a multi-stage pipeline with cost-aware strategy selection and bounded thinking loop" applied to media curation is, to our knowledge, fresh.
+
+**Where it lives in the system.** ADR-0011 Stage 9. Tools formalized in ADR-0014 (round 3, agent harness). Per-snapshot persistence per ADR-0006 (`snapshots/{id}/refinement_plan.json`).
+
+**Disclosure trail.** First surfaced 2026-05-02 in E-1.3 round-2 grooming as user redirect to Q6 ("a thinking step which will create a new custom plan of either reprocessing the whole thing or to just make changes to the final result using the tools and AI skills at hand"). User-approved for public master commit on 2026-05-02.
+
+**Linked items.** D-009 (curation pipeline shape — N-009 is its refinement substrate), D-011 (job model — refinement creates a new snapshot), D-017 (orchestrator — N-009 lives in the orchestrator's tool-call surface), D-022 (refine offered post-render alongside Approve), A-005 (failure recovery — bounded loop is its own kind of recovery), A-006 (multi-version comparison — refinement chains build the snapshot graph), A-015 (cost-transparency UI — thinking-step reasoning surfaced), ADR-0011 (architectural realization at Stage 9), ADR-0014 (round 3 — orchestrator tool surface).

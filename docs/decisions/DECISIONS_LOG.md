@@ -670,6 +670,33 @@ Per-job MVP cost envelope estimate (rough): $7–22 USD per full-scale job befor
 
 **Linked items.** ADR-0012, ADR-0007, ADR-0009, ADR-0010, ADR-0011, D-010, D-014, D-018, D-022, A-013, [`project/tasks/T-1.3.2.3-adr-0012-music-alignment.md`](../../project/tasks/T-1.3.2.3-adr-0012-music-alignment.md), [D-031](#d-031) (A-013 v1 → MVP).
 
+---
+
+### D-031 — A-013 section-to-media NL mapping reclassified from v1 → MVP (2026-05-02)
+
+**Status:** accepted — scope reclassification (cross-cuts E-1.2 vision grooming and E-1.3 architecture grooming)
+
+**Context.** A-013 (music-video output mode) originally had two phase tags: "MVP basic" (beat alignment of cuts to user-supplied music) plus "v1 add" (the section-to-media natural-language mapping where the user can describe which music sections should come from which media — "chorus = summit footage; bridge = rest stop"). During E-1.3 round-2 architecture grooming (Q10), the user redirected: pull the full version into MVP.
+
+**Decision.** A-013 is **MVP in full**, including section-to-media natural-language mapping. The user's NL spec passes verbatim to the Tier-L Opus narrative judge (per ADR-0012 + ADR-0011 Stage 5); the judge handles the prose natively as one additional input alongside the brief + music structure. No structured-parse stage is required at MVP.
+
+The v1 follow-on for A-013 narrows to: royalty-free music starter pack, licensed-library integration, and *conversational* section adjustments at chat-refine time ("make the bridge feel more contemplative"). The base section-to-media NL mapping is MVP.
+
+**Alternatives considered.**
+- *Keep section-to-media NL mapping at v1 (original A-013 plan).* The simpler MVP version — "music-video sub-mode with basic beat alignment only, no NL section mapping" — would have shipped first; full version arrives in v1. Rejected per Q10: pulling the full version into MVP is one prose field on the project; the Opus-tier judge handles it natively; no architectural debt. The user judged the differentiation worth the slight scope expansion.
+- *Half-version at MVP (free-text "hint" passed to the judge but no first-class `section_mapping` output).* A middle ground from the round-2 proposal. Rejected — the structured `ArcJudgment.section_mapping` field is small and free; doing the half-version saves nothing and makes the v1 step ambiguous.
+- *Reclassify in a follow-up post-E-1.3 cycle.* Rejected — the architectural surface is being pinned now in ADR-0012, so the scope reclassification belongs in this PR for self-consistency.
+
+**Consequences.**
+- `RECOMMENDED_ADDITIONS.md` A-013 entry's status reads "phase MVP (full version)" with a footnote noting the reclassification.
+- `GROOMED_FEATURES.md` Story Video generation theme moves the section-to-media row from v1 to MVP.
+- `MVP.md` adds the section-to-media NL spec to the locked must-do constraint set; the "Out of MVP scope" list drops the corresponding line.
+- ADR-0012 carries the architectural realization (Stage 5 prompt assembly).
+- The user's section-to-media spec is a single optional textarea at job creation. Empty spec = the judge proceeds without it (the original "music-video without NL mapping" flow).
+
+**Linked items.** A-013 (entry updated), ADR-0012, ADR-0011, D-010, D-018, D-030 (the music-alignment ADR's record), [`docs/vision/GROOMED_FEATURES.md`](../vision/GROOMED_FEATURES.md), [`docs/roadmap/MVP.md`](../roadmap/MVP.md), [`project/tasks/T-1.3.2.3-adr-0012-music-alignment.md`](../../project/tasks/T-1.3.2.3-adr-0012-music-alignment.md).
+
+
 
 
 
