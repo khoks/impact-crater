@@ -580,6 +580,34 @@ Per-job MVP cost envelope estimate (rough): $7–22 USD per full-scale job befor
 
 **Linked items.** ADR-0009, ADR-0007, ADR-0008, D-009, D-013, D-016, D-017, N-001, N-002, N-006, A-004, A-007, A-011, A-015, [`project/tasks/T-1.3.1.5-adr-0009-cost-tiered-model-lineup.md`](../../project/tasks/T-1.3.1.5-adr-0009-cost-tiered-model-lineup.md).
 
+---
+
+### D-028 — Media pipeline framework: Pillow + pillow-heif + rawpy + ffmpeg + imagehash + scenedetect + smartcrop.py; person-library face recognition via reference collage (2026-05-02)
+
+**Status:** accepted (formalized in ADR-0010)
+
+**Context.** The deterministic media-handling layer (decoders, perceptual hash, scene segmentation, face detection, smart-crop, render execution) needs concrete library picks. Two MVP-relevant nuances surfaced in round-2 grooming: HEIC/RAW support is required because iPhone is HEIC-default; face *recognition* (not just detection) significantly enriches narrative-arc judgment, and the user proposed a novel approach (N-008) to avoid carrying a separate face-recognition stack.
+
+**Decision.** Photo decode = Pillow + pillow-heif + rawpy; working colorspace at metadata extraction = sRGB; EXIF via pyexiv2. Video decode = ffmpeg via ffmpeg-python; scene-representative frames extracted as PNG, no full re-encode at analysis. Thumbnails = 256 + 1024 px JPEG cached at ingest. Perceptual hash = imagehash (pHash + dHash). Dedup posture = off-by-default with surfaced suggestion. Scene segmentation = scenedetect ContentDetector with 50/video cap. Smart-crop = smartcrop.py with face-bbox bias. Aspect ratios at MVP = 16:9 only (YouTube). Render = in-process ffmpeg, max-1-concurrency at MVP.
+
+**Face recognition (N-008 architectural realization):** vision LLM is the only face stack; person library in SQLite (`persons` + `person_face_photos` tables, default 5 photos/person, 3-10 range); reference collage constructed at recognition time and passed as second image input to `extract_metadata_image`; structured-output schema gains `recognized_persons` field with confidence scores. Cache key includes `library_version_hash` for correct invalidation.
+
+**Worker pool:** asyncio task pool with cpu/ffmpeg/network worker classes; backpressure surfaced via job-progress websocket; cancellation via `JobCancelled` propagation; resume reads snapshot's `plan.json`.
+
+**Alternatives considered.**
+- *Skip HEIC at MVP.* Rejected — iPhone is HEIC-default; manual conversion is hostile UX.
+- *Skip RAW at MVP.* Considered. rawpy adds one dep, unlocks power-user segment. Accepted.
+- *Auto-remove duplicates at ingest.* Rejected — hostile UX.
+- *InsightFace / FaceNet / DeepFace for face recognition.* Rejected — heavy dep, separate model file, doesn't integrate with LLM-driven metadata stage. N-008 collage approach achieves same outcome with zero new dependencies.
+- *GPU-accelerated perceptual hashing.* Premature; CPU is fast enough at MVP scale.
+- *Container-isolated render (Docker sidecar).* Rejected at MVP — packaging burden; revisit at v3 hosted-service.
+- *moviepy / imageio* for video orchestration. Rejected — higher overhead, less encoder control than ffmpeg-python.
+
+**Consequences.** HEIC + RAW deps in the install path (both pip-installable wheels). Person library = UI surface needing design work; SQLite schema locked here. Cache invalidation around library is non-trivial; library_version_hash on cache key keeps it correct. Reference collage bounded to ~20 persons (pagination = v1 enhancement). Scene-count cap (50/video) constrains long-form footage; effort-level UX raises it. Render concurrency (max 1) is conservative; revisit if testing shows render is the bottleneck. Privacy posture (A-002) interactions are formalized in ADR-0016.
+
+**Linked items.** ADR-0010, ADR-0005, ADR-0006, ADR-0007, ADR-0009, D-009, D-012, D-019, A-002, A-005, A-010, A-011, A-015, **N-008** (novel mechanism), [`project/tasks/T-1.3.2.1-adr-0010-media-pipeline.md`](../../project/tasks/T-1.3.2.1-adr-0010-media-pipeline.md).
+
+
 
 
 
