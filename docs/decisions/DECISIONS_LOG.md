@@ -826,6 +826,110 @@ Rate cards = YAML files at `config/rate-cards/{provider}-{model}-{version}.yaml`
 
 **Linked items.** ADR-0016, ADR-0006, ADR-0007, ADR-0008, ADR-0009, ADR-0010, ADR-0011, ADR-0013, ADR-0014, A-002, D-016, **N-002** (operation-aware router future — sibling to N-011), **N-008** (person library), **N-010** (cross-project profile), **N-011** (novel mechanism filed in NOVEL_IDEAS.md), [`project/tasks/T-1.3.3.4-adr-0016-privacy-posture.md`](../../project/tasks/T-1.3.3.4-adr-0016-privacy-posture.md).
 
+---
+
+### D-036 — MVP execution roadmap = 9 milestones M0..M9 (E-2.1..E-2.9 under I-2 MVP); AI-assisted full-time velocity (4-8 weeks calendar) (2026-05-03)
+
+**Status:** accepted
+
+**Context.** E-1.3 closed 2026-05-03 with all 12 architecture ADRs accepted (ADR-0005..0016). The architecture is fully scoped. The next step is execution planning: which work happens when, in what sequence, with what shipping criterion per milestone. This is the E-1.4 work.
+
+**Decision.** Partition MVP into **9 milestones** M0..M9, each mapped 1:1 onto an Epic under a new `I-2 MVP` initiative (E-2.1..E-2.9). Per-milestone shipping criteria documented in `MVP.md`. Effort estimates use the project's standard scale (S<4h, M<1d, L<3d, XL>3d) interpreted as **focused-build session-time**, not calendar time.
+
+**Velocity assumption.** AI-assisted full-time aggressive: the user is PM/EM/Architect; Claude does the build via Anthropic's Max 20x plan. Total session-time estimate ~22-30 days of focused build ≈ **4-8 weeks calendar time** (the lower bound assumes minimal real-world iteration in M9; upper bound assumes meaningful real-world fixes after the first end-to-end run).
+
+**Milestone partition:**
+
+| # | Milestone | Epic | Effort |
+|---|---|---|---|
+| M0 | Scaffolding | E-2.1 | L |
+| M1 | Headless curation through Stage 5 | E-2.2 | XL |
+| M2 | Render + standard mode | E-2.3 | L |
+| M3 | UI MVP loop closed | E-2.4 | XL |
+| M4 | Music-video mode + section-to-media NL | E-2.5 | L |
+| M5 | Person library + privacy panel | E-2.6 | XL |
+| M6 | Agentic refinement + orchestrator second-guess | E-2.7 | XL |
+| M7 | YouTube publish | E-2.8 | L |
+| M8 + M9 | Cross-project profile + polish + D-014 validation | E-2.9 | L (build) + open-ended (validation) |
+
+**Critical-path risks** (5 flagged, with mitigations in MVP.md): LLM provider drift; render perf at MVP scale; person-library UI complexity; cross-project profile derivation quality; Claude session bandwidth.
+
+**Pre-flight criteria for declaring MVP done** (10 checkboxes in MVP.md): headlined by D-014 success-criterion verified end-to-end on a real user dataset.
+
+**Alternatives considered.**
+- *Single-human-dev velocity (~26 weeks).* The historical baseline. Rejected — user-set velocity is AI-assisted full-time per round-1 redirect Q3.
+- *Fewer milestones (e.g., 5).* Coarser milestones lose the demoable shipping-criterion granularity. Rejected — 9 milestones each have a clean demo.
+- *More milestones (e.g., 15+).* Over-fragmentation; per-milestone setup overhead grows. Rejected.
+- *Roll M8 (cross-project profile) into a v1 launch instead of MVP.* Considered. Rejected per D-037 — keep all E-1.3 MVP scope expansions.
+- *Deterministic-only profile derivation deferred to v1; MVP ships without N-010 entirely.* Considered. Rejected — N-010 is the differentiator and the deterministic version is small.
+
+**Consequences.** I-2 MVP initiative + 9 epic shells filed in this PR. Per-epic story / task decomposition happens when each epic opens for work. The PR auto-merges per ADR-0004; M0 (E-2.1 Scaffolding) becomes the first ready epic when E-1.4 closes (round 2 ROADMAP.md still pending). After E-1.4 closes, **the next thing is the first commit of code**.
+
+**Linked items.** D-014 (the validation target), [`docs/roadmap/MVP.md`](../roadmap/MVP.md), [`project/initiatives/I-2-mvp.md`](../../project/initiatives/I-2-mvp.md), [`project/epics/E-2.1-scaffolding.md`](../../project/epics/E-2.1-scaffolding.md) through [`E-2.9`](../../project/epics/E-2.9-cross-project-profile-mvp.md), [`project/tasks/T-1.4.1.1-mvp-md-final-lock.md`](../../project/tasks/T-1.4.1.1-mvp-md-final-lock.md), [`T-1.4.1.2`](../../project/tasks/T-1.4.1.2-create-i2-mvp-initiative-and-epics.md).
+
+---
+
+### D-037 — Keep all E-1.3 MVP scope expansions in MVP — no scope cut for time (2026-05-03)
+
+**Status:** accepted
+
+**Context.** E-1.3 expanded the MVP scope meaningfully:
+
+- **N-008** person-library + reference-collage face recognition (round 2)
+- **N-009** agentic refinement with custom plan generation (round 2)
+- **N-010** cross-project user profile + agentic learning loop (round 3, MVP minimum-viable shape)
+- **N-011** privacy-sensitive operation routing (round 3, architectural hook only at MVP)
+- **A-013** section-to-media NL mapping reclassified v1 → MVP via D-031 (round 2)
+
+E-1.4 round 1 needs to ratify or trim this expanded scope before sequencing. Cutting any item saves ~3-4 weeks of focused build per item.
+
+**Decision.** **Keep all of N-008 + N-009 + N-010 + N-011 + A-013 in MVP.** No scope cut for time. The differentiation is in the novel mechanisms; cutting them produces a generic v0 that doesn't differentiate from existing AI-driven media-curation tools.
+
+**Specific MVP-shape clarifications:**
+- N-008 ships in full MVP form (per-person 5 face photos default; reference-collage construction; recognition with confidence scores; cache-correct integration).
+- N-009 ships in full MVP form (5-strategy thinking step; bounded 10-turn loop; cost-aware bias; per-snapshot persistence).
+- N-010 ships **minimum-viable**: feedback log capture + deterministic frequency-based profile derivation. The LLM-driven re-derivation per ADR-0014 is **deferred to post-launch**, when there's enough feedback log data to validate it adds value over the deterministic version.
+- N-011 ships **architectural hook only**: routing-config schema with per-operation `privacy_class` + per-provider `eligibility_for_class` + graceful-degradation path. The actual local-LLM destination is v1 work per ADR-0008; MVP just lands the routing infra so v1 ships the feature with zero code changes.
+- A-013 ships in full MVP form (free-text NL spec passed verbatim to Stage 5; the Tier-L Opus judge handles prose natively).
+
+**Alternatives considered.**
+- *Cut N-008 (person library) to ship faster.* Saves ~3 weeks. Rejected — narrative judgment without per-person identity is meaningfully weaker; "make a video about my family vacation" loses its primary signal.
+- *Cut N-009 (agentic refinement) to ship faster.* Saves ~3 weeks (refinement becomes simple Stage-5-rerun). Rejected — refinement UX is product-defining; the agentic version is genuinely better.
+- *Cut N-010 (cross-project profile) to ship faster.* Saves ~2 weeks (no profile substrate at all). Rejected — the cross-project learning is the long-term differentiator; even the deterministic minimum-viable version starts capturing data immediately for v1's LLM-driven derivation.
+- *Cut N-011 (privacy-routing) to ship faster.* Saves <1 week (the routing infra is small). Rejected — N-011 is mostly "schema fields + graceful-degradation path," tiny relative to the privacy story.
+- *Cut A-013 (section-to-media NL) to ship faster.* Saves nothing (it's one prose field passed to Stage 5). Already-pulled into MVP per D-031.
+
+**Consequences.** MVP timeline 4-8 weeks under AI-assisted velocity per D-036. The differentiated v0 is the product the user is willing to publish to their own YouTube channel — that's the test. v1 builds on the substrate this MVP creates (local-LLM, multi-platform, live-job, reference-media style, full N-010 LLM-driven re-derivation).
+
+**Linked items.** D-036 (the milestone partition), N-008, N-009, N-010, N-011, A-013, D-031 (A-013 reclassification), ADR-0008 (local-LLM v1 work that completes N-011), ADR-0014 (full N-010 LLM-driven re-derivation deferred to post-launch).
+
+---
+
+### D-038 — Code-organization sequencing: vertical-slice-early + backend-before-frontend-per-milestone + inline-tests (2026-05-03)
+
+**Status:** accepted
+
+**Context.** With the 9-milestone partition locked (D-036) and the full MVP scope kept (D-037), how should the actual code work be organized within and across milestones?
+
+**Decision.** Three sequencing principles:
+
+1. **Vertical-slice-early.** M1 (headless curation through Stage 5) is end-to-end through the LLM stack + pipeline + telemetry + worker pool **before any UI investment**. This validates the entire stack works (provider auth, routing, telemetry, worker pool, cache, structured-output schemas) on a small test set before committing to UI build-out. If a Stage 5 fails to produce a coherent ArcJudgment from a test set, the issue is found and fixed before UI work compounds the rework cost.
+
+2. **Backend-before-frontend per milestone.** Within each milestone (M3 onward, where UI work is part of the deliverable), API endpoints + tool implementations land first; React components consume the shaped APIs second. The orchestrator's tool surface drives the API shape; the UI is a thin layer over the shaped APIs. Avoids the anti-pattern where UI design constrains the API shape into something awkward.
+
+3. **Inline tests, not after.** `pytest` + `pytest-asyncio` + `pytest-mock` for backend; `vitest` + `@testing-library/react` for frontend. Tests land alongside the code they cover, not in a "tests later" sweep. Coverage growth tracks feature growth.
+
+**Alternatives considered.**
+- *UI-first / design-driven.* Build the UI first to validate the user experience, then back-fill the implementation. Rejected — for an MVP where the LLM stack is the riskiest piece, validating it first is more important than validating UX (which can be iterated post-launch).
+- *Horizontal-slice (build all backend, then all frontend, then integrate).* Rejected — too much integration risk at the end; vertical slices catch integration issues per milestone.
+- *Tests later.* Rejected — bad practice; the project's coding standards (CLAUDE.md) already imply "tests with code."
+- *No tests until M9 polish.* Rejected — same as above.
+
+**Consequences.** M1 + M2 produce a headless usable system before M3 starts UI build. Each later milestone (M3, M4, M5, M6, M7, M8) follows backend-then-frontend within itself. Test infrastructure lands in M0 (`pytest` + `vitest` configs); per-feature test coverage grows from M1 onward.
+
+**Linked items.** D-036 (the milestone partition this sequences within), [`docs/roadmap/MVP.md`](../roadmap/MVP.md) §"Milestones" (the canonical milestone list), [`project/epics/E-2.1-scaffolding.md`](../../project/epics/E-2.1-scaffolding.md) (M0 sets up the test infra).
+
+
 
 
 

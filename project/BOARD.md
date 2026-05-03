@@ -1,6 +1,6 @@
 # Board
 
-> **Last updated:** 2026-05-03 — **E-1.3 closed.** All 12 architecture ADRs accepted (ADR-0005..0016 + D-023..D-035; 4 more novel mechanisms filed bringing the total to N-001..N-011). ARCHITECTURE.md placeholder-free. **E-1.4 (roadmap + MVP final lock) is now Up Next.** Closing E-1.4 closes I-1 and exits the scaffolding phase.
+> **Last updated:** 2026-05-03 — E-1.4 round 1 closed. MVP.md locked placeholder-free with 9-milestone partition + AI-velocity recalibration + 5 critical-path risks + 10 pre-flight criteria. I-2 MVP initiative + 9 epic shells (E-2.1..E-2.9) created. D-036 + D-037 + D-038 filed. **E-1.4 stays in-progress for round 2 (ROADMAP.md final lock with v1/v2/v3 sequencing).** When E-1.4 closes, I-2 promotes to in-progress and E-2.1 (Scaffolding M0) becomes the first ready epic = first commit of code.
 > **How to read this:** Hand-maintained mirror of frontmatter `status:` values. The `work-tracker` skill refreshes this file at end-of-session. If you see drift, re-derive from `grep -l "status:" project/{initiatives,epics,stories,tasks}/*.md`.
 
 ---
@@ -10,21 +10,37 @@
 | ID | Title | Type | Priority | Phase |
 |---|---|---|---|---|
 | [I-1](./initiatives/I-1-project-foundation.md) | Project foundation | Initiative | P0 | scaffolding |
+| [E-1.4](./epics/E-1.4-roadmap-and-mvp-scoping.md) | Roadmap and MVP scoping | Epic | P1 | scaffolding |
 
 ## Up Next (Ready)
 
 | ID | Title | Type | Priority | Phase | Blocked by |
 |---|---|---|---|---|---|
-| [E-1.4](./epics/E-1.4-roadmap-and-mvp-scoping.md) | Roadmap and MVP scoping | Epic | P1 | scaffolding | — (E-1.3 done) |
+| (round 2 of E-1.4) | ROADMAP.md final lock — v1 / v2 / v3 sequencing | Story (TBC) | P1 | scaffolding | — (round 1 done) |
 
-## Backlog (scaffolding-phase, queued)
+## Backlog (mvp-phase, queued)
 
-(empty — E-1.4 promoted to Up Next now that E-1.3 is closing in this round.)
+The MVP work container is the new [I-2 MVP](./initiatives/I-2-mvp.md) initiative with 9 epic shells (one per milestone M0..M9). Promotes to Up Next when E-1.4 closes (round 2 ROADMAP.md still pending).
+
+| ID | Title | Type | Priority | Phase | Blocked by |
+|---|---|---|---|---|---|
+| [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | Initiative | P0 | mvp | E-1.4 done |
+| [E-2.1](./epics/E-2.1-scaffolding.md) | Scaffolding (M0) | Epic | P0 | mvp | I-2 promoted |
+| [E-2.2](./epics/E-2.2-headless-curation-through-stage-5.md) | Headless curation through Stage 5 (M1) | Epic | P0 | mvp | E-2.1 |
+| [E-2.3](./epics/E-2.3-render-and-standard-mode.md) | Render + standard mode (M2) | Epic | P0 | mvp | E-2.2 |
+| [E-2.4](./epics/E-2.4-ui-mvp-loop-closed.md) | UI MVP loop closed (M3) | Epic | P0 | mvp | E-2.3 |
+| [E-2.5](./epics/E-2.5-music-video-mode-and-section-to-media-nl.md) | Music-video mode + section-to-media NL (M4) | Epic | P0 | mvp | E-2.4 |
+| [E-2.6](./epics/E-2.6-person-library-and-privacy-panel.md) | Person library + privacy panel (M5) | Epic | P0 | mvp | E-2.4 |
+| [E-2.7](./epics/E-2.7-agentic-refinement-and-second-guess.md) | Agentic refinement + second-guess (M6) | Epic | P0 | mvp | E-2.4 + E-2.6 |
+| [E-2.8](./epics/E-2.8-youtube-publish.md) | YouTube publish (M7) | Epic | P0 | mvp | E-2.3 + E-2.4 |
+| [E-2.9](./epics/E-2.9-cross-project-profile-mvp.md) | Cross-project profile + polish + D-014 validation (M8 + M9) | Epic | P0 | mvp | E-2.1..E-2.8 |
 
 ## Recently Done (last session)
 
 | ID | Title | Type | Done |
 |---|---|---|---|
+| [S-1.4.1](./stories/S-1.4.1-mvp-execution-roadmap.md) | MVP execution roadmap (round 1 of E-1.4) | Story | 2026-05-03 |
+| [T-1.4.1.1..3](./tasks/) | E-1.4 round-1 tasks (MVP.md lock + I-2 + 9 epics + D-036/037/038) | Tasks | 2026-05-03 |
 | [E-1.3](./epics/E-1.3-architecture-grooming.md) | Architecture grooming | Epic | 2026-05-03 |
 | [S-1.3.3](./stories/S-1.3.3-architecture-grooming-round-3.md) | Architecture grooming — round 3: connectors + harness + cross-cutting | Story | 2026-05-03 |
 | [T-1.3.3.1..4](./tasks/) | E-1.3 round-3 tasks (ADR-0013..0016) | Tasks | 2026-05-03 |
@@ -42,3 +58,4 @@
 | ID | Title | Status | Phase |
 |---|---|---|---|
 | [I-1](./initiatives/I-1-project-foundation.md) | Project foundation | in-progress | scaffolding |
+| [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | backlog | mvp |

@@ -1,6 +1,6 @@
 # MVP.md — Impact Crater MVP scope
 
-> **Status: product scope locked (E-1.2); architecture locked (E-1.3 closed 2026-05-03 — all 12 ADRs ADR-0005..0016 accepted, D-023..D-035 filed, 4 novel mechanisms added since round 1 took the count to 11 total: N-008 person-library face recognition, N-009 agentic refinement, N-010 cross-project user profile, N-011 privacy-sensitive operation routing).** D-022 redirected the refine-loop UX (post-render Approve / Refine pair); D-031 pulled section-to-media NL mapping into MVP. **E-1.4 (full roadmap lock with effort estimates) is the next thing on the board.** The MVP scope below reflects what is locked.
+> **Status: MVP scope LOCKED (E-1.4 round 1 closed 2026-05-03).** Product scope locked in E-1.2 (D-006..D-022). Architecture locked in E-1.3 (ADR-0005..0016 / D-023..D-035; 11 novel mechanisms N-001..N-011). Execution roadmap locked in E-1.4 round 1 (9 milestones M0..M9 = E-2.1..E-2.9 under new I-2 MVP; D-036 milestone partition + AI-assisted velocity; D-037 keep all E-1.3 expansions; D-038 code-org sequencing). Velocity = AI-assisted full-time aggressive (user is PM/EM/Architect, Claude does the build via Max 20x plan); estimated calendar 4-8 weeks. **E-1.4 round 2 (ROADMAP.md final lock with v1 / v2 / v3 sequencing) is the next thing on the board after this.**
 
 The MVP is the **single thinnest end-to-end slice** that proves the core loop: *user uploads media → AI curates → user reviews preview → user approves publish*. Everything beyond that thinnest slice goes to v1 or later.
 
@@ -62,27 +62,54 @@ The full feature catalog with phase tags lives in [`GROOMED_FEATURES.md`](../vis
 
 ---
 
-## Open questions remaining (move to E-1.3 / E-1.4)
+## Milestones (M0 → M9)
 
-These are the original eight MVP open questions, with status:
+The MVP execution path is partitioned into **9 milestones**, each mapped 1:1 onto an Epic under the new `I-2 MVP` initiative. Each milestone has a **demoable shipping criterion** (the test that says "this milestone is done"). Effort estimates use the project's standard scale (`S<4h`, `M<1d`, `L<3d`, `XL>3d`) interpreted as **focused-build session-time, not calendar time**, under AI-assisted full-time velocity.
 
-| # | Question | Status | Goes to |
-|---|---|---|---|
-| 1 | Which single artifact type is the MVP critical path? | **Locked** — Story Video (D-006, D-015) | — |
-| 2 | Which single platform is the first connector? | **Locked** — YouTube (D-007) | — |
-| 3 | Local-first or remote-first routing default? | **Locked** — remote-first (D-016) | — |
-| 4 | Which vision-LLM(s) at the MVP capability tier? | **Open** | E-1.3 (architecture grooming, ADR) |
-| 5 | Which video / photo processing engine does rendering use? | **Open** | E-1.3 (architecture grooming, ADR) |
-| 6 | Storage layout — directories on disk, rows in a DB, or both? | **Open** | E-1.3 (architecture grooming, ADR) |
-| 7 | How many photos / how long a video must the MVP handle? | **Locked** — 1000 photos + 50 videos / 2–5 hr (D-012) | — |
-| 8 | MVP success criterion (concrete, testable)? | **Locked** — D-014 verbatim above | — |
+| # | Milestone | Epic | Shipping criterion (the demo) | Effort | Key ADRs / N-NNNs |
+|---|---|---|---|---|---|
+| **M0** | Scaffolding | [E-2.1](../../project/epics/E-2.1-scaffolding.md) | `pip install impact-crater` works on Windows + macOS + Linux; `impact-crater` CLI starts FastAPI on `localhost`; React shell loads; first-time-setup wizard collects API keys + dual-cap spend caps + Fernet key generation; SQLite schema initializes; the empty app boots cleanly | L | ADR-0005, ADR-0006, ADR-0015 |
+| **M1** | Headless curation through Stage 5 | [E-2.2](../../project/epics/E-2.2-headless-curation-through-stage-5.md) | Feed a test set + brief + target_duration via API; get a structured `ArcJudgment` JSON back. `LLMClient` + AnthropicLLMClient + GoogleLLMClient + LLMRouter + telemetry stream + `JobCostSummary` + worker pool all wired up. Pipeline Stages 1–5 working end-to-end **without UI** | XL | ADR-0007, ADR-0009, ADR-0010, ADR-0011, ADR-0015, N-001 |
+| **M2** | Render + standard mode | [E-2.3](../../project/epics/E-2.3-render-and-standard-mode.md) | Feed test set + brief + audio + target_duration; get a rendered Story Video MP4 back at YouTube-friendly defaults. Standard music mode (no music-video sync yet, no second-guess yet) | L | ADR-0010, ADR-0012 |
+| **M3** | UI MVP loop closed (no YouTube) | [E-2.4](../../project/epics/E-2.4-ui-mvp-loop-closed.md) | User drags media into the React UI, types a brief, picks effort level, sees in-job progress + cost live spend, gets a preview Story Video. Approve / Refine UI buttons present (Approve does nothing yet — no connector; Refine deferred to M6) | XL | ADR-0005, ADR-0011, ADR-0014, ADR-0015 |
+| **M4** | Music-video mode + section-to-media NL | [E-2.5](../../project/epics/E-2.5-music-video-mode-and-section-to-media-nl.md) | Madmom + librosa pipeline produces beats + sections + energy curve; tempo-aware beat-grid generated; user's NL section spec ("intro = scenic, chorus = summit") passed to Stage 5; cuts snap to beats in music-video mode | L | ADR-0012, A-013, D-031 |
+| **M5** | Person library + face recognition + privacy panel | [E-2.6](../../project/epics/E-2.6-person-library-and-privacy-panel.md) | User adds 3 family members via the face-photo-cropper UI (5 photos each); reference collage builds; **N-008 recognition integrated in Stage 3** with `recognized_persons` field populated in metadata; privacy panel UI live with three toggles + interaction matrix; EXIF/GPS strip + face-blur paths working; **N-011 routing-config schema in place** | XL | ADR-0010, ADR-0016, N-008, N-011 |
+| **M6** | Agentic refinement + orchestrator second-guess | [E-2.7](../../project/epics/E-2.7-agentic-refinement-and-second-guess.md) | Stage 9 thinking-step loop with 5 strategies running on Tier-M Sonnet; Stage 6 second-guess proposes overrides via `SecondGuessResult`; user Apply/Skip/Modify-with-NL UI surfaces overrides before render; snapshot chain via `parent.txt` per N-003 | XL | ADR-0011, ADR-0014, N-009 |
+| **M7** | YouTube publish | [E-2.8](../../project/epics/E-2.8-youtube-publish.md) | OAuth via local-loopback callback works; resumable `videos.insert` (256 MB chunks) uploads a real video to a real YouTube account; publish UI with visibility selector defaulting to public; Approve gate; audit-log writer writes a real entry; **full end-to-end demo: drop photos → curate → preview → approve → published video URL** | L | ADR-0013, A-003 |
+| **M8** | Cross-project user profile (N-010 minimum-viable) | [E-2.9](../../project/epics/E-2.9-cross-project-profile-mvp.md) | Feedback log writer hooked into all event sources (approve / refine / second-guess decisions / pre-filter overrides / publish); profile schema persisted at `~/.impact-crater/profile/profile.json`; **deterministic frequency-based derivation at MVP** (LLM-driven re-derivation deferred to post-launch); profile-driven suggestions surface on second-and-later job creation ("based on your past trips, you usually want ~90s videos"); profile reset UI works | L | ADR-0014, N-010 |
+| **M9** | Polish + D-014 success-criterion validation | (rolled into E-2.9 acceptance criteria) | Bug fixes + edge-case handling; **the user runs a real 1000-photo + 50-video job from one of their own trips and validates the 2–5 hour ceiling holds, gets a publish-ready Story Video on YouTube within the budget**; documentation polish (README install + first-time-setup walkthrough) | L (build) + open-ended (real-world iteration) | All MVP ADRs |
 
-E-1.3 will produce the ADRs that close Q4, Q5, Q6. E-1.4 will turn the locked + closed answers into a sequenced milestone plan with effort estimates per Story.
+**Total session-time estimate: ~22–30 days of focused build work** ≈ **4–8 weeks calendar time** at AI-assisted full-time velocity (the lower bound assumes minimal real-world iteration in M9; the upper bound assumes meaningful real-world fixes after M9 begins).
+
+The full feature catalog with phase tags lives in [`GROOMED_FEATURES.md`](../vision/GROOMED_FEATURES.md). Per-epic story / task decomposition happens when each epic opens for work.
 
 ---
 
-## Until the remaining questions close
+## Critical-path risks
 
-Anything that depends on Q4, Q5, or Q6 (e.g., specific provider integration code, render-engine bindings, persistence schema) **does not start** until the relevant ADR lands. Work-tracker filings for such Stories should set `phase: scaffolding` or be blocked by E-1.3.
+Five risks are flagged as MVP-critical:
 
-Anything that is in the locked MVP scope above and *doesn't* depend on Q4/Q5/Q6 (e.g., the four-level work hierarchy itself, governance ADRs, this document) can proceed.
+| # | Risk | Mitigation |
+|---|---|---|
+| 1 | **LLM provider drift during the 4–8 week build window.** Anthropic / Google may change rate cards, deprecate models, or change API surfaces | Pin model versions per ADR-0009 `model_version`; cache invalidation handles model bumps cleanly per N-007; rate cards versioned per `effective_date` per ADR-0015 |
+| 2 | **Render performance at MVP scale.** 1000 photos + 50 videos in 2–5 hours requires aggressive worker-pool parallelism | Profile early at M2; tunable concurrency via ADR-0010 worker classes (`cpu` / `ffmpeg` / `network`); effort-level UX (D-013) gives users a way to scope down if their hardware can't hit the ceiling |
+| 3 | **Person-library UI complexity (M5).** N-008 is the most novel + UI-intensive piece — face-photo cropper + library management + recognition-confidence-review surface | M5 has the longest single-milestone budget (XL). UI iteration may need extra sessions. The person library is **opt-in** at MVP, so users can ship a Story Video without ever touching it |
+| 4 | **Cross-project profile derivation quality (M8).** N-010 is genuinely speculative — does the derived profile actually improve user experience? | M8's deterministic frequency-based derivation is the safe path (no hallucination). LLM-driven re-derivation deferred to post-launch when there's enough feedback log data to validate. Profile reset is a one-click escape hatch if the system suggests bad things |
+| 5 | **Claude session bandwidth.** Even with Max 20x, complex sessions can hit context limits or the user's bandwidth | Per-milestone scope is bite-sized (each M is ~1–5 sessions); intermediate commits + branches per milestone; per-milestone PRs auto-merge so master always has the latest stable state; user can resume across sessions |
+
+---
+
+## Pre-flight criteria (declaring MVP done)
+
+I-2 closes — and we exit the MVP phase — when **all** of the following are true:
+
+- [ ] All 9 milestones (E-2.1..E-2.9) closed.
+- [ ] **D-014 success criterion verified end-to-end on at least one real user dataset** — the user runs a 1000-photo + 50-video job from one of their own trips, the 2–5 hour ceiling holds, the result is publish-ready, and the user clicks Approve and Publish to a real YouTube account.
+- [ ] No critical-bug-class regressions in the curation pipeline (Stages 1–9 all working).
+- [ ] Cost-transparency UI shows real numbers under the configured spend caps; both total + per-provider cap enforcement tested.
+- [ ] Privacy panel exposes the three toggles correctly with the documented interaction matrix from ADR-0016.
+- [ ] YouTube upload flow tested end-to-end on the user's real YouTube account; audit-log entry written; visibility selector tested for all three values (private / unlisted / public).
+- [ ] Person library + N-008 recognition tested with at least 3 real persons and at least 50 photos containing them.
+- [ ] Refine loop (Stage 9 N-009) tested with at least one real refinement that produces a meaningfully different result.
+- [ ] First-time-setup wizard tested as a fresh-install user (delete `~/.impact-crater/`, re-install, walk through wizard, run a job).
+- [ ] README install walkthrough tested by a fresh-eyes reader (could be the user re-reading after a week away).
