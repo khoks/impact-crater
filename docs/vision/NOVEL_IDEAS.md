@@ -1,6 +1,6 @@
 # NOVEL_IDEAS.md — Inventions and novel-mechanism log
 
-> **Status: 9 entries filed (N-001..N-009). N-001..N-007 from E-1.2 vision grooming round 1 (2026-04-26); N-008..N-009 from E-1.3 round-2 architecture grooming (2026-05-02). All approved by the user for public master commit — no patent-priority hold requested.**
+> **Status: 11 entries filed (N-001..N-011). N-001..N-007 from E-1.2 vision grooming round 1 (2026-04-26); N-008..N-009 from E-1.3 round-2 architecture grooming (2026-05-02); N-010..N-011 from E-1.3 round-3 architecture grooming (2026-05-03). All approved by the user for public master commit — no patent-priority hold requested.**
 >
 > ⚠️ **Public-repo warning.** This repository is public from day 1 (decision D-005). A novel idea committed here is *publicly disclosed* the moment it lands on `master`. If you want to preserve patent options for an idea, **file an N-NNN entry in a feature branch first, talk to counsel, and only then merge the branch to master.** The `knowledge-curator` skill defers to this rule by opening a PR rather than auto-merging.
 
@@ -294,3 +294,83 @@ The combination of "agentic plan generation over a multi-stage pipeline with cos
 **Disclosure trail.** First surfaced 2026-05-02 in E-1.3 round-2 grooming as user redirect to Q6 ("a thinking step which will create a new custom plan of either reprocessing the whole thing or to just make changes to the final result using the tools and AI skills at hand"). User-approved for public master commit on 2026-05-02.
 
 **Linked items.** D-009 (curation pipeline shape — N-009 is its refinement substrate), D-011 (job model — refinement creates a new snapshot), D-017 (orchestrator — N-009 lives in the orchestrator's tool-call surface), D-022 (refine offered post-render alongside Approve), A-005 (failure recovery — bounded loop is its own kind of recovery), A-006 (multi-version comparison — refinement chains build the snapshot graph), A-015 (cost-transparency UI — thinking-step reasoning surfaced), ADR-0011 (architectural realization at Stage 9), ADR-0014 (round 3 — orchestrator tool surface).
+
+---
+
+### N-010 — Cross-project user profile + agentic learning loop for media curation (2026-05-03)
+
+**Status:** proposed — published on master per user instruction (no patent-priority hold)
+
+**Inventor(s):** Rahul Singh Khokhar
+
+**Background.** Most AI-driven creator tools (image editors, music generators, video editors, narrative generators) treat each user session as **stateless**: every prompt starts from zero, with no memory of what the user has tried before, what they accepted, what they rejected, or what their stylistic tendencies are. The user re-explains their intent every time. Tools that *do* persist preferences typically do so as a flat settings panel (e.g., "default video duration: 90 seconds") rather than as a learned model of the user's behavior across sessions.
+
+In agentic systems specifically, the orchestrator's own decisions — which tool to call, which override to surface, which refinement strategy to choose — are also stateless across sessions. The orchestrator can be cleverly designed but never learns from its mistakes; the same wrong choice gets made the next time the same situation arises.
+
+**The invention.** Build a **persistent, cross-project user profile** that the orchestrator reads from and writes to throughout the user's lifetime use of the product. The profile is **derived from a feedback log** (an append-only event stream of user actions: approve / refine / second-guess-accepted / second-guess-rejected / refinement-succeeded / refinement-failed / pre-filter-overridden / etc.) via periodic LLM-driven re-derivation. The derived profile contains:
+
+- **Style preferences** (preferred target durations, mode bias, music tempo bands, cut pacing, brief motifs, landscape-vs-people bias).
+- **Orchestrator priors** (per-override-type acceptance rates, per-refinement-strategy success rates, typical user overrides of system defaults).
+- **Narrative patterns** (common arc shapes, preferred openers/closers, recurring music section-to-media mappings).
+
+The profile is read at six call sites in the curation pipeline:
+
+1. **Job creation** — pre-fill suggestions ("based on your past trips, you usually want ~90s videos with energetic music").
+2. **Brief parsing** — in-context priors for `parse_user_brief`.
+3. **Pre-filter (Stage 4)** — apply learned quality-floor overrides.
+4. **Narrative-arc judgment (Stage 5)** — pass narrative patterns as structured context to the Tier-L Opus judge.
+5. **Orchestrator second-guess (Stage 6)** — shift the confidence threshold for surfacing overrides based on per-type acceptance rates.
+6. **Agentic refinement (Stage 9)** — bias the strategy choice in the thinking step toward historically-successful strategies.
+
+The combination is an **agentic learning loop**: the orchestrator's decisions are tracked, rated by the user's response (approve = success, refine = partial success, reject-override = mistake), and converted into priors that influence future decisions on the same dimensions. No model fine-tuning required; learning happens via in-context conditioning with derived priors.
+
+**Why we think it is novel.** Agentic systems with persistent state are not novel in general (e.g., research agents with vector-store memory, RAG-style retrieval). What is novel here:
+
+- **Cross-*project* learning specifically for media curation.** The unit of state is the user's curation history across many distinct media collections, not a single conversation thread or a single document. Each project has its own brief / scale / target duration / mode, but the user's *preferences over how curation should happen* persist across these.
+- **Profile schema designed for a multi-stage pipeline.** Different fields feed different stages (motifs → brief parsing; quality-floor → pre-filter; narrative patterns → arc judgment; second-guess priors → orchestrator behavior). Each stage's prompt template includes only the relevant slice — the profile is not a giant context dump.
+- **LLM-driven re-derivation as the learning mechanism.** Rather than fine-tuning or RLHF, the profile is **re-derived from a feedback log** by a Tier-M LLM call after every job-end. Cost is ~$0.005/job; the derivation is structured (frequencies, success rates, motif extraction) rather than free-form summarization.
+- **Six distinct read sites, each with stage-appropriate slicing.** Most agentic-memory systems use a single retrieval call; this design integrates profile reads at the right cadence for each pipeline stage.
+- **Bounded re-derivation cadence** (incremental every N=10 events, full every N=100) with rotation-friendly schema. Keeps cost predictable and prevents profile drift.
+- **One-click reset** as a first-class privacy + UX feature. Users who want a fresh start can wipe the profile + feedback log without affecting projects, snapshots, or person libraries.
+
+The combination — *cross-project profile + LLM-driven re-derivation from a structured feedback log + multi-stage pipeline integration + bounded re-derivation cadence + first-class reset* — applied to a self-hosted media-curation product is, to our knowledge, fresh.
+
+**Where it lives in the system.** [`docs/architecture/ADR-0014-agent-harness-topology.md`](../architecture/ADR-0014-agent-harness-topology.md) §"Cross-project user profile (N-010)." Profile substrate at `~/.impact-crater/profile/profile.json` + `~/.impact-crater/profile/feedback_log.jsonl`. Schema documented in ADR-0014. Re-derivation is a Tier-M call (per ADR-0009 routing). Privacy posture for the profile is in [`docs/architecture/ADR-0016-privacy-posture-defaults.md`](../architecture/ADR-0016-privacy-posture-defaults.md) §"Profile + feedback log privacy."
+
+**Disclosure trail.** First surfaced 2026-05-03 in E-1.3 round-3 grooming as user redirect to Q4 ("we can learn from the chat memories across projects, and build a user profile over time which can help the impact crater suggest ideas to the user itself during new project creations, or also help impact crater to learn from its mistakes the next time around"). User-approved for public master commit on 2026-05-03.
+
+**Linked items.** D-017 (orchestrator), D-022 (refine post-render — feedback events captured here), A-005 (failure recovery — feedback log includes job-cancelled events), A-015 (cost-transparency UI — profile re-derivation cost surfaced), N-009 (agentic refinement — its strategy choice now reads profile priors), ADR-0014 (architectural realization), ADR-0016 (privacy posture for profile data).
+
+---
+
+### N-011 — Privacy-sensitive operation routing (face-data routes to local LLM only when blur-faces is ON) (2026-05-03)
+
+**Status:** proposed — published on master per user instruction (no patent-priority hold)
+
+**Inventor(s):** Rahul Singh Khokhar
+
+**Background.** Hybrid local-and-remote LLM systems route per-call between the local runtime and a remote API based on **cost** and **capacity**: cheap operations go local, heavy or capacity-blocked operations go remote. This is N-002's frame (operation-aware router for cost optimization). Industry implementations (e.g., LangChain routers, Continue's local-first mode) follow the same cost/capacity logic.
+
+**Privacy** as the routing trigger has not, to our knowledge, been packaged as a primary mechanism. The pattern is closer in nature to data-residency policies in enterprise software (route data of class X through region Y) than to cost-optimizing LLM routing.
+
+**The invention.** Make the **per-data-sensitivity** routing decision a first-class mechanism in the LLM router. Each operation declares a `privacy_class` (e.g., `face_data`, `visual_only`, `derived_metadata`, `text_only`). Each provider declares a `eligibility_for_class` set (which classes it's allowed to handle, declared by the user as policy). When the user's privacy posture changes (e.g., toggles "blur faces" ON), the router dynamically removes remote providers from the eligibility set for the affected class (`face_data` becomes local-LLM-only). If a local provider exists and is eligible, the operation routes there with the unblurred image. If no local provider is available, the operation **degrades gracefully** — the call site has a defined "skipped operation" path that produces a degraded but non-broken result, and the UI surfaces the consequence to the user.
+
+The system is built **plug-and-play in the architecture from MVP** even when the local LLM itself is a v1 deliverable: the routing config has the hooks; the providers' eligibility map is declared; the degradation path is implemented. v1's local-LLM runtime drops in without any code changes for the privacy-routing feature to become functional.
+
+**Why we think it is novel.** Per-cost routing exists. Per-capacity routing exists. **Per-privacy-class routing as a first-class mechanism in an LLM router** — with declarative per-operation privacy classes, per-provider eligibility sets, and a documented graceful-degradation path for skipped operations — is fresh.
+
+Specific novel ingredients:
+
+- **Per-operation `privacy_class` annotation** in the routing config. Operations are tagged with what kind of sensitive data they handle, not just their cost tier.
+- **Per-provider `eligibility_for_class` declaration.** The user's privacy posture filters this dynamically; the static config gets pruned at runtime.
+- **Graceful degradation** when no eligible provider exists — the call site has a `skipped` mode that produces a degraded result (e.g., metadata extraction without `recognized_persons`), and downstream stages handle missing fields. Most routing systems either error out or fall back silently to a less-suited provider; the explicit-skip-with-degradation is intentional.
+- **Plug-and-play hook design.** The MVP architecture is correct without the local-LLM runtime; v1 drops in the runtime and the privacy-routing feature becomes functional with zero code changes.
+- **Combination with the user-toggle-driven dynamic eligibility** (rather than static deployment-time policy). Users can flip "blur faces ON" mid-session; the router consults the current posture on each call.
+
+The mechanism complements (does not replace) N-002's cost-optimizing operation-aware router; both will share router infrastructure in v1. N-011 is the **policy** axis (privacy → eligibility), N-002 is the **performance** axis (cost/capacity → optimal-routing).
+
+**Where it lives in the system.** [`docs/architecture/ADR-0016-privacy-posture-defaults.md`](../architecture/ADR-0016-privacy-posture-defaults.md) §"Privacy-sensitive operation routing (N-011)." Extends the routing-config schema in [`docs/architecture/ADR-0007-remote-llm-abstraction.md`](../architecture/ADR-0007-remote-llm-abstraction.md). Local-LLM destination per [`docs/architecture/ADR-0008-local-llm-runtime-slot.md`](../architecture/ADR-0008-local-llm-runtime-slot.md) (v1). Person-library context per [`docs/architecture/ADR-0010-media-pipeline-framework.md`](../architecture/ADR-0010-media-pipeline-framework.md).
+
+**Disclosure trail.** First surfaced 2026-05-03 in E-1.3 round-3 grooming as user redirect to Q7 ("if the user turns it on, and if the user has local llm connected, then we can suggest to offload the face related functionalities to local llm and build it like that in a plug and play manner to begin with, in case user wants to 'set it on for remote but use local'"). User-approved for public master commit on 2026-05-03.
+
+**Linked items.** A-002 (privacy posture — N-011 is its enforcement mechanism), D-016 (remote-first routing default — privacy-routing is the per-data-class deviation), N-002 (operation-aware router future — sibling concept; both share router infra in v1), N-008 (person library — recognition op is `face_data`-classed), ADR-0007 (routing dispatch — extended here), ADR-0008 (local-LLM destination), ADR-0010 (face-detection-only library used for blur masking; person library tools), ADR-0016 (architectural realization).
