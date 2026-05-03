@@ -1,6 +1,6 @@
 # Board
 
-> **Last updated:** 2026-05-02 — E-1.3 round 2 closed. ADR-0010 + ADR-0011 + ADR-0012 + D-028..D-031 + N-008 + N-009 filed. A-013 reclassified v1 → MVP and propagated. ARCHITECTURE.md refreshed. E-1.3 stays in-progress for round 3 (connectors + harness + cross-cutting; ADR-0013..0016).
+> **Last updated:** 2026-05-03 — E-1.3 round 3 picked up. S-1.3.3 + T-1.3.3.1..4 in flight, scoping the final 4 ADRs (ADR-0013..0016). Two more novel mechanisms (N-010 cross-project user profile; N-011 privacy-sensitive routing) surfacing from user redirects.
 > **How to read this:** Hand-maintained mirror of frontmatter `status:` values. The `work-tracker` skill refreshes this file at end-of-session. If you see drift, re-derive from `grep -l "status:" project/{initiatives,epics,stories,tasks}/*.md`.
 
 ---
@@ -11,18 +11,21 @@
 |---|---|---|---|---|
 | [I-1](./initiatives/I-1-project-foundation.md) | Project foundation | Initiative | P0 | scaffolding |
 | [E-1.3](./epics/E-1.3-architecture-grooming.md) | Architecture grooming | Epic | P1 | scaffolding |
+| [S-1.3.3](./stories/S-1.3.3-architecture-grooming-round-3.md) | Architecture grooming — round 3: connectors + harness + cross-cutting | Story | P1 | scaffolding |
+| [T-1.3.3.1](./tasks/T-1.3.3.1-adr-0013-connector-layer.md) | ADR-0013 connector layer | Task | P1 | scaffolding |
+| [T-1.3.3.2](./tasks/T-1.3.3.2-adr-0014-agent-harness.md) | ADR-0014 agent harness + cross-project profile | Task | P1 | scaffolding |
+| [T-1.3.3.3](./tasks/T-1.3.3.3-adr-0015-resource-accounting.md) | ADR-0015 resource accounting | Task | P1 | scaffolding |
+| [T-1.3.3.4](./tasks/T-1.3.3.4-adr-0016-privacy-posture.md) | ADR-0016 privacy posture + privacy-routing | Task | P1 | scaffolding |
 
 ## Up Next (Ready)
 
 | ID | Title | Type | Priority | Phase | Blocked by |
 |---|---|---|---|---|---|
-| (round 3 of E-1.3) | Architecture grooming round 3 — connectors + harness + cross-cutting (ADR-0013..0016) | Story (TBC) | P1 | scaffolding | — (round 2 done) |
+| [E-1.4](./epics/E-1.4-roadmap-and-mvp-scoping.md) | Roadmap and MVP scoping | Epic | P1 | scaffolding | — (E-1.3 closing in this round) |
 
 ## Backlog (scaffolding-phase, queued)
 
-| ID | Title | Type | Priority | Phase | Blocked by |
-|---|---|---|---|---|---|
-| [E-1.4](./epics/E-1.4-roadmap-and-mvp-scoping.md) | Roadmap and MVP scoping | Epic | P1 | scaffolding | E-1.3 |
+(empty — E-1.4 promoted to Up Next now that E-1.3 is closing in this round.)
 
 ## Recently Done (last session)
 
