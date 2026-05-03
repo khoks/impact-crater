@@ -751,6 +751,45 @@ API rejection model: structured `ConnectorError` hierarchy (`ConnectorValidation
 
 **Linked items.** ADR-0014, ADR-0005, ADR-0006, ADR-0007, ADR-0009, ADR-0010, ADR-0011, ADR-0012, ADR-0013, ADR-0015, ADR-0016, D-017, D-013, D-022, A-005, A-015, **N-009** (refinement strategy now reads profile priors), **N-010** (novel mechanism filed in NOVEL_IDEAS.md), [`project/tasks/T-1.3.3.2-adr-0014-agent-harness.md`](../../project/tasks/T-1.3.3.2-adr-0014-agent-harness.md).
 
+---
+
+### D-034 — Resource accounting = telemetry JSONL + JobCostSummary + dual-cap quota (total + per-provider); first-time-setup spend cap, no system default (2026-05-03)
+
+**Status:** accepted (formalized in ADR-0015)
+
+**Context.** D-013 (effort levels) + A-004 (per-day spend cap) + A-015 (cost-transparency UI) + N-006 (effort-level UX) all need a concrete telemetry + quota substrate. Round-3 user redirects: Q5 daily spend cap = user-set during first-time setup, no system default; Q6 spend cap shape = both total + per-provider caps.
+
+**Decision.** Telemetry stream = append-only JSONL at `~/.impact-crater/telemetry.jsonl` (separate from audit + feedback logs). Event types: `LLMCallEvent` (per ADR-0007), `RenderEvent`, `IngestEvent`, `OrchestratorTurnEvent`, `JobLifecycleEvent`. Each event has `correlation_id` ties multiple events from one orchestrator turn together.
+
+`JobCostSummary` persisted at `snapshots/{snapshot_id}/cost_summary.json` at job-end. Schema includes per-tier counts/cost, per-provider cost, per-operation cost, cache stats with `estimated_cost_saved_by_cache_usd`, render stats, total. Source-of-truth for post-job UI + orchestrator profile-prior re-derivation (per ADR-0014).
+
+Rate cards = YAML files at `config/rate-cards/{provider}-{model}-{version}.yaml`; versioned per ADR-0007 `model_version`; shipped with wheel; user manually updates on rate change.
+
+**Dual-cap quota model (Q6):** SQLite `quota_state` table partitioned by date + provider; `_total_` row aggregates. A job is allowed only if BOTH total cap AND per-provider caps would not be exceeded. Mid-job pause-and-prompt if caps approached. Pre-job + per-stage check.
+
+**First-time-setup spend cap (Q5):** mandatory step in setup wizard; no system default; user enters total cap (≥$1) + optional per-provider caps; editable later in Settings.
+
+**UI surfaces:** pre-job cost preview with per-tier breakdown + remaining budget for both caps; in-job live spend; post-job JobCostSummary; settings panel with editable caps + monthly history.
+
+**Telemetry retention:** kept forever at MVP; manual cleanup via Settings; rotation deferred to v1. Same policy applies to feedback log (per ADR-0014).
+
+**Costs not covered at MVP:** local-LLM compute (v1; switches to seconds-of-compute), disk usage (manual cleanup), network bandwidth (not tracked).
+
+**Alternatives considered.**
+- *System default for spend cap (e.g., $50/day).* Originally proposed; rejected per Q5.
+- *Single total-cap only.* Originally proposed; rejected per Q6.
+- *Per-provider-only (no total).* Considered; rejected — total is simpler conceptual surface.
+- *Telemetry to a remote service.* Rejected — self-hosted-first ethos.
+- *Auto-archive telemetry > 90 days.* Rejected at MVP — manual is fine.
+- *Quota check at every LLM call.* Rejected — pre-job + per-stage is sufficient and lower latency.
+- *Soft cap (warn but allow).* The pause-and-prompt is the soft escape hatch; the cap is hard otherwise.
+- *Continuous effort slider.* Rejected per D-013 — pre-canned levels with agentic recommendation.
+
+**Consequences.** First-time-setup wizard becomes mandatory. Mid-job pause-and-prompt for cap-approach. JobCostSummary is load-bearing for ADR-0014 profile re-derivation. Cache hits show $0 cost but contribute to estimated_cost_saved rollup. Rate-card files versioned + maintained per release. Telemetry-rotation policy deferred to v1; schema is rotation-friendly. Local-LLM cost model is a v1 ADR follow-on.
+
+**Linked items.** ADR-0015, ADR-0005, ADR-0006, ADR-0007, ADR-0009, ADR-0011, ADR-0013, ADR-0014, ADR-0016, D-013, A-004, A-015, N-006, [`project/tasks/T-1.3.3.3-adr-0015-resource-accounting.md`](../../project/tasks/T-1.3.3.3-adr-0015-resource-accounting.md).
+
+
 
 
 
