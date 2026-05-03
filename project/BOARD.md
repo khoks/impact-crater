@@ -23,9 +23,22 @@
 | (round 2 of E-1.4) | ROADMAP.md final lock — v1 / v2 / v3 sequencing | Story (TBC) | P1 | scaffolding | round 1 done |
 | **I-2 MVP / E-2.1 Scaffolding (M0)** | First commit of code — `pip install impact-crater` works; CLI starts FastAPI; React shell loads; first-time-setup wizard; SQLite schema initializes | Epic | P0 | mvp | E-1.4 done |
 
-## Backlog (scaffolding-phase, queued)
+## Backlog (mvp-phase, queued)
 
-(empty — E-1.4 promoted to Up Next now that E-1.3 is closing in this round.)
+The MVP work container is the new [I-2 MVP](./initiatives/I-2-mvp.md) initiative with 9 epic shells (one per milestone M0..M9). Promotes to Up Next when E-1.4 closes (round 2 ROADMAP.md still pending).
+
+| ID | Title | Type | Priority | Phase | Blocked by |
+|---|---|---|---|---|---|
+| [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | Initiative | P0 | mvp | E-1.4 done |
+| [E-2.1](./epics/E-2.1-scaffolding.md) | Scaffolding (M0) | Epic | P0 | mvp | I-2 promoted |
+| [E-2.2](./epics/E-2.2-headless-curation-through-stage-5.md) | Headless curation through Stage 5 (M1) | Epic | P0 | mvp | E-2.1 |
+| [E-2.3](./epics/E-2.3-render-and-standard-mode.md) | Render + standard mode (M2) | Epic | P0 | mvp | E-2.2 |
+| [E-2.4](./epics/E-2.4-ui-mvp-loop-closed.md) | UI MVP loop closed (M3) | Epic | P0 | mvp | E-2.3 |
+| [E-2.5](./epics/E-2.5-music-video-mode-and-section-to-media-nl.md) | Music-video mode + section-to-media NL (M4) | Epic | P0 | mvp | E-2.4 |
+| [E-2.6](./epics/E-2.6-person-library-and-privacy-panel.md) | Person library + privacy panel (M5) | Epic | P0 | mvp | E-2.4 |
+| [E-2.7](./epics/E-2.7-agentic-refinement-and-second-guess.md) | Agentic refinement + second-guess (M6) | Epic | P0 | mvp | E-2.4 + E-2.6 |
+| [E-2.8](./epics/E-2.8-youtube-publish.md) | YouTube publish (M7) | Epic | P0 | mvp | E-2.3 + E-2.4 |
+| [E-2.9](./epics/E-2.9-cross-project-profile-mvp.md) | Cross-project profile + polish + D-014 validation (M8 + M9) | Epic | P0 | mvp | E-2.1..E-2.8 |
 
 ## Recently Done (last session)
 
@@ -48,3 +61,4 @@
 | ID | Title | Status | Phase |
 |---|---|---|---|
 | [I-1](./initiatives/I-1-project-foundation.md) | Project foundation | in-progress | scaffolding |
+| [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | backlog | mvp |

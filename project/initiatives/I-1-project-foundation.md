@@ -28,8 +28,12 @@ Without the foundation, every later session burns time re-establishing context, 
 
 ## Out of scope
 
-- Any actual product code. Code lands during MVP work, after `E-1.4` closes the MVP scope.
+- Any actual product code. Code lands during MVP work under [I-2 MVP](./I-2-mvp.md), which becomes ready when E-1.4 closes.
 - Tech-stack ADRs beyond the three already accepted at scaffolding (license, work-tracking, skills). The architecture-grooming epic produces the rest.
+
+## Sibling initiative (queued)
+
+- [I-2 MVP](./I-2-mvp.md) — Story Video to YouTube. Created 2026-05-03 (E-1.4 round 1) as the work container for the 9 MVP milestones. Status `backlog` until E-1.4 closes; promotes to `in-progress` (and E-2.1 Scaffolding becomes the first ready epic) at that point.
 
 ## Children
 
