@@ -789,6 +789,44 @@ Rate cards = YAML files at `config/rate-cards/{provider}-{model}-{version}.yaml`
 
 **Linked items.** ADR-0015, ADR-0005, ADR-0006, ADR-0007, ADR-0009, ADR-0011, ADR-0013, ADR-0014, ADR-0016, D-013, A-004, A-015, N-006, [`project/tasks/T-1.3.3.3-adr-0015-resource-accounting.md`](../../project/tasks/T-1.3.3.3-adr-0015-resource-accounting.md).
 
+---
+
+### D-035 — Privacy posture defaults: three project-level toggles + privacy-sensitive routing extension to ADR-0007 (2026-05-03)
+
+**Status:** accepted (formalized in ADR-0016)
+
+**Context.** A-002 made privacy posture MVP because D-016 puts images off-device. Round-3 user redirects: Q7 blur-faces default OFF + the novel "blur ON triggers face-ops routed to local LLM only when local available" mechanism (N-011); Q8 strip-GPS-only as separate toggle from full-EXIF-strip.
+
+**Decision.** Three project-level toggles in `manifest.json`: **Strip EXIF default ON** (removes camera/device info, software, lens, ISO; implies GPS-strip ON); **Strip GPS only default ON** (subset; preserves timestamps; only takes independent effect if full-EXIF-strip is OFF); **Blur faces default OFF** (when ON, face-related features skipped on remote calls; UI surfaces trade-off; **if local-LLM available per ADR-0008, face ops route to local per N-011**).
+
+**EXIF/GPS strip implementation:** source media never modified in place; stripped variants cached at `~/.impact-crater/projects/{id}/cache/stripped/{content_hash}.{ext}` keyed by strip mode; deterministic, reusable across projects.
+
+**Face-blur implementation:** lightweight CPU face-detection library (dlib `face-recognition` or mediapipe — confirmed at first feature work) for blur masking ONLY (the one use case where vision-LLM-only doesn't fit because we need detection BEFORE sending to LLM). Gaussian blur on detected face boxes. Cached at `~/.impact-crater/projects/{id}/cache/face_blurred/{content_hash}.{ext}`.
+
+**Privacy-sensitive routing extension to ADR-0007 (N-011 architectural realization):** per-operation `privacy_class` (face_data / visual_only / derived_metadata / text_only) + per-provider `eligibility_for_class` declared in `config/llm-routing.yaml` and `config/providers.yaml`. When blur-faces ON, remote providers' eligibility for `face_data` is dynamically removed; if local provider exists + eligible, route there with unblurred image; otherwise skip operation with degraded-metadata fallback (Stage 5 prompt variants handle missing person data; Privacy Banner surfaces the consequence).
+
+**Plug-and-play hook (MVP):** all routing infra in place at MVP — when v1 ships ADR-0008 local-LLM runtime, no code changes needed for privacy-routing feature.
+
+**Person-library + face-blur interaction:** library lives in SQLite locally; never sent except as labeled reference collage. With blur-faces ON + remote-only, collage not built. With blur-faces ON + local routing, collage sent to local only.
+
+**Audit log + profile privacy:** audit log unaffected (publish events, not analysis). Profile sees abstracted patterns, not identities. Profile read into Tier-M calls; provider "API data not used for training" guarantees apply.
+
+**Settings UI:** per-project defaults + plain-English explainer + person-library link + reset-profile button. Per-image privacy review mode = v1 ("high-privacy mode").
+
+**Alternatives considered.**
+- *Blur-faces default ON.* Rejected per Q7 — silently disabling person-library is hostile UX.
+- *Single EXIF-strip toggle.* Rejected per Q8 — timestamps wanted.
+- *No privacy-sensitive routing.* Rejected per Q7 — user wants the local-LLM hook baked in.
+- *Pre-emptive face-blur for any LLM call.* Defeats N-011's local-route. Rejected.
+- *Skip the deterministic face-detection lib.* Can't — blur path needs detection BEFORE sending. Accepted as the one face-detection-only dep.
+- *More granular privacy classes.* Rejected at MVP; four is enough.
+- *Per-image review mode.* Friction-heavy; deferred to v1.
+
+**Consequences.** Privacy panel = real UI surface design needed at MVP. One new face-detection-only dep (dlib or mediapipe) for blur masking. ADR-0007 routing config schema gets `privacy_class` + `eligibility_for_class` fields. Skipped-operation degradation needs Stage-5 prompt variants that handle missing person data. The plug-and-play hook means v1 local-LLM is "drop runtime in" — no architectural changes. The "API data not used for training" assumption is documented as third-party promise. Cache invalidation on privacy-toggle change: flipping blur-faces ON invalidates `face_data`-class cached operations.
+
+**Linked items.** ADR-0016, ADR-0006, ADR-0007, ADR-0008, ADR-0009, ADR-0010, ADR-0011, ADR-0013, ADR-0014, A-002, D-016, **N-002** (operation-aware router future — sibling to N-011), **N-008** (person library), **N-010** (cross-project profile), **N-011** (novel mechanism filed in NOVEL_IDEAS.md), [`project/tasks/T-1.3.3.4-adr-0016-privacy-posture.md`](../../project/tasks/T-1.3.3.4-adr-0016-privacy-posture.md).
+
+
 
 
 
