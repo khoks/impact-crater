@@ -54,11 +54,13 @@ Each addition gets a heading with an `A-NNN` ID (monotonically incrementing, nev
 
 **What it would look like.** A default policy on whether identifiable faces and geo-tagged locations get included in payloads to remote VLMs. A user-facing toggle ("strip EXIF GPS before remote calls", "blur faces in remote previews"). A clear visualization of what is being sent off-device. Per-project override.
 
-**Open questions.** Default value (strip / don't strip)? Tech-stack choice for face detection runs locally (E-1.3). Whether the privacy posture is global, per-project, or per-job (recommend per-project at MVP).
+**Open questions resolved in E-1.3 round 3 (2026-05-03 / D-035):** strip-EXIF default ON; strip-GPS-only as separate toggle (default ON); blur-faces default OFF; per-project posture (per-project, not per-job, at MVP). Plus a novel mechanism: when blur-faces is ON AND a local LLM is available (v1), face-related operations route to local only via the **privacy-sensitive routing extension (N-011)** to ADR-0007. Plug-and-play hook in MVP.
 
 **Tradeoff against scope.** Modest — local face/EXIF handling is well-understood; the UI surface is the main work. Not optional under remote-first.
 
-**Linked items.** D-016, A-009 (accessibility metadata uses similar local-extraction pipeline).
+**Architectural realization.** [`docs/architecture/ADR-0016-privacy-posture-defaults.md`](../architecture/ADR-0016-privacy-posture-defaults.md). Privacy-routing extension to [`ADR-0007`](../architecture/ADR-0007-remote-llm-abstraction.md) routing-config schema.
+
+**Linked items.** D-016, D-035, A-009 (accessibility metadata uses similar local-extraction pipeline), **N-011** (privacy-sensitive operation routing — novel mechanism).
 
 ---
 
@@ -68,13 +70,15 @@ Each addition gets a heading with an `A-NNN` ID (monotonically incrementing, nev
 
 **Why this matters.** Every publish to YouTube (D-007) is a public-facing action with consequences. Users need a timestamped record of what was published, when, from which project version, and to which account. Cheap to build; load-bearing for trust and for any future "unpublish" or "reupload" flow.
 
-**What it would look like.** A append-only log per project: `{timestamp, artifact_id, version_hash, target_platform, target_account, video_url, publisher_action_id}`. Visible in the project UI. Exportable.
+**What it would look like.** An append-only log per user (cross-project): `{schema_version, timestamp, project_id, snapshot_id, platform, external_id, external_url, response_code, response_summary, render_content_hash, user_approval_token, publish_metadata}`. Visible in the project UI. Exportable.
 
-**Open questions.** Persistence layer (deferred to E-1.3 storage decision). Whether the log is signed / tamper-evident at MVP (recommend simple append-only, signing → v1).
+**Open questions resolved in E-1.3 (D-024 storage; D-032 connector layer):** Persistence layer = append-only JSONL at `~/.impact-crater/audit.jsonl` mirrored in SQLite `audit` table. Signing / tamper-evident → v1. The schema is finalized in ADR-0013.
 
 **Tradeoff against scope.** Small. Worth doing in MVP.
 
-**Linked items.** D-007, D-011, D-020, A-001, A-010.
+**Architectural realization.** [`docs/architecture/ADR-0006-storage-layout.md`](../architecture/ADR-0006-storage-layout.md) (storage paths) + [`docs/architecture/ADR-0013-connector-layer.md`](../architecture/ADR-0013-connector-layer.md) (entry shape + write trigger).
+
+**Linked items.** D-007, D-011, D-020, D-024, D-032, A-001, A-010.
 
 ---
 
@@ -84,15 +88,17 @@ Each addition gets a heading with an `A-NNN` ID (monotonically incrementing, nev
 
 **Why this matters.** D-013 (effort-level UX with agentic recommendation) already surfaces cost at job time. Users still need a running view of spend across jobs and a hard ceiling so a runaway job can't drain a quota.
 
-**What it would look like.**
-- *MVP-lite:* per-job cost preview (already in D-013) + a per-day spend cap with a hard stop.
-- *v1:* full dashboard — running spend by provider, by job, by operation; trend over time; per-project budgets.
+**What it would look like (resolved in E-1.3 / D-034):**
+- *MVP-lite:* per-job cost preview (D-013) + **dual-cap quota** (total + per-provider, both hard) configured during first-time-setup wizard, no system default. Pre-job + per-stage check; mid-job pause-and-prompt on cap-approach. Per-job `JobCostSummary` with per-tier / per-provider / per-operation breakdown. Cache-savings rollup.
+- *v1:* full dashboard — trend over time; per-project budgets; rate-card auto-update from a community-maintained repo.
 
-**Open questions.** Whose cost catalog is canonical (per-provider price scraping vs. user-entered)? Recommend user-entered at MVP-lite, automatic in v1.
+**Open questions resolved.** Cost catalog = YAML rate cards shipped with the wheel (`config/rate-cards/{provider}-{model}-{version}.yaml`); user manually updates on rate change at MVP-lite; auto-update → v1.
 
-**Tradeoff against scope.** MVP-lite is small (extends D-013 surfacing). Full dashboard is non-trivial — defer.
+**Tradeoff against scope.** MVP-lite is small (extends D-013 surfacing into a real telemetry stream). Full dashboard is non-trivial — defer.
 
-**Linked items.** D-013, D-016, A-015, [`project/tasks/T-1.2.1.4-job-model-scale-success-criterion.md`](../../project/tasks/T-1.2.1.4-job-model-scale-success-criterion.md).
+**Architectural realization.** [`docs/architecture/ADR-0015-resource-accounting.md`](../architecture/ADR-0015-resource-accounting.md).
+
+**Linked items.** D-013, D-016, D-034, A-015, [`project/tasks/T-1.2.1.4-job-model-scale-success-criterion.md`](../../project/tasks/T-1.2.1.4-job-model-scale-success-criterion.md).
 
 ---
 

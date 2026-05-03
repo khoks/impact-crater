@@ -696,6 +696,140 @@ The v1 follow-on for A-013 narrows to: royalty-free music starter pack, licensed
 
 **Linked items.** A-013 (entry updated), ADR-0012, ADR-0011, D-010, D-018, D-030 (the music-alignment ADR's record), [`docs/vision/GROOMED_FEATURES.md`](../vision/GROOMED_FEATURES.md), [`docs/roadmap/MVP.md`](../roadmap/MVP.md), [`project/tasks/T-1.3.2.3-adr-0012-music-alignment.md`](../../project/tasks/T-1.3.2.3-adr-0012-music-alignment.md).
 
+---
+
+### D-032 — Connector layer = Connector Python protocol; YouTube at MVP via OAuth + resumable upload; tokens in SQLite (Fernet-encrypted); default video privacy = public (2026-05-03)
+
+**Status:** accepted (formalized in ADR-0013)
+
+**Context.** D-007 fixes MVP platform = YouTube only; v1 adds Instagram/Facebook/X. A-003 makes the audit log MVP scope. ADR-0006 partially pinned the audit-log shape. Round-3 user redirects: Q1 default video privacy = public (user picks per upload, leaning on the explicit Approve gate D-020 as the safety net); Q2 token storage = all in SQLite (rejected the keyring proposal).
+
+**Decision.** `Connector` Python protocol with `authenticate / is_authenticated / revoke_credentials / validate_artifact / upload`. `YouTubeConnector` MVP implementation uses `google-auth-oauthlib` + `google-api-python-client`; OAuth via local-loopback callback; YouTube Data API v3 `videos.insert` resumable upload, 256 MB chunks. Default video privacy on upload = `public` (user picks visibility explicitly per upload via the publish UI). Token storage in SQLite `connector_credentials` table with `access_token` + `refresh_token` Fernet-encrypted at rest (key at `~/.impact-crater/db/.fernet-key`, file-permissions 0600). Token refresh as a background task before every connector call.
+
+Audit-entry shape (final): JSONL line + SQLite mirror per ADR-0006. Fields: `schema_version`, `timestamp`, `project_id`, `snapshot_id`, `platform`, `external_id`, `external_url`, `response_code`, `response_summary`, `render_content_hash`, `user_approval_token` (opaque, in-session-bound), `publish_metadata` (title + truncated-description + visibility + tags_count + scheduled_publish_at).
+
+API rejection model: structured `ConnectorError` hierarchy (`ConnectorValidationError`, `ConnectorUploadError`, `ConnectorAuthError`) with `user_actionable` + `suggested_action`. YouTube error mapping table specified.
+
+**Alternatives considered.**
+- *Default video privacy = `private`.* Originally proposed; rejected per Q1.
+- *OS keyring for token storage.* Originally proposed; rejected per Q2 — simpler dependency surface with SQLite + Fernet.
+- *Plaintext tokens in SQLite.* Rejected — Fernet adds ~50 lines and meaningful protection.
+- *Hosted OAuth callback URL.* Rejected — conflicts with self-hosted-first ethos.
+- *Lazy auth on first publish.* Documented as fallback; setup-time auth is the pattern.
+- *Skip audit log at MVP.* Rejected — A-003 puts it in MVP scope.
+
+**Consequences.** UI must make visibility selector unmissable; Approve button shows the selected visibility one more time before clicking. Token-refresh adds one SQLite read per connector call; negligible. Fernet key must be backed up for credential portability across machines. YouTube Data API quota caps practical usage at ~6 publishes/day per account; surfaced via ADR-0015. `Connector` protocol is the v1 contract (adding platforms = N new files). `user_approval_token` distinguishes user-initiated publishes from system-initiated retries; in-session-bound, opaque. Per-platform formatting lives in ADR-0010/0011, not here.
+
+**Linked items.** ADR-0013, ADR-0005, ADR-0006, ADR-0007, ADR-0010, ADR-0011, ADR-0014, ADR-0015, D-007, D-020, A-003, A-008, A-009, [`project/tasks/T-1.3.3.1-adr-0013-connector-layer.md`](../../project/tasks/T-1.3.3.1-adr-0013-connector-layer.md).
+
+---
+
+### D-033 — Agent harness = single orchestrator with consolidated tool surface; cross-project user profile + agentic learning loop (2026-05-03)
+
+**Status:** accepted (formalized in ADR-0014)
+
+**Context.** D-017 fixed MVP harness as single orchestrator with structured tool calls. Round-3 grooming consolidated the tool surface from rounds 1-3 and locked the reasoning model + failure-mode UX. Per Q4 user redirect ("we can learn from the chat memories across projects, and build a user profile over time which can help the impact crater suggest ideas to the user itself during new project creations, or also help impact crater to learn from its mistakes the next time around"), the original "no chat-memory beyond current loop" proposal expanded to a cross-project user profile + agentic learning loop — filed as N-010.
+
+**Decision.** Single `Orchestrator` class on Tier-M Sonnet 4.7 (per ADR-0009). Tool registry with per-tool `idempotency_class` (free / project_mutating / external_side_effect); external_side_effect tools require explicit user confirmation per call. Consolidated tool surface enumerates LLM operations + pipeline + refinement + music + connector + person-library + new profile tools. Reasoning model = tool-call loop bounded at 50 turns per session (refinement subloop has its own 10-turn bound per ADR-0011). Failure-mode UX (Q3) = three actions (continue / abandon / restart); manual override = v1.
+
+**Cross-project user profile (N-010 architectural realization):** persisted at `~/.impact-crater/profile/profile.json` + `~/.impact-crater/profile/feedback_log.jsonl`. Profile schema = `StylePreferences` + `OrchestratorPriors` + `NarrativePatterns` + feedback-log pointer. Feedback log = append-only JSONL with event types (approve, refine, second_guess_accepted/rejected/modified, refinement_succeeded/failed, pre_filter_overridden, effort_level_overridden, publish_succeeded/failed, job_cancelled). Profile derived from feedback log via `derive_profile_priors` Tier-M call; re-derivation on job-end + after every N=10 events incrementally + every N=100 full. Profile read at: job creation (suggestions + pre-filled form), brief parsing (in-context priors), Stage 4 quality floor override, Stage 5 narrative-arc judgment (in-context patterns), Stage 6 second-guess threshold, Stage 9 refinement strategy bias.
+
+**Privacy posture for the profile:** all on disk; never leaves machine except as in-context priors in Tier-M LLM calls; person-library data does NOT flow into profile (profile sees abstracted patterns, not identities); user can reset profile + feedback log via settings.
+
+**Cancellation + resume:** `JobCancelled` propagates through tool-call loop and worker pool; on startup, FastAPI scans for `in_progress` snapshots and surfaces "Resume?" prompts.
+
+**Alternatives considered.**
+- *No chat-memory beyond current loop (original proposal).* Stateless per-project. Rejected per Q4.
+- *Multi-agent harness at MVP.* Rejected per D-017; v2.
+- *Model fine-tuning per user.* Rejected — expensive infra; profile-based in-context priors are immediate and cheap.
+- *Per-project-only learning.* Rejected per Q4 — cross-project value is the differentiator.
+- *Manual override at MVP.* Rejected per Q3; v1 power-user feature.
+- *Profile derivation via deterministic rules (no LLM).* Rejected — motif extraction + narrative-pattern detection benefit from LLM understanding.
+- *Profile in SQLite.* Rejected — JSON file simpler for <50 KB document; feedback log uses JSONL for append-only simplicity.
+
+**Consequences.** Orchestrator is no longer stateless across projects (the differentiator). Profile re-derivation = ~$0.005/job (negligible). Feedback log grows over time; rotation policy in ADR-0015. One-click profile reset. Profile schema v1 is the contract for v1 profile-driven UX. 50-turn bound is conservative; raise if MVP testing shows productive jobs hitting it. Multi-tenant (v3) requires per-tenant profile path. external_side_effect class ensures publish-style calls always require user confirmation.
+
+**Linked items.** ADR-0014, ADR-0005, ADR-0006, ADR-0007, ADR-0009, ADR-0010, ADR-0011, ADR-0012, ADR-0013, ADR-0015, ADR-0016, D-017, D-013, D-022, A-005, A-015, **N-009** (refinement strategy now reads profile priors), **N-010** (novel mechanism filed in NOVEL_IDEAS.md), [`project/tasks/T-1.3.3.2-adr-0014-agent-harness.md`](../../project/tasks/T-1.3.3.2-adr-0014-agent-harness.md).
+
+---
+
+### D-034 — Resource accounting = telemetry JSONL + JobCostSummary + dual-cap quota (total + per-provider); first-time-setup spend cap, no system default (2026-05-03)
+
+**Status:** accepted (formalized in ADR-0015)
+
+**Context.** D-013 (effort levels) + A-004 (per-day spend cap) + A-015 (cost-transparency UI) + N-006 (effort-level UX) all need a concrete telemetry + quota substrate. Round-3 user redirects: Q5 daily spend cap = user-set during first-time setup, no system default; Q6 spend cap shape = both total + per-provider caps.
+
+**Decision.** Telemetry stream = append-only JSONL at `~/.impact-crater/telemetry.jsonl` (separate from audit + feedback logs). Event types: `LLMCallEvent` (per ADR-0007), `RenderEvent`, `IngestEvent`, `OrchestratorTurnEvent`, `JobLifecycleEvent`. Each event has `correlation_id` ties multiple events from one orchestrator turn together.
+
+`JobCostSummary` persisted at `snapshots/{snapshot_id}/cost_summary.json` at job-end. Schema includes per-tier counts/cost, per-provider cost, per-operation cost, cache stats with `estimated_cost_saved_by_cache_usd`, render stats, total. Source-of-truth for post-job UI + orchestrator profile-prior re-derivation (per ADR-0014).
+
+Rate cards = YAML files at `config/rate-cards/{provider}-{model}-{version}.yaml`; versioned per ADR-0007 `model_version`; shipped with wheel; user manually updates on rate change.
+
+**Dual-cap quota model (Q6):** SQLite `quota_state` table partitioned by date + provider; `_total_` row aggregates. A job is allowed only if BOTH total cap AND per-provider caps would not be exceeded. Mid-job pause-and-prompt if caps approached. Pre-job + per-stage check.
+
+**First-time-setup spend cap (Q5):** mandatory step in setup wizard; no system default; user enters total cap (≥$1) + optional per-provider caps; editable later in Settings.
+
+**UI surfaces:** pre-job cost preview with per-tier breakdown + remaining budget for both caps; in-job live spend; post-job JobCostSummary; settings panel with editable caps + monthly history.
+
+**Telemetry retention:** kept forever at MVP; manual cleanup via Settings; rotation deferred to v1. Same policy applies to feedback log (per ADR-0014).
+
+**Costs not covered at MVP:** local-LLM compute (v1; switches to seconds-of-compute), disk usage (manual cleanup), network bandwidth (not tracked).
+
+**Alternatives considered.**
+- *System default for spend cap (e.g., $50/day).* Originally proposed; rejected per Q5.
+- *Single total-cap only.* Originally proposed; rejected per Q6.
+- *Per-provider-only (no total).* Considered; rejected — total is simpler conceptual surface.
+- *Telemetry to a remote service.* Rejected — self-hosted-first ethos.
+- *Auto-archive telemetry > 90 days.* Rejected at MVP — manual is fine.
+- *Quota check at every LLM call.* Rejected — pre-job + per-stage is sufficient and lower latency.
+- *Soft cap (warn but allow).* The pause-and-prompt is the soft escape hatch; the cap is hard otherwise.
+- *Continuous effort slider.* Rejected per D-013 — pre-canned levels with agentic recommendation.
+
+**Consequences.** First-time-setup wizard becomes mandatory. Mid-job pause-and-prompt for cap-approach. JobCostSummary is load-bearing for ADR-0014 profile re-derivation. Cache hits show $0 cost but contribute to estimated_cost_saved rollup. Rate-card files versioned + maintained per release. Telemetry-rotation policy deferred to v1; schema is rotation-friendly. Local-LLM cost model is a v1 ADR follow-on.
+
+**Linked items.** ADR-0015, ADR-0005, ADR-0006, ADR-0007, ADR-0009, ADR-0011, ADR-0013, ADR-0014, ADR-0016, D-013, A-004, A-015, N-006, [`project/tasks/T-1.3.3.3-adr-0015-resource-accounting.md`](../../project/tasks/T-1.3.3.3-adr-0015-resource-accounting.md).
+
+---
+
+### D-035 — Privacy posture defaults: three project-level toggles + privacy-sensitive routing extension to ADR-0007 (2026-05-03)
+
+**Status:** accepted (formalized in ADR-0016)
+
+**Context.** A-002 made privacy posture MVP because D-016 puts images off-device. Round-3 user redirects: Q7 blur-faces default OFF + the novel "blur ON triggers face-ops routed to local LLM only when local available" mechanism (N-011); Q8 strip-GPS-only as separate toggle from full-EXIF-strip.
+
+**Decision.** Three project-level toggles in `manifest.json`: **Strip EXIF default ON** (removes camera/device info, software, lens, ISO; implies GPS-strip ON); **Strip GPS only default ON** (subset; preserves timestamps; only takes independent effect if full-EXIF-strip is OFF); **Blur faces default OFF** (when ON, face-related features skipped on remote calls; UI surfaces trade-off; **if local-LLM available per ADR-0008, face ops route to local per N-011**).
+
+**EXIF/GPS strip implementation:** source media never modified in place; stripped variants cached at `~/.impact-crater/projects/{id}/cache/stripped/{content_hash}.{ext}` keyed by strip mode; deterministic, reusable across projects.
+
+**Face-blur implementation:** lightweight CPU face-detection library (dlib `face-recognition` or mediapipe — confirmed at first feature work) for blur masking ONLY (the one use case where vision-LLM-only doesn't fit because we need detection BEFORE sending to LLM). Gaussian blur on detected face boxes. Cached at `~/.impact-crater/projects/{id}/cache/face_blurred/{content_hash}.{ext}`.
+
+**Privacy-sensitive routing extension to ADR-0007 (N-011 architectural realization):** per-operation `privacy_class` (face_data / visual_only / derived_metadata / text_only) + per-provider `eligibility_for_class` declared in `config/llm-routing.yaml` and `config/providers.yaml`. When blur-faces ON, remote providers' eligibility for `face_data` is dynamically removed; if local provider exists + eligible, route there with unblurred image; otherwise skip operation with degraded-metadata fallback (Stage 5 prompt variants handle missing person data; Privacy Banner surfaces the consequence).
+
+**Plug-and-play hook (MVP):** all routing infra in place at MVP — when v1 ships ADR-0008 local-LLM runtime, no code changes needed for privacy-routing feature.
+
+**Person-library + face-blur interaction:** library lives in SQLite locally; never sent except as labeled reference collage. With blur-faces ON + remote-only, collage not built. With blur-faces ON + local routing, collage sent to local only.
+
+**Audit log + profile privacy:** audit log unaffected (publish events, not analysis). Profile sees abstracted patterns, not identities. Profile read into Tier-M calls; provider "API data not used for training" guarantees apply.
+
+**Settings UI:** per-project defaults + plain-English explainer + person-library link + reset-profile button. Per-image privacy review mode = v1 ("high-privacy mode").
+
+**Alternatives considered.**
+- *Blur-faces default ON.* Rejected per Q7 — silently disabling person-library is hostile UX.
+- *Single EXIF-strip toggle.* Rejected per Q8 — timestamps wanted.
+- *No privacy-sensitive routing.* Rejected per Q7 — user wants the local-LLM hook baked in.
+- *Pre-emptive face-blur for any LLM call.* Defeats N-011's local-route. Rejected.
+- *Skip the deterministic face-detection lib.* Can't — blur path needs detection BEFORE sending. Accepted as the one face-detection-only dep.
+- *More granular privacy classes.* Rejected at MVP; four is enough.
+- *Per-image review mode.* Friction-heavy; deferred to v1.
+
+**Consequences.** Privacy panel = real UI surface design needed at MVP. One new face-detection-only dep (dlib or mediapipe) for blur masking. ADR-0007 routing config schema gets `privacy_class` + `eligibility_for_class` fields. Skipped-operation degradation needs Stage-5 prompt variants that handle missing person data. The plug-and-play hook means v1 local-LLM is "drop runtime in" — no architectural changes. The "API data not used for training" assumption is documented as third-party promise. Cache invalidation on privacy-toggle change: flipping blur-faces ON invalidates `face_data`-class cached operations.
+
+**Linked items.** ADR-0016, ADR-0006, ADR-0007, ADR-0008, ADR-0009, ADR-0010, ADR-0011, ADR-0013, ADR-0014, A-002, D-016, **N-002** (operation-aware router future — sibling to N-011), **N-008** (person library), **N-010** (cross-project profile), **N-011** (novel mechanism filed in NOVEL_IDEAS.md), [`project/tasks/T-1.3.3.4-adr-0016-privacy-posture.md`](../../project/tasks/T-1.3.3.4-adr-0016-privacy-posture.md).
+
+
+
+
+
 
 
 
