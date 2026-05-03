@@ -696,6 +696,33 @@ The v1 follow-on for A-013 narrows to: royalty-free music starter pack, licensed
 
 **Linked items.** A-013 (entry updated), ADR-0012, ADR-0011, D-010, D-018, D-030 (the music-alignment ADR's record), [`docs/vision/GROOMED_FEATURES.md`](../vision/GROOMED_FEATURES.md), [`docs/roadmap/MVP.md`](../roadmap/MVP.md), [`project/tasks/T-1.3.2.3-adr-0012-music-alignment.md`](../../project/tasks/T-1.3.2.3-adr-0012-music-alignment.md).
 
+---
+
+### D-032 — Connector layer = Connector Python protocol; YouTube at MVP via OAuth + resumable upload; tokens in SQLite (Fernet-encrypted); default video privacy = public (2026-05-03)
+
+**Status:** accepted (formalized in ADR-0013)
+
+**Context.** D-007 fixes MVP platform = YouTube only; v1 adds Instagram/Facebook/X. A-003 makes the audit log MVP scope. ADR-0006 partially pinned the audit-log shape. Round-3 user redirects: Q1 default video privacy = public (user picks per upload, leaning on the explicit Approve gate D-020 as the safety net); Q2 token storage = all in SQLite (rejected the keyring proposal).
+
+**Decision.** `Connector` Python protocol with `authenticate / is_authenticated / revoke_credentials / validate_artifact / upload`. `YouTubeConnector` MVP implementation uses `google-auth-oauthlib` + `google-api-python-client`; OAuth via local-loopback callback; YouTube Data API v3 `videos.insert` resumable upload, 256 MB chunks. Default video privacy on upload = `public` (user picks visibility explicitly per upload via the publish UI). Token storage in SQLite `connector_credentials` table with `access_token` + `refresh_token` Fernet-encrypted at rest (key at `~/.impact-crater/db/.fernet-key`, file-permissions 0600). Token refresh as a background task before every connector call.
+
+Audit-entry shape (final): JSONL line + SQLite mirror per ADR-0006. Fields: `schema_version`, `timestamp`, `project_id`, `snapshot_id`, `platform`, `external_id`, `external_url`, `response_code`, `response_summary`, `render_content_hash`, `user_approval_token` (opaque, in-session-bound), `publish_metadata` (title + truncated-description + visibility + tags_count + scheduled_publish_at).
+
+API rejection model: structured `ConnectorError` hierarchy (`ConnectorValidationError`, `ConnectorUploadError`, `ConnectorAuthError`) with `user_actionable` + `suggested_action`. YouTube error mapping table specified.
+
+**Alternatives considered.**
+- *Default video privacy = `private`.* Originally proposed; rejected per Q1.
+- *OS keyring for token storage.* Originally proposed; rejected per Q2 — simpler dependency surface with SQLite + Fernet.
+- *Plaintext tokens in SQLite.* Rejected — Fernet adds ~50 lines and meaningful protection.
+- *Hosted OAuth callback URL.* Rejected — conflicts with self-hosted-first ethos.
+- *Lazy auth on first publish.* Documented as fallback; setup-time auth is the pattern.
+- *Skip audit log at MVP.* Rejected — A-003 puts it in MVP scope.
+
+**Consequences.** UI must make visibility selector unmissable; Approve button shows the selected visibility one more time before clicking. Token-refresh adds one SQLite read per connector call; negligible. Fernet key must be backed up for credential portability across machines. YouTube Data API quota caps practical usage at ~6 publishes/day per account; surfaced via ADR-0015. `Connector` protocol is the v1 contract (adding platforms = N new files). `user_approval_token` distinguishes user-initiated publishes from system-initiated retries; in-session-bound, opaque. Per-platform formatting lives in ADR-0010/0011, not here.
+
+**Linked items.** ADR-0013, ADR-0005, ADR-0006, ADR-0007, ADR-0010, ADR-0011, ADR-0014, ADR-0015, D-007, D-020, A-003, A-008, A-009, [`project/tasks/T-1.3.3.1-adr-0013-connector-layer.md`](../../project/tasks/T-1.3.3.1-adr-0013-connector-layer.md).
+
+
 
 
 
