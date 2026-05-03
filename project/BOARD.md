@@ -1,6 +1,6 @@
 # Board
 
-> **Last updated:** 2026-05-03 — **E-1.3 closed.** All 12 architecture ADRs accepted (ADR-0005..0016 + D-023..D-035; 4 more novel mechanisms filed bringing the total to N-001..N-011). ARCHITECTURE.md placeholder-free. **E-1.4 (roadmap + MVP final lock) is now Up Next.** Closing E-1.4 closes I-1 and exits the scaffolding phase.
+> **Last updated:** 2026-05-03 — E-1.4 picked up. Round-1 (MVP execution roadmap) S-1.4.1 + T-1.4.1.1..3 in flight. Producing: MVP.md final lock with 9-milestone partition; new I-2 MVP initiative + E-2.1..E-2.9 epic shells; D-036 + D-037 + D-038. Velocity = AI-assisted full-time aggressive (4-8 weeks calendar). Round 2 (ROADMAP.md final lock with v1/v2/v3 sequencing) opens after this round closes.
 > **How to read this:** Hand-maintained mirror of frontmatter `status:` values. The `work-tracker` skill refreshes this file at end-of-session. If you see drift, re-derive from `grep -l "status:" project/{initiatives,epics,stories,tasks}/*.md`.
 
 ---
@@ -10,12 +10,18 @@
 | ID | Title | Type | Priority | Phase |
 |---|---|---|---|---|
 | [I-1](./initiatives/I-1-project-foundation.md) | Project foundation | Initiative | P0 | scaffolding |
+| [E-1.4](./epics/E-1.4-roadmap-and-mvp-scoping.md) | Roadmap and MVP scoping | Epic | P1 | scaffolding |
+| [S-1.4.1](./stories/S-1.4.1-mvp-execution-roadmap.md) | MVP execution roadmap (round 1 of E-1.4) | Story | P1 | scaffolding |
+| [T-1.4.1.1](./tasks/T-1.4.1.1-mvp-md-final-lock.md) | MVP.md final lock | Task | P1 | scaffolding |
+| [T-1.4.1.2](./tasks/T-1.4.1.2-create-i2-mvp-initiative-and-epics.md) | Create I-2 MVP initiative + 9 epic shells | Task | P1 | scaffolding |
+| [T-1.4.1.3](./tasks/T-1.4.1.3-file-d-036-d-037-d-038.md) | File D-036 + D-037 + D-038 in DECISIONS_LOG | Task | P1 | scaffolding |
 
 ## Up Next (Ready)
 
 | ID | Title | Type | Priority | Phase | Blocked by |
 |---|---|---|---|---|---|
-| [E-1.4](./epics/E-1.4-roadmap-and-mvp-scoping.md) | Roadmap and MVP scoping | Epic | P1 | scaffolding | — (E-1.3 done) |
+| (round 2 of E-1.4) | ROADMAP.md final lock — v1 / v2 / v3 sequencing | Story (TBC) | P1 | scaffolding | round 1 done |
+| **I-2 MVP / E-2.1 Scaffolding (M0)** | First commit of code — `pip install impact-crater` works; CLI starts FastAPI; React shell loads; first-time-setup wizard; SQLite schema initializes | Epic | P0 | mvp | E-1.4 done |
 
 ## Backlog (scaffolding-phase, queued)
 

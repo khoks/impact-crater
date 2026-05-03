@@ -36,7 +36,7 @@ Without the foundation, every later session burns time re-establishing context, 
 - E-1.1 — Repo scaffolding (done)
 - E-1.2 — Vision grooming (done)
 - E-1.3 — Architecture grooming (done — 2026-05-03; all 12 ADRs ADR-0005..0016 accepted)
-- E-1.4 — Roadmap and MVP scoping (todo, ready — unblocked by E-1.3)
+- E-1.4 — Roadmap and MVP scoping (in-progress — round 1 MVP execution roadmap)
 - E-1.5 — Auto-merge policy (done — adopted mid-flight 2026-04-26)
 
 ## Linked decisions and ADRs
@@ -60,3 +60,4 @@ Without the foundation, every later session burns time re-establishing context, 
 - 2026-05-02 — E-1.3 round 2 closed: ADR-0010 + ADR-0011 + ADR-0012 + D-028..D-031 + N-008 + N-009 filed; A-013 reclassification propagated through GROOMED_FEATURES + MVP + RECOMMENDED_ADDITIONS; ARCHITECTURE.md refreshed. S-1.3.2 + T-1.3.2.1..3 closed. E-1.3 stays in-progress for round 3 (connectors + harness + cross-cutting).
 - 2026-05-03 — E-1.3 round 3 picked up; S-1.3.3 + T-1.3.3.1..4 created scoping ADR-0013 connectors + ADR-0014 agent harness + ADR-0015 resource accounting + ADR-0016 privacy posture. Two more novel mechanisms surfaced from user redirects (N-010 cross-project user profile + agentic learning loop; N-011 privacy-sensitive operation routing).
 - 2026-05-03 — **E-1.3 closed.** All 12 architecture ADRs accepted (ADR-0005..0016 + D-023..D-035). Total novel mechanisms = 11 (N-001..N-011). ARCHITECTURE.md placeholder-free. **E-1.4 (roadmap and MVP scoping) is now Up Next.** I-1 is the only Initiative that remains in-progress; on E-1.4 closure, I-1 closes too and we exit the scaffolding phase.
+- 2026-05-03 — E-1.4 picked up; round-1 work-item shell created (S-1.4.1 + T-1.4.1.1..3). Round 1 of E-1.4 produces: MVP.md final lock with 9-milestone partition; new I-2 MVP initiative + E-2.1..E-2.9 epic shells (one per milestone); D-036 + D-037 + D-038. Velocity recalibrated to AI-assisted full-time aggressive (4-8 weeks calendar) — user is PM/EM/Architect, Claude does the build via Max 20x plan.
