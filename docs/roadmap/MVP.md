@@ -1,6 +1,6 @@
 # MVP.md — Impact Crater MVP scope
 
-> **Status: partially locked (E-1.2 round 1, 2026-04-26); refine-loop UX redirected 2026-04-28 (D-022 supersedes the refine-loop half of D-020); A-013 section-to-media NL mapping pulled into MVP 2026-05-02 (D-031, via E-1.3 round-2 architecture grooming).** All eight original product-shape questions are answered; tech-stack ADRs landing through E-1.3 rounds 1+2 (foundation + LLM stack + media + curation). E-1.3 round 3 (connectors + harness + cross-cutting) and E-1.4 (full roadmap lock) still pending. The MVP scope below reflects what is locked.
+> **Status: product scope locked (E-1.2); architecture locked (E-1.3 closed 2026-05-03 — all 12 ADRs ADR-0005..0016 accepted, D-023..D-035 filed, 4 novel mechanisms added since round 1 took the count to 11 total: N-008 person-library face recognition, N-009 agentic refinement, N-010 cross-project user profile, N-011 privacy-sensitive operation routing).** D-022 redirected the refine-loop UX (post-render Approve / Refine pair); D-031 pulled section-to-media NL mapping into MVP. **E-1.4 (full roadmap lock with effort estimates) is the next thing on the board.** The MVP scope below reflects what is locked.
 
 The MVP is the **single thinnest end-to-end slice** that proves the core loop: *user uploads media → AI curates → user reviews preview → user approves publish*. Everything beyond that thinnest slice goes to v1 or later.
 
