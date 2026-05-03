@@ -722,6 +722,36 @@ API rejection model: structured `ConnectorError` hierarchy (`ConnectorValidation
 
 **Linked items.** ADR-0013, ADR-0005, ADR-0006, ADR-0007, ADR-0010, ADR-0011, ADR-0014, ADR-0015, D-007, D-020, A-003, A-008, A-009, [`project/tasks/T-1.3.3.1-adr-0013-connector-layer.md`](../../project/tasks/T-1.3.3.1-adr-0013-connector-layer.md).
 
+---
+
+### D-033 — Agent harness = single orchestrator with consolidated tool surface; cross-project user profile + agentic learning loop (2026-05-03)
+
+**Status:** accepted (formalized in ADR-0014)
+
+**Context.** D-017 fixed MVP harness as single orchestrator with structured tool calls. Round-3 grooming consolidated the tool surface from rounds 1-3 and locked the reasoning model + failure-mode UX. Per Q4 user redirect ("we can learn from the chat memories across projects, and build a user profile over time which can help the impact crater suggest ideas to the user itself during new project creations, or also help impact crater to learn from its mistakes the next time around"), the original "no chat-memory beyond current loop" proposal expanded to a cross-project user profile + agentic learning loop — filed as N-010.
+
+**Decision.** Single `Orchestrator` class on Tier-M Sonnet 4.7 (per ADR-0009). Tool registry with per-tool `idempotency_class` (free / project_mutating / external_side_effect); external_side_effect tools require explicit user confirmation per call. Consolidated tool surface enumerates LLM operations + pipeline + refinement + music + connector + person-library + new profile tools. Reasoning model = tool-call loop bounded at 50 turns per session (refinement subloop has its own 10-turn bound per ADR-0011). Failure-mode UX (Q3) = three actions (continue / abandon / restart); manual override = v1.
+
+**Cross-project user profile (N-010 architectural realization):** persisted at `~/.impact-crater/profile/profile.json` + `~/.impact-crater/profile/feedback_log.jsonl`. Profile schema = `StylePreferences` + `OrchestratorPriors` + `NarrativePatterns` + feedback-log pointer. Feedback log = append-only JSONL with event types (approve, refine, second_guess_accepted/rejected/modified, refinement_succeeded/failed, pre_filter_overridden, effort_level_overridden, publish_succeeded/failed, job_cancelled). Profile derived from feedback log via `derive_profile_priors` Tier-M call; re-derivation on job-end + after every N=10 events incrementally + every N=100 full. Profile read at: job creation (suggestions + pre-filled form), brief parsing (in-context priors), Stage 4 quality floor override, Stage 5 narrative-arc judgment (in-context patterns), Stage 6 second-guess threshold, Stage 9 refinement strategy bias.
+
+**Privacy posture for the profile:** all on disk; never leaves machine except as in-context priors in Tier-M LLM calls; person-library data does NOT flow into profile (profile sees abstracted patterns, not identities); user can reset profile + feedback log via settings.
+
+**Cancellation + resume:** `JobCancelled` propagates through tool-call loop and worker pool; on startup, FastAPI scans for `in_progress` snapshots and surfaces "Resume?" prompts.
+
+**Alternatives considered.**
+- *No chat-memory beyond current loop (original proposal).* Stateless per-project. Rejected per Q4.
+- *Multi-agent harness at MVP.* Rejected per D-017; v2.
+- *Model fine-tuning per user.* Rejected — expensive infra; profile-based in-context priors are immediate and cheap.
+- *Per-project-only learning.* Rejected per Q4 — cross-project value is the differentiator.
+- *Manual override at MVP.* Rejected per Q3; v1 power-user feature.
+- *Profile derivation via deterministic rules (no LLM).* Rejected — motif extraction + narrative-pattern detection benefit from LLM understanding.
+- *Profile in SQLite.* Rejected — JSON file simpler for <50 KB document; feedback log uses JSONL for append-only simplicity.
+
+**Consequences.** Orchestrator is no longer stateless across projects (the differentiator). Profile re-derivation = ~$0.005/job (negligible). Feedback log grows over time; rotation policy in ADR-0015. One-click profile reset. Profile schema v1 is the contract for v1 profile-driven UX. 50-turn bound is conservative; raise if MVP testing shows productive jobs hitting it. Multi-tenant (v3) requires per-tenant profile path. external_side_effect class ensures publish-style calls always require user confirmation.
+
+**Linked items.** ADR-0014, ADR-0005, ADR-0006, ADR-0007, ADR-0009, ADR-0010, ADR-0011, ADR-0012, ADR-0013, ADR-0015, ADR-0016, D-017, D-013, D-022, A-005, A-015, **N-009** (refinement strategy now reads profile priors), **N-010** (novel mechanism filed in NOVEL_IDEAS.md), [`project/tasks/T-1.3.3.2-adr-0014-agent-harness.md`](../../project/tasks/T-1.3.3.2-adr-0014-agent-harness.md).
+
+
 
 
 
