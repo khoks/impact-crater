@@ -1,0 +1,12 @@
+Rate this image on the dimension "{{ dimension }}" using a single floating-point number between 0.0 (worst) and 1.0 (best).
+
+{% if dimension == "quality" %}
+"quality" combines: focus / sharpness, exposure, framing, motion blur, sensor noise. A sharp well-exposed well-framed photo scores 1.0; a badly out-of-focus or blown-out photo scores < 0.3.
+{% elif dimension == "narrative_relevance" %}
+"narrative_relevance" measures how strongly this image contributes to the user's brief below. A photo that directly captures a key moment of the brief scores 1.0; an unrelated or off-topic photo scores < 0.3.
+
+User brief:
+{{ brief or "(no brief supplied)" }}
+{% else %}
+Score the dimension "{{ dimension }}" on its plain meaning.
+{% endif %}

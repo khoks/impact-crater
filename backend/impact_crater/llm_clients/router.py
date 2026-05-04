@@ -131,7 +131,14 @@ class LLMRouter:
         content_hash: str,
         dimension: str,
         prompt_vars: dict[str, Any] | None = None,
+        cache_extra: dict[str, Any] | None = None,
     ) -> float:
+        """Score the image on `dimension` (e.g. "quality", "narrative_relevance").
+
+        For brief-aware scoring (narrative-relevance), pass
+        `cache_extra={"brief_hash": sha256(brief)[:16]}` so the cache
+        invalidates when the brief changes per ADR-0011 Stage 2.
+        """
         op = "score_image"
         route = self.route_for(op)
         client = self._client_for(route)
@@ -139,7 +146,10 @@ class LLMRouter:
         rendered = prompts.render(prompt, dimension=dimension, **(prompt_vars or {}))
         params = self._params(route)
 
-        params_canonical = cache.canonicalize_params({"dimension": dimension})
+        params_dict: dict[str, Any] = {"dimension": dimension}
+        if cache_extra:
+            params_dict.update(cache_extra)
+        params_canonical = cache.canonicalize_params(params_dict)
         cached = await cache.get(
             content_hash=content_hash,
             provider=route.provider,
