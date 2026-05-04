@@ -2,12 +2,12 @@
 id: I-1
 title: Project foundation
 type: initiative
-status: in-progress
+status: done
 priority: P0
 phase: scaffolding
 tags: [foundation, scaffolding]
 created: 2026-04-25
-updated: 2026-04-28
+updated: 2026-05-03
 ---
 
 ## North-star outcome
@@ -37,10 +37,10 @@ Without the foundation, every later session burns time re-establishing context, 
 
 ## Children
 
-- E-1.1 — Repo scaffolding (done)
-- E-1.2 — Vision grooming (done)
+- E-1.1 — Repo scaffolding (done — 2026-04-25)
+- E-1.2 — Vision grooming (done — 2026-04-26 round 1; 2026-04-28 round 2 D-022 redirect)
 - E-1.3 — Architecture grooming (done — 2026-05-03; all 12 ADRs ADR-0005..0016 accepted)
-- E-1.4 — Roadmap and MVP scoping (in-progress — round 1 MVP execution roadmap)
+- E-1.4 — Roadmap and MVP scoping (done — 2026-05-03; MVP.md + ROADMAP.md placeholder-free; I-2 + 9 epic shells; D-036..D-039)
 - E-1.5 — Auto-merge policy (done — adopted mid-flight 2026-04-26)
 
 ## Linked decisions and ADRs
@@ -66,3 +66,5 @@ Without the foundation, every later session burns time re-establishing context, 
 - 2026-05-03 — **E-1.3 closed.** All 12 architecture ADRs accepted (ADR-0005..0016 + D-023..D-035). Total novel mechanisms = 11 (N-001..N-011). ARCHITECTURE.md placeholder-free. **E-1.4 (roadmap and MVP scoping) is now Up Next.** I-1 is the only Initiative that remains in-progress; on E-1.4 closure, I-1 closes too and we exit the scaffolding phase.
 - 2026-05-03 — E-1.4 picked up; round-1 work-item shell created (S-1.4.1 + T-1.4.1.1..3). Round 1 of E-1.4 produces: MVP.md final lock with 9-milestone partition; new I-2 MVP initiative + E-2.1..E-2.9 epic shells (one per milestone); D-036 + D-037 + D-038. Velocity recalibrated to AI-assisted full-time aggressive (4-8 weeks calendar) — user is PM/EM/Architect, Claude does the build via Max 20x plan.
 - 2026-05-03 — E-1.4 round 1 done: MVP.md locked placeholder-free; I-2 MVP initiative + 9 epic shells filed; D-036 + D-037 + D-038 added to DECISIONS_LOG. **E-1.4 stays in-progress for round 2 (ROADMAP.md final lock with v1/v2/v3 sequencing).** Total D-NNN count now 38; total novel mechanisms still 11 (no new N-NNN this round).
+- 2026-05-03 — E-1.4 round 2 picked up; S-1.4.2 + T-1.4.2.1 + T-1.4.2.2 created. Closing this round closes E-1.4, which closes I-1 (all 5 child epics done = scaffolding-phase exit), promotes I-2 to in-progress, and makes E-2.1 (Scaffolding M0) the first ready epic = first commit of code in the next session.
+- 2026-05-03 — **I-1 closed.** All 5 child epics (E-1.1..E-1.5) are done. Scaffolding phase exits. Final tally: 4 governance ADRs (ADR-0001..0004) + 12 architecture ADRs (ADR-0005..0016) + 39 D-NNNs (D-001..D-039) + 11 N-NNNs (N-001..N-011) + 15 A-NNNs (A-001..A-015); MVP.md + ROADMAP.md + ARCHITECTURE.md all placeholder-free; I-2 MVP initiative + 9 epic shells (E-2.1..E-2.9) ready; 2 auto-running session-housekeeping skills with auto-merge-with-`--admin` policy. **The next thing on the board is E-2.1 Scaffolding M0 = first commit of code.**

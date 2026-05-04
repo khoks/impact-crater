@@ -929,6 +929,68 @@ E-1.4 round 1 needs to ratify or trim this expanded scope before sequencing. Cut
 
 **Linked items.** D-036 (the milestone partition this sequences within), [`docs/roadmap/MVP.md`](../roadmap/MVP.md) §"Milestones" (the canonical milestone list), [`project/epics/E-2.1-scaffolding.md`](../../project/epics/E-2.1-scaffolding.md) (M0 sets up the test infra).
 
+---
+
+### D-039 — v1 / v2 / v3 phase sequencing locked in ROADMAP.md (2026-05-03)
+
+**Status:** accepted (closes E-1.4; closes I-1; exits the scaffolding phase)
+
+**Context.** With MVP scope locked (E-1.4 round 1) and the architecture fully scoped (E-1.3, 12 ADRs), the last scaffolding-phase work is locking the post-MVP roadmap. ROADMAP.md was a stub with the 5-phase shape (`scaffolding`/`mvp`/`v1`/`v2`/`v3`) but no per-phase milestone bullets. E-1.4 round 2 fills it in with concrete v1 / v2 / v3 sequencing.
+
+**Decision.** Lock the v1 / v2 / v3 milestone sequencing as the authoritative post-MVP roadmap.
+
+**v1 — 9 milestones (~6 months at AI-assisted velocity):**
+
+| # | Milestone | Why this slot |
+|---|---|---|
+| v1.1 | Local-first LLM (Ollama + N-002 router; N-011 becomes functional) | Most-promised v1 feature (D-016 + N-002 + N-011 all depend on it); biggest brand differentiator after MVP; somewhat self-contained |
+| v1.2 | Live job (A-012 + N-005) | The user's most novel post-MVP claim; ships early so the differentiation lands before incremental polish |
+| v1.3 | Multi-platform: Instagram + Facebook + X bundled (with A-008 watermark) | Same architecture per-connector; bundling reduces per-milestone overhead; Instagram first because it's the most popular short-video platform after YouTube |
+| v1.4 | Reference-media style learning (A-014 + N-004) | Independent feature; needs a dedicated milestone for the style-fingerprint mechanism |
+| v1.5 | Power-user + polish bundle | Multi-version comparison + quality floor + L4-L5 + full cost-transparency UI + upgrade-path agent + manual-override + per-image privacy + project export — all "table-stakes polish" that benefits from being grouped |
+| v1.6 | Auto photo / video editing | More table-stakes than differentiator; comes after the differentiation milestones |
+| v1.7 | Music sourcing expansion (royalty-free + licensed library + A-013 conversational sections) | Independent; can ship anytime in v1 |
+| v1.8 | LLM-driven profile re-derivation (full N-010) | Needs the deterministic version (MVP) shipped first to gather feedback log data; then upgrades the derivation |
+| v1.9 | Cross-job cache full (A-011 → N-007) | Engineering polish; replaces MVP-lite cache with the full N-007 schema |
+
+**v2 — 4 milestones (~3-4 months):**
+
+| # | Milestone | Why this slot |
+|---|---|---|
+| v2.1 | Full mobile UI | Builds on v1.2's camera-roll watcher; the natural mobile-first capability |
+| v2.2 | Multi-agent harness (per D-017 v2 commitment) | Required substrate for v2.3 conversational-at-scale |
+| v2.3 | Conversational refinement at scale | Powered by v2.2 multi-agent |
+| v2.4 | Generated music (Suno-class) | Quality + cost bounds need to be reasonable when committed; deferred to v2 to avoid committing to an external vendor's quality trajectory in v1 |
+
+**v3 — 3 milestones (timing TBD; depends on go-to-market):**
+
+| # | Milestone | Why this slot |
+|---|---|---|
+| v3.1 | Hosted infra (object-storage + Postgres swap per ADR-0006) | Engineering substrate; the swap is a config flip per ADR-0006 design |
+| v3.2 | Multi-tenant (auth + billing + per-tenant isolation) | Requires v3.1 |
+| v3.3 | Public launch (landing page + onboarding + support + BSL Change Date 2030-04-25 review) | Final go-to-market |
+
+**Total path from MVP-start to v3 launch:** ~12-18 months calendar at AI-assisted velocity.
+
+**Alternatives considered.**
+- *v1.2 live-job placement = v1.3 or v1.4 (after multi-platform).* Multi-platform reach matters too. Rejected — live-job is the most novel claim; ship the differentiation early.
+- *v1.3 multi-platform split into v1.3a / v1.3b / v1.3c (one platform per milestone).* Rejected — the architecture is the same per-connector; bundling reduces per-milestone overhead.
+- *v1.6 auto-editing earlier (e.g., v1.2).* User-perceived quality jump matters. Rejected — differentiators ship first; auto-editing is more table-stakes.
+- *Generated music (v2.4) earlier (v1.7 / v1.8).* Suno's quality keeps improving. Rejected — don't commit to an external vendor's quality trajectory in v1; revisit when v1 closes.
+- *v3 calendar ETA.* Rejected — depends on go-to-market readiness, not engineering readiness; left intentionally TBD.
+- *Per-milestone story / task decomposition at this scope decision.* Rejected — premature; per-epic decomposition happens when each epic opens for work (the same pattern E-2.1..E-2.9 follow).
+- *Create I-3 v1 / I-4 v2 / I-5 v3 initiative shells now.* Rejected — these initiatives are months away; the ROADMAP.md milestone bullets are sufficient until v1 actually opens. When v1 opens (post-MVP), the same E-1.4-style roadmap-grooming epic will create I-3 + v1 epic shells.
+
+**Consequences.**
+- ROADMAP.md is placeholder-free with the 5-phase × per-phase-milestones shape.
+- v1 milestone count (9) and ordering are locked under D-039; later D-NNNs can supersede if MVP findings justify re-sequencing.
+- v1 scope explicitly drops: anything that survived to MVP via D-037 stays in MVP; anything in `RECOMMENDED_ADDITIONS.md` tagged v1 is now scheduled to a specific v1 slot.
+- Timing assumptions (4-8 weeks MVP, 6 months v1, 3-4 months v2, TBD v3) are anchors, not commitments. Phases ship when they ship.
+- **Closing this decision closes E-1.4. Closing E-1.4 closes I-1 (all 5 child epics done). Closing I-1 exits the scaffolding phase.** I-2 promotes from `backlog` to `in-progress`. E-2.1 (Scaffolding M0) becomes the first ready epic = first commit of code in the next session.
+
+**Linked items.** D-036 (MVP execution roadmap; v1/v2/v3 sequence here builds on the MVP-shape there), D-014 (the success criterion that gates MVP→v1 transition), all `phase: v1` / `v2` / `v3` items in `RECOMMENDED_ADDITIONS.md` and `GROOMED_FEATURES.md` are now slotted into a specific v1.x / v2.x / v3.x milestone, [`docs/roadmap/ROADMAP.md`](../roadmap/ROADMAP.md), [`project/tasks/T-1.4.2.1-roadmap-md-final-lock.md`](../../project/tasks/T-1.4.2.1-roadmap-md-final-lock.md), [`project/tasks/T-1.4.2.2-d-039-and-cascading-closure.md`](../../project/tasks/T-1.4.2.2-d-039-and-cascading-closure.md).
+
+
 
 
 
