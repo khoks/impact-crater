@@ -1,6 +1,6 @@
 # Board
 
-> **Last updated:** 2026-05-03 — **🚀 SCAFFOLDING PHASE DONE.** E-1.4 closed; I-1 closed (all 5 child epics E-1.1..E-1.5 done); I-2 MVP promoted from `backlog` → `in-progress`; E-2.1 (Scaffolding M0) is the **first ready epic = first commit of code** in the next session. Final scaffolding tally: 16 ADRs (4 governance + 12 architecture); 39 D-NNNs (D-001..D-039); 11 N-NNNs (N-001..N-011); 15 A-NNNs; placeholder-free MVP.md + ROADMAP.md + ARCHITECTURE.md; I-2 + 9 epic shells; 2 auto-running housekeeping skills.
+> **Last updated:** 2026-05-03 — **E-2.1 (M0 Scaffolding) in flight.** First commit of code. 6 stories (S-2.1.1..6) covering: repo skeleton + pyproject; FastAPI + CLI + browser launch; storage paths + SQLite migration runner + Fernet crypto; React shell with Vite + Tailwind; 6-step first-time-setup wizard; cross-OS dev scripts + README install walkthrough.
 > **How to read this:** Hand-maintained mirror of frontmatter `status:` values. The `work-tracker` skill refreshes this file at end-of-session. If you see drift, re-derive from `grep -l "status:" project/{initiatives,epics,stories,tasks}/*.md`.
 
 ---
@@ -10,20 +10,26 @@
 | ID | Title | Type | Priority | Phase |
 |---|---|---|---|---|
 | [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | Initiative | P0 | mvp |
+| [E-2.1](./epics/E-2.1-scaffolding.md) | Scaffolding (M0) | Epic | P0 | mvp |
+| [S-2.1.1](./stories/S-2.1.1-repository-skeleton.md) | Repository skeleton + Python packaging | Story | P0 | mvp |
+| [S-2.1.2](./stories/S-2.1.2-fastapi-cli-browser.md) | FastAPI + CLI + browser launch | Story | P0 | mvp |
+| [S-2.1.3](./stories/S-2.1.3-storage-and-crypto.md) | Storage + SQLite + Fernet | Story | P0 | mvp |
+| [S-2.1.4](./stories/S-2.1.4-react-shell.md) | React shell (Vite + Tailwind) | Story | P0 | mvp |
+| [S-2.1.5](./stories/S-2.1.5-setup-wizard.md) | First-time-setup wizard | Story | P0 | mvp |
+| [S-2.1.6](./stories/S-2.1.6-polish-and-readme.md) | Polish + README walkthrough | Story | P0 | mvp |
 
 ## Up Next (Ready)
 
 | ID | Title | Type | Priority | Phase | Blocked by |
 |---|---|---|---|---|---|
-| **[E-2.1](./epics/E-2.1-scaffolding.md) Scaffolding (M0)** | **First commit of code** — `pip install impact-crater` + CLI + FastAPI + React shell + first-time-setup wizard + SQLite schema | Epic | P0 | mvp | — (ready) |
+| [E-2.2](./epics/E-2.2-headless-curation-through-stage-5.md) | Headless curation through Stage 5 (M1) | Epic | P0 | mvp | E-2.1 done |
 
 ## Backlog (mvp-phase, queued)
 
-The remaining 8 MVP epic shells under [I-2 MVP](./initiatives/I-2-mvp.md). Each promotes to Up Next as its dependencies close.
+The remaining 7 MVP epic shells under [I-2 MVP](./initiatives/I-2-mvp.md) (E-2.2 promoted to Up Next as soon as E-2.1 closes).
 
 | ID | Title | Type | Priority | Phase | Blocked by |
 |---|---|---|---|---|---|
-| [E-2.2](./epics/E-2.2-headless-curation-through-stage-5.md) | Headless curation through Stage 5 (M1) | Epic | P0 | mvp | E-2.1 |
 | [E-2.3](./epics/E-2.3-render-and-standard-mode.md) | Render + standard mode (M2) | Epic | P0 | mvp | E-2.2 |
 | [E-2.4](./epics/E-2.4-ui-mvp-loop-closed.md) | UI MVP loop closed (M3) | Epic | P0 | mvp | E-2.3 |
 | [E-2.5](./epics/E-2.5-music-video-mode-and-section-to-media-nl.md) | Music-video mode + section-to-media NL (M4) | Epic | P0 | mvp | E-2.4 |

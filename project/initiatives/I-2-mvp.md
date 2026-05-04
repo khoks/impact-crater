@@ -63,7 +63,7 @@ Anything explicitly tagged out-of-MVP in [`docs/roadmap/MVP.md`](../../docs/road
 
 ## Children
 
-- E-2.1 — Scaffolding (todo, **ready** — unblocked 2026-05-03 by I-1 closure; first commit of code lives here)
+- E-2.1 — Scaffolding (in-progress — first commit of code; M0)
 - E-2.2 — Headless curation through Stage 5 (todo, blocked by E-2.1)
 - E-2.3 — Render + standard mode (todo, blocked by E-2.2)
 - E-2.4 — UI MVP loop closed (todo, blocked by E-2.3)
@@ -86,3 +86,4 @@ All E-1.3 architecture ADRs (ADR-0005..0016) and all E-1.2/E-1.3 D-NNN entries (
 
 - 2026-05-03 — created (E-1.4 round 1 closure). Status `backlog` until E-1.4 closes (round 2 ROADMAP.md lock still pending), at which point the first epic (E-2.1 Scaffolding) becomes ready and I-2 promotes to `in-progress`.
 - 2026-05-03 — **promoted from `backlog` → `in-progress`** following E-1.4 round 2 closure (E-1.4 done; I-1 done; scaffolding-phase exit). E-2.1 (Scaffolding M0) is the first ready epic = first commit of code in the next session.
+- 2026-05-03 — E-2.1 (M0) picked up; 6 stories created (S-2.1.1..6). **First commit of actual application code in this session.**
