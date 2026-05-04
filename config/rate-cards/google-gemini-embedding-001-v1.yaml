@@ -1,0 +1,9 @@
+# Rate card for Google Gemini text-embedding (gemini-embedding-001).
+# Source: https://ai.google.dev/pricing (snapshot 2026-05-04).
+provider: google
+model: gemini-embedding-001
+model_version: v1
+effective_date: 2026-03-01
+input_token_rate_usd_per_1k: 0.0001
+output_token_rate_usd_per_1k: 0.0
+embedding_rate_usd_per_1k_tokens: 0.0001

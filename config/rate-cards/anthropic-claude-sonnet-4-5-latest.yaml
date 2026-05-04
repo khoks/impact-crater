@@ -1,0 +1,10 @@
+# Rate card for Anthropic Claude Sonnet 4.5 — Tier-M per ADR-0009.
+# Source: https://www.anthropic.com/pricing (snapshot 2026-05-04).
+# Bump model_version when Anthropic publishes a new rate or rolls a new model.
+provider: anthropic
+model: claude-sonnet-4-5
+model_version: latest
+effective_date: 2026-03-01
+input_token_rate_usd_per_1k: 0.003
+output_token_rate_usd_per_1k: 0.015
+image_input_rate_usd_per_1k_tokens_equivalent: 0.003
