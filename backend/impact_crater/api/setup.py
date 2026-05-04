@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from impact_crater.storage import settings as settings_store
 
@@ -52,7 +52,9 @@ class CompleteRequest(BaseModel):
 
     @field_validator("spend_cap_anthropic_usd", "spend_cap_google_usd")
     @classmethod
-    def _per_provider_cap_within_total(cls, v: float | None, info) -> float | None:
+    def _per_provider_cap_within_total(
+        cls, v: float | None, info: ValidationInfo
+    ) -> float | None:
         # Pydantic 2 calls validators in declaration order; total is required
         # and lands in `info.data` before per-provider caps.
         total = info.data.get("spend_cap_total_usd")

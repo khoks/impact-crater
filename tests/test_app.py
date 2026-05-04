@@ -6,19 +6,21 @@ from collections.abc import AsyncIterator
 
 import httpx
 import pytest
-
 from impact_crater import __version__
 from impact_crater.app import create_app
+from impact_crater.storage.migrations import run_pending_migrations
 
 
 @pytest.fixture
 async def client() -> AsyncIterator[httpx.AsyncClient]:
+    # httpx.ASGITransport does not run FastAPI lifespan events, so the
+    # in-app on-startup migration call doesn't fire. Apply migrations
+    # manually before yielding the client.
+    await run_pending_migrations()
     app = create_app()
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
-        # Trigger lifespan startup so migrations run.
-        async with httpx.AsyncClient(transport=transport, base_url="http://test"):
-            yield ac
+        yield ac
 
 
 async def test_health_returns_ok(client: httpx.AsyncClient) -> None:

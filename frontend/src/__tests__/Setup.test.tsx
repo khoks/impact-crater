@@ -43,7 +43,9 @@ describe("Setup wizard", () => {
       </MemoryRouter>
     );
     expect(screen.getByText(/Step 1 of 6/i)).toBeInTheDocument();
-    expect(screen.getByText(/Welcome/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /welcome to impact crater/i })
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /back/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /next/i })).toBeEnabled();
   });

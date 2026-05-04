@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from impact_crater import paths
 from impact_crater.storage import migrations, settings
 from impact_crater.storage.db import connection
