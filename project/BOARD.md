@@ -1,6 +1,6 @@
 # Board
 
-> **Last updated:** 2026-05-04 — **E-2.2 (M1 Headless curation through Stage 5) DONE.** All 8 stories closed in one session. The full headless pipeline (Stages 1-5) returns a structured ArcJudgment via `POST /api/jobs/headless` against real Anthropic Opus + Google Flash in ~19s on a 4-photo smoke test. 139/139 tests green (133 unit + 6 integration). **E-2.3 (M2 render + standard mode) now Up Next.**
+> **Last updated:** 2026-05-04 — **E-2.3 (M2 Render + standard mode) DONE.** All 4 stories closed in the same session as E-2.2 (M1). The full M2 pipeline (Stages 1-7) returns a rendered MP4 via `POST /api/jobs/render` against real Anthropic Opus + Google Flash + ffmpeg in ~22s on a 3-photo + 4s-tone smoke test. ffmpeg 8.1 installed via winget. **169/169 tests green** (162 unit + 7 integration). M0+M1+M2 are all behind us; **E-2.4 (M3 UI MVP loop closed) is now Up Next.**
 > **How to read this:** Hand-maintained mirror of frontmatter `status:` values. The `work-tracker` skill refreshes this file at end-of-session. If you see drift, re-derive from `grep -l "status:" project/{initiatives,epics,stories,tasks}/*.md`.
 
 ---
@@ -15,7 +15,7 @@
 
 | ID | Title | Type | Priority | Phase | Blocked by |
 |---|---|---|---|---|---|
-| [E-2.3](./epics/E-2.3-render-and-standard-mode.md) | Render + standard mode (M2) | Epic | P0 | mvp | E-2.2 done — ready |
+| [E-2.4](./epics/E-2.4-ui-mvp-loop-closed.md) | UI MVP loop closed (M3) | Epic | P0 | mvp | E-2.3 done — ready |
 
 ## Backlog (mvp-phase, queued)
 
@@ -23,7 +23,6 @@ The remaining 6 MVP epic shells under [I-2 MVP](./initiatives/I-2-mvp.md).
 
 | ID | Title | Type | Priority | Phase | Blocked by |
 |---|---|---|---|---|---|
-| [E-2.4](./epics/E-2.4-ui-mvp-loop-closed.md) | UI MVP loop closed (M3) | Epic | P0 | mvp | E-2.3 |
 | [E-2.5](./epics/E-2.5-music-video-mode-and-section-to-media-nl.md) | Music-video mode + section-to-media NL (M4) | Epic | P0 | mvp | E-2.4 |
 | [E-2.6](./epics/E-2.6-person-library-and-privacy-panel.md) | Person library + privacy panel (M5) | Epic | P0 | mvp | E-2.4 |
 | [E-2.7](./epics/E-2.7-agentic-refinement-and-second-guess.md) | Agentic refinement + second-guess (M6) | Epic | P0 | mvp | E-2.4 + E-2.6 |
@@ -34,18 +33,15 @@ The remaining 6 MVP epic shells under [I-2 MVP](./initiatives/I-2-mvp.md).
 
 | ID | Title | Type | Done |
 |---|---|---|---|
+| **[E-2.3](./epics/E-2.3-render-and-standard-mode.md)** | **Render + standard mode (M2) — Stages 6-7 + render API** | Epic | 2026-05-04 |
+| [S-2.3.1](./stories/S-2.3.1-ffmpeg-resolver-and-probe.md) | ffmpeg/ffprobe resolver + audio probe | Story | 2026-05-04 |
+| [S-2.3.2](./stories/S-2.3.2-stage6-plan-compile.md) | Stage 6 plan compile + RenderPlan | Story | 2026-05-04 |
+| [S-2.3.3](./stories/S-2.3.3-stage7-render.md) | Stage 7 ffmpeg render + standard music + loudnorm | Story | 2026-05-04 |
+| [S-2.3.4](./stories/S-2.3.4-render-endpoint.md) | POST /api/jobs/render + JobCostSummary | Story | 2026-05-04 |
 | **[E-2.2](./epics/E-2.2-headless-curation-through-stage-5.md)** | **Headless curation through Stage 5 (M1) — full LLM stack + Stages 1-5 + headless API** | Epic | 2026-05-04 |
-| [S-2.2.1](./stories/S-2.2.1-llm-client-protocol-and-providers.md) | LLMClient protocol + Anthropic + Google providers | Story | 2026-05-04 |
-| [S-2.2.2](./stories/S-2.2.2-router-config-prompts-cache.md) | LLMRouter + routing config + prompts + cache | Story | 2026-05-04 |
-| [S-2.2.3](./stories/S-2.2.3-telemetry-and-quota.md) | Telemetry + JobCostSummary + dual-cap quota | Story | 2026-05-04 |
-| [S-2.2.4](./stories/S-2.2.4-worker-pool.md) | Worker pool (cpu/ffmpeg/network) | Story | 2026-05-04 |
-| [S-2.2.5](./stories/S-2.2.5-stage1-ingest.md) | Stage 1 ingest + content-hash + scenes | Story | 2026-05-04 |
-| [S-2.2.6](./stories/S-2.2.6-stages-2-and-3.md) | Stages 2 + 3 (bulk ops + rich metadata) | Story | 2026-05-04 |
-| [S-2.2.7](./stories/S-2.2.7-stage-4-prefilter.md) | Stage 4 pre-filter (deterministic) | Story | 2026-05-04 |
-| [S-2.2.8](./stories/S-2.2.8-stage-5-judge-and-headless-endpoint.md) | Stage 5 judge + POST /api/jobs/headless | Story | 2026-05-04 |
+| [S-2.2.1..8](./stories/) | M1 stories (LLMClient + router + telemetry + quota + worker pool + Stages 1-5 + headless endpoint) | Stories | 2026-05-04 |
 | [E-2.1](./epics/E-2.1-scaffolding.md) | Scaffolding (M0) — first commit of code | Epic | 2026-05-03 |
 | [I-1](./initiatives/I-1-project-foundation.md) | Project foundation — scaffolding-phase exit | Initiative | 2026-05-03 |
-| [E-1.4](./epics/E-1.4-roadmap-and-mvp-scoping.md) | Roadmap and MVP scoping | Epic | 2026-05-03 |
 
 ---
 
@@ -54,7 +50,7 @@ The remaining 6 MVP epic shells under [I-2 MVP](./initiatives/I-2-mvp.md).
 | ID | Title | Status | Phase |
 |---|---|---|---|
 | [I-1](./initiatives/I-1-project-foundation.md) | Project foundation | **done** (2026-05-03) | scaffolding |
-| [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | **in-progress** (2026-05-03; M0 + M1 done) | mvp |
+| [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | **in-progress** (2026-05-03; M0 + M1 + M2 done) | mvp |
 | (I-3 v1) | v1 — Local-first + live job + multi-platform + style + polish | (created when v1 opens) | v1 |
 | (I-4 v2) | v2 — Mobile + multi-agent + conversational + generated music | (created when v2 opens) | v2 |
 | (I-5 v3) | v3 — Hosted multi-tenant SaaS | (created when v3 opens) | v3 |
