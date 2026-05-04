@@ -150,22 +150,39 @@ class GoogleLLMClient:
         dimension: str,
         params: CallParams,
     ) -> float:
-        schema = {
-            "type": "object",
-            "required": ["score"],
-            "properties": {
-                "score": {"type": "number"},
-            },
-        }
-        raw = await self._call_with_schema(
+        # Plain-text response — Gemini Flash's structured-output path is
+        # finicky for a single float (the model emits a "Here is..."
+        # preamble that eats the token budget). Asking for a bare number
+        # and parsing the first float we see is more robust.
+        contents = [
+            gtypes.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
+            prompt_template
+            + "\n\nReply with ONLY a single decimal number between 0.0 and 1.0. "
+            "No words. No JSON. No explanation. Just the number.",
+        ]
+        result = await _retry(
             params,
-            schema=schema,
-            contents=[
-                gtypes.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
-                prompt_template,
-            ],
+            lambda: _to_async(
+                self._client.models.generate_content,
+                model=params.model,
+                contents=contents,
+                config=gtypes.GenerateContentConfig(
+                    temperature=params.temperature,
+                    max_output_tokens=params.max_tokens,
+                ),
+            ),
         )
-        score = float(raw["score"])
+        text = _extract_text(result).strip()
+        try:
+            score = _first_float(text)
+        except ValueError as e:
+            raise LLMOperationFailed(
+                operation=params.operation,
+                provider=self.provider,
+                model=params.model,
+                attempts=1,
+                last_error=f"score parse failed: {e}; raw={text[:200]!r}",
+            ) from e
         return max(0.0, min(1.0, score))
 
     # -- Structured-output extraction --------------------------------------
@@ -352,19 +369,73 @@ class GoogleLLMClient:
         # Strip markdown fences in case the model added them despite the prompt.
         if text.startswith("```"):
             text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        # Gemini Flash sometimes leads with a preamble like "Here is the JSON
+        # requested:" before the actual JSON object — even with the
+        # "Begin with `{`" instruction in the prompt suffix. Fall back to
+        # scanning for the first `{...}` substring before declaring failure.
         try:
             return json.loads(text)  # type: ignore[no-any-return]
-        except json.JSONDecodeError as e:
+        except json.JSONDecodeError:
+            extracted = _extract_first_json_object(text)
+            if extracted is not None:
+                try:
+                    return json.loads(extracted)  # type: ignore[no-any-return]
+                except json.JSONDecodeError:
+                    pass
             raise LLMOperationFailed(
                 operation=params.operation,
                 provider=self.provider,
                 model=params.model,
                 attempts=1,
-                last_error=f"non-JSON structured response: {e}; raw={text[:200]!r}",
-            ) from e
+                last_error=f"non-JSON structured response: raw={text[:200]!r}",
+            ) from None
 
 
 # -- Module-level helpers ------------------------------------------------
+
+
+def _first_float(text: str) -> float:
+    """Find the first floating-point number in `text` and return it."""
+    import re
+
+    m = re.search(r"-?\d+(?:\.\d+)?", text)
+    if not m:
+        raise ValueError(f"no number in {text!r}")
+    return float(m.group(0))
+
+
+def _extract_first_json_object(text: str) -> str | None:
+    """Find the first balanced {...} substring. Handles nested braces.
+
+    Naive bracket-counting is enough here because the only producers we
+    care about are LLM JSON outputs, which don't contain unbalanced
+    braces inside string literals at the top level.
+    """
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None
 
 
 def _extract_text(result: Any) -> str:

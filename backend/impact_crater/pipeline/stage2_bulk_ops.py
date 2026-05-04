@@ -85,9 +85,20 @@ async def _run_for_asset(
     )
     embed_task = router.embed_image(image_bytes, content_hash=cache_hash)
 
-    caption, quality, narrative, embedding = await asyncio.gather(
-        caption_task, quality_task, narrative_task, embed_task
+    results = await asyncio.gather(
+        caption_task, quality_task, narrative_task, embed_task,
+        return_exceptions=True,
     )
+    # Surface the first real exception with its identity intact (avoid the
+    # gather-cascade obscuring which call actually failed).
+    for label, value in zip(
+        ("caption_image", "score_image[quality]", "score_image[narrative]", "embed_image"),
+        results,
+    ):
+        if isinstance(value, BaseException):
+            log.error("stage2 %s failed for %s: %s", label, asset.cache_hash, value)
+            raise value
+    caption, quality, narrative, embedding = results  # type: ignore[misc]
 
     return Stage2AssetOutputs(
         content_hash=asset.content_hash,

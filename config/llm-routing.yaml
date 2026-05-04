@@ -51,7 +51,10 @@ operations:
     model: gemini-2.5-flash
     model_version: v1
     tier: S
-    max_tokens: 64
+    # Gemini emits a "Here is..." preamble before the JSON; the schema-hint
+    # suffix is supposed to suppress it but doesn't reliably. Give the model
+    # enough headroom to recover with the JSON even after a short preamble.
+    max_tokens: 256
 
   # ---- Tier-M (structured output, agentic prose) ----------------------
   extract_metadata_image:

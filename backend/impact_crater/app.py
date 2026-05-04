@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from impact_crater import __version__
-from impact_crater.api import projects, setup, ws
+from impact_crater.api import jobs, projects, setup, ws
 
 
 @asynccontextmanager
@@ -51,6 +51,7 @@ def create_app() -> FastAPI:
 
     app.include_router(setup.router, prefix="/api/setup", tags=["setup"])
     app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
+    app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
     app.include_router(ws.router, prefix="/api", tags=["ws"])
 
     _mount_frontend(app)
