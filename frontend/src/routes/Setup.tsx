@@ -183,6 +183,7 @@ function StepWelcome() {
 
 function StepKey({ provider, form }: { provider: Provider; form: Form }) {
   const fieldName = provider === "anthropic" ? "anthropic_api_key" : "google_api_key";
+  const inputId = `field-${fieldName}`;
   const error = form.formState.errors[fieldName];
   const [testResult, setTestResult] = useState<TestKeyResult | null>(null);
   const [testing, setTesting] = useState(false);
@@ -200,10 +201,11 @@ function StepKey({ provider, form }: { provider: Provider; form: Form }) {
 
   return (
     <div className="space-y-3">
-      <label className="block text-sm font-medium text-slate-700">
+      <label htmlFor={inputId} className="block text-sm font-medium text-slate-700">
         {provider === "anthropic" ? "Anthropic" : "Google"} API key
       </label>
       <input
+        id={inputId}
         type="password"
         autoComplete="new-password"
         {...form.register(fieldName)}

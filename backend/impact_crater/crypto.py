@@ -13,7 +13,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from impact_crater import paths
 
 
-class FernetUnavailable(RuntimeError):
+class FernetUnavailableError(RuntimeError):
     """Raised when the Fernet key file is missing or corrupted."""
 
 
@@ -27,7 +27,7 @@ def get_or_create_key() -> bytes:
             Fernet(data)
             return data
         except (InvalidToken, ValueError) as exc:
-            raise FernetUnavailable(
+            raise FernetUnavailableError(
                 f"Fernet key at {key_path} is corrupted; delete it to regenerate."
             ) from exc
 
@@ -56,5 +56,5 @@ def decrypt(ciphertext: str) -> str:
     try:
         plain = fernet().decrypt(ciphertext.encode("ascii"))
     except InvalidToken as exc:
-        raise FernetUnavailable("Ciphertext does not validate against the current key.") from exc
+        raise FernetUnavailableError("Ciphertext does not validate against the current key.") from exc
     return plain.decode("utf-8")

@@ -14,6 +14,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import aiosqlite
+
 from impact_crater.storage.db import connection
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations_sql"
@@ -52,7 +54,7 @@ def _discover_migrations() -> list[tuple[int, Path]]:
     return out
 
 
-async def _ensure_migrations_table(db) -> None:
+async def _ensure_migrations_table(db: aiosqlite.Connection) -> None:
     await db.executescript(
         """
         CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -65,7 +67,7 @@ async def _ensure_migrations_table(db) -> None:
     await db.commit()
 
 
-async def _applied_versions(db) -> set[int]:
+async def _applied_versions(db: aiosqlite.Connection) -> set[int]:
     cursor = await db.execute("SELECT version FROM schema_migrations")
     rows = await cursor.fetchall()
-    return {row["version"] for row in rows}
+    return {int(row["version"]) for row in rows}

@@ -106,7 +106,8 @@ def _choose_port(host: str, requested: int | None) -> int | None:
     # Fall back to OS-assigned free port.
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((host, 0))
-        return s.getsockname()[1]
+        port: int = s.getsockname()[1]
+        return port
 
 
 def _port_is_free(host: str, port: int) -> bool:

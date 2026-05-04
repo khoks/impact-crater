@@ -6,7 +6,6 @@ from collections.abc import AsyncIterator
 
 import httpx
 import pytest
-
 from impact_crater.app import create_app
 from impact_crater.storage import settings as settings_store
 from impact_crater.storage.db import connection

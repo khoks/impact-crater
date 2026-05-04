@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from impact_crater import crypto, paths
 
 
@@ -40,11 +39,11 @@ def test_corrupted_key_raises(isolated_home: Path) -> None:
     # Create a deliberately invalid key file.
     paths.db_dir()
     paths.fernet_key_path().write_bytes(b"not-a-valid-fernet-key")
-    with pytest.raises(crypto.FernetUnavailable):
+    with pytest.raises(crypto.FernetUnavailableError):
         crypto.get_or_create_key()
 
 
 def test_decrypt_wrong_ciphertext_raises(isolated_home: Path) -> None:
     crypto.get_or_create_key()  # ensure a valid key exists
-    with pytest.raises(crypto.FernetUnavailable):
+    with pytest.raises(crypto.FernetUnavailableError):
         crypto.decrypt("definitely-not-fernet-output")
