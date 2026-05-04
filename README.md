@@ -8,7 +8,31 @@ Self-hosted-first. Open-source under [BSL 1.1](./LICENSE) (auto-converts to Apac
 
 ## Status
 
-**Pre-MVP — scaffolding only.** No application code yet. The repo currently contains the raw vision, the four-level work-tracking system, two auto-running Claude Code skills (knowledge-curator + work-tracker), and the foundation for grooming sessions to come. MVP scope, tech stack, and algorithms will be locked in upcoming grooming sessions and recorded as ADRs.
+**MVP build in progress** as of 2026-05-03. Scaffolding phase is done (16 ADRs, 39 D-NNN decisions, 11 novel mechanisms, placeholder-free `MVP.md` / `ROADMAP.md` / `ARCHITECTURE.md`). The MVP is partitioned into 9 milestones (M0..M9 — see [`docs/roadmap/MVP.md`](./docs/roadmap/MVP.md)); the first one (M0 Scaffolding) lives under [`E-2.1`](./project/epics/E-2.1-scaffolding.md).
+
+## Quick start (developers, M0)
+
+> M0 ships the empty bootable shell. The pipeline lands incrementally over M1..M9.
+
+Prerequisites: Python 3.11+ and Node 20+.
+
+```bash
+# 1. Install the Python package (editable install for dev)
+pip install -e ".[dev]"
+
+# 2. Build the React frontend (one-time + after frontend changes)
+cd frontend
+npm install
+npm run build
+cd ..
+
+# 3. Start the app (opens your default browser)
+impact-crater
+```
+
+First run shows the first-time-setup wizard: API keys (Anthropic + Google) + daily spend caps. Subsequent runs land on the empty project dashboard.
+
+For dev-mode with hot-reload (Vite + uvicorn together), see [`docs/dev/M0-SMOKE-TEST.md`](./docs/dev/M0-SMOKE-TEST.md).
 
 ## Where to look
 

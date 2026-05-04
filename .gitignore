@@ -24,6 +24,14 @@ $RECYCLE.BIN/
 *.pem
 *.key
 *.crt
+.fernet-key
+
+# --- Impact Crater runtime data ---
+# Per ADR-0006, the app writes to ~/.impact-crater/ by default. This
+# guard catches accidental writes inside the repo (e.g. a test that
+# forgets to override IMPACT_CRATER_HOME).
+.impact-crater/
+impact_crater.egg-info/
 
 # --- Node / pnpm / Turbo ---
 node_modules/
