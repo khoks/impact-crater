@@ -1,0 +1,9 @@
+# Rate card for Google Gemini 2.5 Flash — Tier-S per ADR-0009.
+# Source: https://ai.google.dev/pricing (snapshot 2026-05-04).
+provider: google
+model: gemini-2-5-flash
+model_version: v1
+effective_date: 2026-03-01
+input_token_rate_usd_per_1k: 0.0003
+output_token_rate_usd_per_1k: 0.0025
+image_input_rate_usd_per_1k_tokens_equivalent: 0.0003

@@ -1,0 +1,9 @@
+# Rate card for Anthropic Claude Opus 4.5 — Tier-L per ADR-0009.
+# Source: https://www.anthropic.com/pricing (snapshot 2026-05-04).
+provider: anthropic
+model: claude-opus-4-5
+model_version: latest
+effective_date: 2026-03-01
+input_token_rate_usd_per_1k: 0.015
+output_token_rate_usd_per_1k: 0.075
+image_input_rate_usd_per_1k_tokens_equivalent: 0.015

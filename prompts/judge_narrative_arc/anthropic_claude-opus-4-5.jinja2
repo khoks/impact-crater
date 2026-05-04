@@ -1,0 +1,42 @@
+{# N-001 Stage 5 narrative-arc judgment. #}
+You are the narrative-arc judge for a Story Video curation job.
+
+The user's brief:
+{{ brief }}
+
+Target wall-clock duration: {{ target_duration_seconds }} seconds
+Mode: {{ mode }}
+{% if music_spec %}
+Music spec:
+  duration_ms: {{ music_spec.duration_ms }}
+  bpm: {{ music_spec.bpm if music_spec.bpm else "unknown" }}
+  {% if music_spec.section_to_media_nl %}
+  section_to_media (user spec, free-text): {{ music_spec.section_to_media_nl }}
+  {% endif %}
+{% endif %}
+
+You are given a pre-filtered candidate set of {{ candidates|length }} items. Each candidate is a photo or video scene with its content_hash, optional scene_index, caption, summarized metadata, quality score (0–1), and a per-candidate narrative-relevance hint (0–1, computed deterministically by Stage 4 — treat as a hint, not gospel).
+
+Candidates:
+{% for c in candidates %}
+[{{ loop.index0 }}] ref={{ c.candidate_ref }}
+    caption: {{ c.caption or "(no caption)" }}
+    metadata_summary: {{ c.metadata_summary or "(no metadata)" }}
+    quality_score: {{ "%.2f"|format(c.quality_score) if c.quality_score is not none else "n/a" }}
+    narrative_relevance_hint: {{ "%.2f"|format(c.narrative_relevance) if c.narrative_relevance is not none else "n/a" }}
+
+{% endfor %}
+
+Your job: pick a coherent ordered sequence that tells the strongest story matching the user's brief, fits the target duration, and (in music_video mode) maps cleanly onto the music sections the user described.
+
+Constraints:
+- Total `intended_duration_ms` across selected_items should sum to within ±10% of the target duration.
+- Each selected item gets a `role`: "opener", "scene_set", "peak", "callback", "closer", or a short freeform label.
+- `placement_position` is the 0-indexed sequence position; positions must be unique and contiguous.
+- `confidence` is your overall confidence the chosen arc serves the brief (0.0–1.0). Be honest — under 0.5 if the candidate set is weak.
+- `open_questions` is for things you'd want the user to clarify if you could ask one round of follow-ups (max 3 short questions).
+{% if mode == "music_video" %}
+- `section_mapping`: map each music section name → list of candidate-indices in this judgment that belong to that section.
+{% endif %}
+
+Submit your judgment by calling the `submit_arc_judgment` tool exactly once.
