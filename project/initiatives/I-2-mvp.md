@@ -64,8 +64,8 @@ Anything explicitly tagged out-of-MVP in [`docs/roadmap/MVP.md`](../../docs/road
 ## Children
 
 - E-2.1 — Scaffolding (done — 2026-05-03; first commit of code; M0)
-- E-2.2 — Headless curation through Stage 5 (in-progress — M1; first LLM stack lands here)
-- E-2.3 — Render + standard mode (todo, blocked by E-2.2)
+- E-2.2 — Headless curation through Stage 5 (**done** — 2026-05-04; M1 LLM stack + Stages 1-5 + headless API)
+- E-2.3 — Render + standard mode (todo, **Up Next**)
 - E-2.4 — UI MVP loop closed (todo, blocked by E-2.3)
 - E-2.5 — Music-video mode + section-to-media NL (todo, blocked by E-2.4)
 - E-2.6 — Person library + face recognition + privacy panel (todo, blocked by E-2.4)
@@ -89,3 +89,4 @@ All E-1.3 architecture ADRs (ADR-0005..0016) and all E-1.2/E-1.3 D-NNN entries (
 - 2026-05-03 — E-2.1 (M0) picked up; 6 stories created (S-2.1.1..6). **First commit of actual application code in this session.**
 - 2026-05-03 — **E-2.1 done.** All 6 stories closed; ~50 files of application code on master (Python backend + Vite/TS/Tailwind frontend + 12-table SQLite schema + 6-step setup wizard end-to-end + cross-OS dev launchers + 10-step smoke-test doc). E-2.2 (Headless curation through Stage 5; M1) is now Up Next.
 - 2026-05-04 — E-2.2 (M1) picked up. 8 stories created (S-2.2.1..8). M0 verified end-to-end on Windows (PR #12); cross-OS verification still falls to user via `docs/dev/M0-SMOKE-TEST.md`. M1 brings the LLM stack online + pipeline Stages 1-5; real-API integration tests gated behind `--integration` marker.
+- 2026-05-04 — **E-2.2 done.** All 8 stories closed in one session. The full headless pipeline (ingest → bulk ops → rich metadata → pre-filter → narrative-arc judgment) returns a structured ArcJudgment via `POST /api/jobs/headless` in ~19s on a 4-photo real-API smoke test. 139/139 tests green. **E-2.3 (M2 render + standard mode) is now Up Next.**
