@@ -1,0 +1,106 @@
+# LLM routing config — per ADR-0009 (cost-tiered per-operation model lineup).
+#
+# Maps each operation to a (provider, model, model_version, tier, defaults).
+# Loaded at startup by `LLMRouter` (backend/impact_crater/llm_clients/router.py).
+# Per-user overrides flow through settings.routing_overrides (ADR-0006).
+# Per-job overrides flow through the effort-level UX (D-013 / A-015).
+#
+# Tiers (ADR-0009):
+#   S — Tier-S Gemini Flash (cheap, bulk, vision-language)
+#   M — Tier-M Claude Sonnet (structured output, agentic prose)
+#   L — Tier-L Claude Opus (one-call-per-job heavy reasoning)
+#   embedding — Google embedding model (not on the S/M/L axis)
+#
+# `model_version` is a free-form opaque token that participates in the cache key
+# (ADR-0006 cache_index, A-011 / N-007). Bump it to invalidate cache entries
+# when the upstream provider rolls a model in place.
+
+defaults:
+  max_tokens: 1024
+  temperature: 0.0
+
+operations:
+
+  # ---- Embedding -------------------------------------------------------
+  embed_image:
+    provider: google
+    model: gemini-embedding-001
+    model_version: v1
+    tier: embedding
+  embed_text:
+    provider: google
+    model: gemini-embedding-001
+    model_version: v1
+    tier: embedding
+
+  # ---- Tier-S (bulk, cheap) -------------------------------------------
+  caption_image:
+    provider: google
+    model: gemini-2.5-flash
+    model_version: v1
+    tier: S
+    max_tokens: 256
+  caption_video_scene:
+    provider: google
+    model: gemini-2.5-flash
+    model_version: v1
+    tier: S
+    max_tokens: 256
+  score_image:
+    provider: google
+    model: gemini-2.5-flash
+    model_version: v1
+    tier: S
+    max_tokens: 64
+
+  # ---- Tier-M (structured output, agentic prose) ----------------------
+  extract_metadata_image:
+    provider: anthropic
+    model: claude-sonnet-4-5
+    model_version: latest
+    tier: M
+    max_tokens: 2048
+  extract_metadata_video_scene:
+    provider: anthropic
+    model: claude-sonnet-4-5
+    model_version: latest
+    tier: M
+    max_tokens: 2048
+  parse_user_brief:
+    provider: anthropic
+    model: claude-sonnet-4-5
+    model_version: latest
+    tier: M
+    max_tokens: 1024
+  recommend_effort_level:
+    provider: anthropic
+    model: claude-sonnet-4-5
+    model_version: latest
+    tier: M
+    max_tokens: 1024
+  explain_cost:
+    provider: anthropic
+    model: claude-sonnet-4-5
+    model_version: latest
+    tier: M
+    max_tokens: 1024
+  explain_upgrade_path:
+    provider: anthropic
+    model: claude-sonnet-4-5
+    model_version: latest
+    tier: M
+    max_tokens: 1024
+  orchestrator_reasoning:
+    provider: anthropic
+    model: claude-sonnet-4-5
+    model_version: latest
+    tier: M
+    max_tokens: 2048
+
+  # ---- Tier-L (heavy reasoning, one-call-per-job) ---------------------
+  judge_narrative_arc:
+    provider: anthropic
+    model: claude-opus-4-5
+    model_version: latest
+    tier: L
+    max_tokens: 4096
