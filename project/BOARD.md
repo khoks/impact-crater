@@ -1,6 +1,6 @@
 # Board
 
-> **Last updated:** 2026-05-03 — E-1.4 round 1 closed. MVP.md locked placeholder-free with 9-milestone partition + AI-velocity recalibration + 5 critical-path risks + 10 pre-flight criteria. I-2 MVP initiative + 9 epic shells (E-2.1..E-2.9) created. D-036 + D-037 + D-038 filed. **E-1.4 stays in-progress for round 2 (ROADMAP.md final lock with v1/v2/v3 sequencing).** When E-1.4 closes, I-2 promotes to in-progress and E-2.1 (Scaffolding M0) becomes the first ready epic = first commit of code.
+> **Last updated:** 2026-05-03 — E-1.4 round 2 picked up. S-1.4.2 + T-1.4.2.1 + T-1.4.2.2 in flight. Closing this round closes E-1.4 → closes I-1 (all 5 child epics done = scaffolding-phase exit) → promotes I-2 MVP to in-progress → E-2.1 (Scaffolding M0) becomes the first ready epic = first commit of code in the next session.
 > **How to read this:** Hand-maintained mirror of frontmatter `status:` values. The `work-tracker` skill refreshes this file at end-of-session. If you see drift, re-derive from `grep -l "status:" project/{initiatives,epics,stories,tasks}/*.md`.
 
 ---
@@ -11,12 +11,15 @@
 |---|---|---|---|---|
 | [I-1](./initiatives/I-1-project-foundation.md) | Project foundation | Initiative | P0 | scaffolding |
 | [E-1.4](./epics/E-1.4-roadmap-and-mvp-scoping.md) | Roadmap and MVP scoping | Epic | P1 | scaffolding |
+| [S-1.4.2](./stories/S-1.4.2-roadmap-final-lock.md) | ROADMAP final lock + scaffolding-phase exit (round 2 of E-1.4) | Story | P1 | scaffolding |
+| [T-1.4.2.1](./tasks/T-1.4.2.1-roadmap-md-final-lock.md) | ROADMAP.md final lock | Task | P1 | scaffolding |
+| [T-1.4.2.2](./tasks/T-1.4.2.2-d-039-and-cascading-closure.md) | File D-039 + cascading closure | Task | P1 | scaffolding |
 
 ## Up Next (Ready)
 
 | ID | Title | Type | Priority | Phase | Blocked by |
 |---|---|---|---|---|---|
-| (round 2 of E-1.4) | ROADMAP.md final lock — v1 / v2 / v3 sequencing | Story (TBC) | P1 | scaffolding | — (round 1 done) |
+| **[I-2](./initiatives/I-2-mvp.md) MVP / [E-2.1](./epics/E-2.1-scaffolding.md) Scaffolding (M0)** | First commit of code — once round 2 closes, I-2 promotes to in-progress and E-2.1 is ready | Initiative + Epic | P0 | mvp | round 2 done |
 
 ## Backlog (mvp-phase, queued)
 
