@@ -1,17 +1,17 @@
-"""Headless pipeline runner — sequences Stages 1-5 end-to-end per ADR-0011.
+"""Headless pipeline runner — sequences Stages 1-5 (M1) and Stages 1-7 (M2).
 
-This is the M1 entry point. Render (Stage 7) lands at M2 (E-2.3); the
-preview UI + refine (Stages 8-9) at M3-M6. The headless path here returns
-the ArcJudgment plus per-job cost summary so downstream tooling (CLI,
-test harness) can validate end-to-end behavior before the UI exists.
+`run_headless_pipeline` (M1) returns the structured ArcJudgment.
+`run_full_pipeline` (M2) takes the same inputs plus an `audio_path` and
+runs through Stages 6-7 to produce a rendered MP4 + JobCostSummary.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -20,14 +20,19 @@ from impact_crater.llm_clients.anthropic_client import AnthropicLLMClient
 from impact_crater.llm_clients.base import ArcJudgment, MusicSpec
 from impact_crater.llm_clients.google_client import GoogleLLMClient
 from impact_crater.llm_clients.router import LLMRouter
+from impact_crater.media import ffmpeg as ff
 from impact_crater.pipeline import (
     stage1_ingest,
     stage2_bulk_ops,
     stage3_metadata,
     stage4_prefilter,
     stage5_judge,
+    stage6_plan,
+    stage7_render,
 )
 from impact_crater.pipeline.stage4_prefilter import CandidateSet, PreFilterOverrides
+from impact_crater.pipeline.stage6_plan import RenderPlan, StandardMusicSpec
+from impact_crater.pipeline.stage7_render import RenderResult
 from impact_crater.storage import settings as settings_store
 from impact_crater.workers import WorkerPool
 
@@ -44,6 +49,7 @@ class HeadlessJobResult:
     candidate_set: CandidateSet
     media_count: int
     correlation_id: str
+    media: list[Any] = field(default_factory=list)  # MediaRecord; typed Any to avoid forward-ref dance
     quota_snapshot: dict[str, Any] = field(default_factory=dict)
 
 
@@ -168,6 +174,7 @@ async def run_headless_pipeline(
             candidate_set=candidate_set,
             media_count=len(media),
             correlation_id=correlation_id,
+            media=media,
             quota_snapshot=quota_snapshot,
         )
     except Exception as exc:
@@ -181,6 +188,129 @@ async def run_headless_pipeline(
             )
         )
         raise
+
+
+# ---- M2 full pipeline (Stages 1-7) ------------------------------------
+
+
+@dataclass
+class FullJobConfig:
+    """Configuration for `run_full_pipeline` (Stages 1-7)."""
+
+    media_paths: list[Path]
+    brief: str
+    target_duration_seconds: int
+    audio_path: Path
+    mode: Literal["standard"] = "standard"  # music_video → M4
+    project_id: str | None = None
+    overrides: PreFilterOverrides | None = None
+
+
+@dataclass
+class FullJobResult:
+    project_id: str
+    snapshot_id: str
+    render_path: str
+    output_bytes: int
+    render_duration_ms: int
+    media_count: int
+    correlation_id: str
+    cost_summary_path: str
+    quota_snapshot: dict[str, Any] = field(default_factory=dict)
+    arc_judgment: ArcJudgment | None = None
+
+
+# Tier-lookup mirrors ADR-0009; consumed by `telemetry.aggregate_summary`.
+_TIER_BY_OPERATION = {
+    "embed_image": "embedding",
+    "embed_text": "embedding",
+    "caption_image": "S",
+    "caption_video_scene": "S",
+    "score_image": "S",
+    "extract_metadata_image": "M",
+    "extract_metadata_video_scene": "M",
+    "parse_user_brief": "M",
+    "recommend_effort_level": "M",
+    "explain_cost": "M",
+    "explain_upgrade_path": "M",
+    "orchestrator_reasoning": "M",
+    "judge_narrative_arc": "L",
+}
+
+
+async def run_full_pipeline(
+    config: FullJobConfig,
+    *,
+    router: LLMRouter | None = None,
+    pool: WorkerPool | None = None,
+) -> FullJobResult:
+    """Run Stages 1-7 end-to-end → rendered MP4 + JobCostSummary.
+
+    Sequences: ingest → bulk ops → metadata → pre-filter → narrative judge
+    → plan compile → render. Pre-job dual-cap quota check; per-stage
+    JobLifecycleEvent + RenderEvent telemetry; final aggregation persisted
+    as `snapshots/{snapshot_id}/cost_summary.json`.
+    """
+    # Reuse the M1 runner for Stages 1-5; it already handles the quota
+    # check + lifecycle telemetry.
+    headless_config = HeadlessJobConfig(
+        media_paths=config.media_paths,
+        brief=config.brief,
+        target_duration_seconds=config.target_duration_seconds,
+        mode="standard",
+        music_spec=None,
+        project_id=config.project_id,
+        overrides=config.overrides,
+    )
+    pool = pool or WorkerPool()
+    headless = await run_headless_pipeline(headless_config, router=router, pool=pool)
+
+    # Stage 6 — compile plan with the user's audio.
+    audio_probe = ff.probe_audio(config.audio_path)
+    music = StandardMusicSpec(
+        audio_path=str(config.audio_path),
+        audio_duration_ms=audio_probe.duration_ms,
+    )
+    # Reuse the media records the headless runner already produced
+    # (idempotent ingest means re-running would be safe, but skipping the
+    # work is faster).
+    plan = await stage6_plan.compile_plan(
+        arc_judgment=headless.arc_judgment,
+        ingest_records=headless.media,
+        project_id=headless.project_id,
+        target_duration_seconds=config.target_duration_seconds,
+        mode="standard",
+        audio=music,
+    )
+
+    # Stage 7 — render.
+    render_result = await stage7_render.render_plan(
+        plan, correlation_id=headless.correlation_id, pool=pool
+    )
+
+    # Aggregate JobCostSummary across the entire correlation_id family
+    # and persist alongside render.mp4.
+    summary = telemetry.aggregate_summary(
+        project_id=headless.project_id,
+        snapshot_id=plan.snapshot_id,
+        correlation_ids=[headless.correlation_id],
+        tier_lookup=_TIER_BY_OPERATION,
+    )
+    summary_path = stage6_plan.snapshot_dir(headless.project_id, plan.snapshot_id) / "cost_summary.json"
+    summary_path.write_text(json.dumps(asdict(summary), indent=2), encoding="utf-8")
+
+    return FullJobResult(
+        project_id=headless.project_id,
+        snapshot_id=plan.snapshot_id,
+        render_path=render_result.render_path,
+        output_bytes=render_result.output_bytes,
+        render_duration_ms=render_result.duration_ms,
+        media_count=headless.media_count,
+        correlation_id=headless.correlation_id,
+        cost_summary_path=str(summary_path),
+        quota_snapshot=headless.quota_snapshot,
+        arc_judgment=headless.arc_judgment,
+    )
 
 
 # ---- Helpers ----------------------------------------------------------
