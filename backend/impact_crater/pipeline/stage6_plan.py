@@ -113,12 +113,18 @@ async def compile_plan(
     mode: Literal["standard", "music_video"] = "standard",
     audio: StandardMusicSpec | None = None,
     parent_snapshot_id: str | None = None,
+    candidate_refs: list[str] | None = None,
 ) -> RenderPlan:
     """Compile a `RenderPlan` from an `ArcJudgment` + ingest records.
 
     In `music_video` mode, requires `audio.cut_grid` (computed by the
     runner from `MusicAnalyzer.analyze`); clip durations snap to the
     grid's cut points instead of linear-scaling. Per ADR-0011 + ADR-0012.
+
+    `candidate_refs` (optional): the ordered list of refs Stage 5 saw,
+    used for the integer-ref fallback when Opus emits a short integer
+    instead of the full content_hash. Smoke-test (Paris run) showed
+    this happens occasionally despite the prompt instructions.
     """
     if mode == "music_video":
         if audio is None or audio.cut_grid is None:
@@ -128,7 +134,9 @@ async def compile_plan(
             )
 
     target_ms = max(target_duration_seconds, 1) * 1000
-    clips = _build_clips(arc_judgment.selected_items, ingest_records)
+    clips = _build_clips(
+        arc_judgment.selected_items, ingest_records, candidate_refs=candidate_refs
+    )
     if not clips:
         raise ValueError("ArcJudgment selected_items produced zero resolvable clips")
 
@@ -168,18 +176,44 @@ def load_plan(snapshot_id: str, project_id: str) -> RenderPlan:
 def _build_clips(
     selected: list[SelectedItem],
     ingest_records: list[MediaRecord],
+    *,
+    candidate_refs: list[str] | None = None,
 ) -> list[RenderClip]:
     """Resolve each `SelectedItem.candidate_ref` back to a source clip.
 
     candidate_ref convention:
       - "{content_hash}" for photos
       - "{content_hash}#{scene_index}" for video scenes
+
+    Defensive fallback: if a ref is a short integer (e.g. "2") that
+    doesn't match any ingest hash, but `candidate_refs` is supplied
+    *and* the integer is a valid index into it, we resolve through that
+    list. The Paris smoke test surfaced Opus occasionally emitting
+    `[loop.index0]` instead of the ref string; the prompt has been
+    tightened, but this guard keeps any future regression from silently
+    dropping selected items.
     """
     by_hash: dict[str, MediaRecord] = {r.content_hash: r for r in ingest_records}
     clips: list[RenderClip] = []
     # Sort by placement_position to get a stable timeline.
     for item in sorted(selected, key=lambda s: s.placement_position):
-        content_hash, scene_index = _split_ref(item.candidate_ref)
+        ref = _coerce_ref(item.candidate_ref, candidate_refs, by_hash)
+        if ref != item.candidate_ref:
+            log.info(
+                "plan: rewrote bad ref %r as %r via candidate_refs index fallback",
+                item.candidate_ref,
+                ref,
+            )
+            # The RenderClip needs the resolved ref so downstream consumers
+            # don't see "1" — patch the SelectedItem in-place for this loop.
+            item = SelectedItem(
+                candidate_ref=ref,
+                placement_position=item.placement_position,
+                intended_duration_ms=item.intended_duration_ms,
+                role=item.role,
+                notes=item.notes,
+            )
+        content_hash, scene_index = _split_ref(ref)
         rec = by_hash.get(content_hash)
         if rec is None:
             log.warning("plan: ArcJudgment ref %s missing from ingest set; skipping", item.candidate_ref)
@@ -200,6 +234,32 @@ def _build_clips(
                 scene_index,
             )
     return clips
+
+
+def _coerce_ref(
+    ref: str,
+    candidate_refs: list[str] | None,
+    by_hash: dict[str, MediaRecord],
+) -> str:
+    """If `ref` is a short integer (≤4 chars, all digits) that doesn't
+    match any ingested content_hash, treat it as an index into
+    `candidate_refs` and return the actual ref. Otherwise pass through.
+    """
+    # Strip any "#scene_index" so the integer test sees just the head.
+    head, _, _ = ref.partition("#")
+    if head in by_hash:
+        return ref  # already a valid hash
+    if not candidate_refs:
+        return ref
+    if not (head.isdigit() and 0 < len(head) <= 4):
+        return ref
+    try:
+        idx = int(head)
+    except ValueError:
+        return ref
+    if 0 <= idx < len(candidate_refs):
+        return candidate_refs[idx]
+    return ref
 
 
 def _split_ref(ref: str) -> tuple[str, int | None]:

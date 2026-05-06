@@ -384,6 +384,13 @@ async def run_full_pipeline(
     # Reuse the media records the headless runner already produced
     # (idempotent ingest means re-running would be safe, but skipping the
     # work is faster).
+    # The candidate_refs list mirrors the order Stage 5's prompt rendered
+    # the candidates in. compile_plan uses it to recover from Opus
+    # occasionally emitting a `[index]` integer instead of the ref hash.
+    candidate_refs = [
+        c.content_hash + (f"#{c.scene_index}" if c.scene_index is not None else "")
+        for c in headless.candidate_set.items
+    ]
     plan = await stage6_plan.compile_plan(
         arc_judgment=headless.arc_judgment,
         ingest_records=headless.media,
@@ -391,6 +398,7 @@ async def run_full_pipeline(
         target_duration_seconds=config.target_duration_seconds,
         mode=config.mode,
         audio=music,
+        candidate_refs=candidate_refs,
     )
 
     # M6 — orchestrator second-guess. Auto-applies high-confidence

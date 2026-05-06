@@ -12,9 +12,10 @@ always empty until N-008 lands at M5.
 
 from __future__ import annotations
 
-from typing import Literal
+import json
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 TimeOfDay = Literal[
@@ -22,10 +23,43 @@ TimeOfDay = Literal[
 ]
 
 
+def _coerce_str_list(value: Any) -> Any:
+    """Pydantic before-validator that tolerates the LLM occasionally
+    emitting a stringified list for `list[str]` fields.
+
+    Real Anthropic tool_use observation (Times Square smoke test):
+        generic_tags = 'times square", "new york", "tourist destination"]'
+    The model wrote a CSV-with-quotes string instead of a JSON array.
+    Try to parse it back; fall through if the input is already a list.
+    """
+    if isinstance(value, list):
+        return value
+    if not isinstance(value, str):
+        return value
+    s = value.strip()
+    if not s:
+        return []
+    # Try JSON-array parse (with or without the opening/closing bracket).
+    candidates = [s, "[" + s, "[" + s + "]", s + "]"]
+    for c in candidates:
+        try:
+            parsed = json.loads(c)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(parsed, list):
+            return [str(item) for item in parsed]
+    # CSV-style fallback: split on `", "` then strip quotes + brackets
+    # from both ends in one pass (so `'child left"]'` -> `'child left'`).
+    parts = [p.strip().strip('"[]') for p in s.split('", "')]
+    return [p for p in parts if p]
+
+
 class PeopleObservation(BaseModel):
     model_config = ConfigDict(extra="ignore")
     count: int = Field(default=0, ge=0)
     in_focus: list[str] = Field(default_factory=list)
+
+    _coerce_in_focus = field_validator("in_focus", mode="before")(_coerce_str_list)
 
 
 class LocationObservation(BaseModel):
@@ -63,6 +97,16 @@ class RichMetadataPhoto(BaseModel):
     generic_tags: list[str] = Field(default_factory=list)
     task_context_tags: list[str] = Field(default_factory=list)
     recognized_persons: list[RecognizedPerson] = Field(default_factory=list)
+
+    # Stringified-list tolerance: Anthropic tool_use sometimes returns a
+    # CSV-quoted string (`'a", "b", "c"]'`) instead of a JSON array for
+    # these fields. Real-world failure mode caught by Times Square smoke
+    # test on 50 photos. The before-validator parses it back to a list;
+    # see _coerce_str_list above.
+    _coerce_objects = field_validator("objects", mode="before")(_coerce_str_list)
+    _coerce_clothing = field_validator("clothing", mode="before")(_coerce_str_list)
+    _coerce_generic_tags = field_validator("generic_tags", mode="before")(_coerce_str_list)
+    _coerce_task_context_tags = field_validator("task_context_tags", mode="before")(_coerce_str_list)
 
 
 class RichMetadataVideoScene(RichMetadataPhoto):
