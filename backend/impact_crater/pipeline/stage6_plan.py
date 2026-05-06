@@ -384,3 +384,45 @@ def snapshot_dir(project_id: str, snapshot_id: str) -> Path:
     p = paths.projects_dir() / project_id / "snapshots" / snapshot_id
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def apply_overrides(plan: RenderPlan, overrides: list) -> RenderPlan:
+    """Apply Override objects to a RenderPlan. Returns a new plan instance.
+
+    Implementation per ADR-0011 § Override types. M6 baseline supports
+    `drop_item` and `reorder`; `shorten`/`lengthen`/`swap` log + skip.
+    """
+    if not overrides:
+        return plan
+    new_clips = list(plan.clips)
+    # Sort overrides so drops are applied last (positions don't shift).
+    drops: list[int] = []
+    reorders: list[tuple[int, int]] = []  # (from, to)
+    for ov in overrides:
+        # Accept both Pydantic Override + plain-dict shapes.
+        if hasattr(ov, "type"):
+            ov_type = ov.type
+            pos = ov.target_position
+            change = getattr(ov, "proposed_change", None)
+        else:
+            ov_type = ov.get("type")
+            pos = ov.get("target_position")
+            change = ov.get("proposed_change", {})
+        if pos is None:
+            continue
+        if ov_type == "drop_item":
+            drops.append(pos)
+        elif ov_type == "reorder":
+            new_pos = change.get("new_position") if isinstance(change, dict) else None
+            if isinstance(new_pos, int):
+                reorders.append((pos, new_pos))
+    # Apply reorders first.
+    for src, dst in reorders:
+        if 0 <= src < len(new_clips) and 0 <= dst < len(new_clips):
+            clip = new_clips.pop(src)
+            new_clips.insert(dst, clip)
+    # Then drops (descending so indices stay valid).
+    for pos in sorted(drops, reverse=True):
+        if 0 <= pos < len(new_clips):
+            new_clips.pop(pos)
+    return plan.model_copy(update={"clips": new_clips})
