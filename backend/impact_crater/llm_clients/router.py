@@ -356,22 +356,29 @@ class LLMRouter:
         target_duration: int,
         mode: Literal["standard", "music_video"] = "standard",
         music_spec: MusicSpec | None = None,
+        extra_prompt_vars: dict[str, Any] | None = None,
     ) -> ArcJudgment:
         """N-001 Stage-5 narrative judgment. Cache key includes the full input
         because brief / target_duration / candidate_set drive the result.
+
+        `extra_prompt_vars` lets callers (e.g. M4 music-video mode) inject
+        additional template context (`music_analysis`, etc.) without
+        widening this method's surface for every variant.
         """
         op = "judge_narrative_arc"
         route = self.route_for(op)
         client = self._client_for(route)
         prompt = prompts.load(op, route.provider, route.model)
-        rendered = prompts.render(
-            prompt,
-            brief=brief,
-            target_duration_seconds=target_duration,
-            mode=mode,
-            music_spec=music_spec,
-            candidates=candidates,
-        )
+        render_vars: dict[str, Any] = {
+            "brief": brief,
+            "target_duration_seconds": target_duration,
+            "mode": mode,
+            "music_spec": music_spec,
+            "candidates": candidates,
+        }
+        if extra_prompt_vars:
+            render_vars.update(extra_prompt_vars)
+        rendered = prompts.render(prompt, **render_vars)
         params = self._params(route)
 
         # Full-input cache key — repeating an identical judge call is rare but cheap to handle.
@@ -380,6 +387,7 @@ class LLMRouter:
             "target_duration": target_duration,
             "mode": mode,
             "music_spec": _music_spec_dict(music_spec),
+            "extra_prompt_vars": _stable_repr(extra_prompt_vars),
             "candidates": [
                 {
                     "ref": c.candidate_ref if hasattr(c, "candidate_ref") else None,
@@ -642,3 +650,24 @@ def _music_spec_dict(ms: MusicSpec | None) -> dict[str, Any] | None:
         "bpm": ms.bpm,
         "section_to_media_nl": ms.section_to_media_nl,
     }
+
+
+def _stable_repr(obj: Any) -> str:
+    """Stable string for cache-key inclusion. Handles None + Pydantic models."""
+    if obj is None:
+        return ""
+    try:
+        from pydantic import BaseModel
+
+        def _coerce(o: Any) -> Any:
+            if isinstance(o, BaseModel):
+                return o.model_dump()
+            if isinstance(o, dict):
+                return {k: _coerce(v) for k, v in o.items()}
+            if isinstance(o, list):
+                return [_coerce(v) for v in o]
+            return o
+
+        return cache.canonicalize_params({"v": _coerce(obj)})
+    except Exception:  # pragma: no cover
+        return str(obj)

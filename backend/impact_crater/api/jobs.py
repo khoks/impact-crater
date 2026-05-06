@@ -140,6 +140,7 @@ class RenderJobRequest(BaseModel):
     target_duration: int = Field(ge=1, description="seconds")
     audio_path: str = Field(min_length=1)
     mode: Literal["standard", "music_video"] = "standard"
+    section_to_media_nl: str | None = None
     project_id: str | None = None
     quality_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     target_size: int | None = Field(default=None, ge=1)
@@ -164,14 +165,10 @@ class RenderJobResponse(BaseModel):
     status_code=status.HTTP_200_OK,
 )
 async def post_render_job(req: RenderJobRequest) -> RenderJobResponse:
-    """Run the full M2 pipeline (Stages 1-7) and return the rendered MP4 path."""
-    if req.mode == "music_video":
-        # M2 = standard only; M4 lights up music_video.
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="music_video mode lands at M4; M2 supports standard mode only",
-        )
+    """Run the full M2 pipeline (Stages 1-7) and return the rendered MP4 path.
 
+    Both `standard` and `music_video` modes are supported as of M4 (E-2.5).
+    """
     overrides = None
     if req.quality_threshold is not None or req.target_size is not None:
         overrides = PreFilterOverrides(
@@ -191,7 +188,8 @@ async def post_render_job(req: RenderJobRequest) -> RenderJobResponse:
         brief=req.brief,
         target_duration_seconds=req.target_duration,
         audio_path=audio_path,
-        mode="standard",
+        mode=req.mode,
+        section_to_media_nl=req.section_to_media_nl,
         project_id=req.project_id,
         overrides=overrides,
     )
@@ -244,6 +242,8 @@ class SubmitJobRequest(BaseModel):
     brief: str = Field(min_length=1)
     target_duration: int = Field(ge=1)
     audio_path: str = Field(min_length=1)
+    mode: Literal["standard", "music_video"] = "standard"
+    section_to_media_nl: str | None = None
     project_id: str | None = None
 
 
@@ -288,6 +288,8 @@ async def post_submit_job(req: SubmitJobRequest) -> SubmitJobResponse:
         audio_path=audio_path,
         router=llm_router,
         project_id=req.project_id,
+        mode=req.mode,
+        section_to_media_nl=req.section_to_media_nl,
     )
     return SubmitJobResponse(
         job_id=snap.job_id,

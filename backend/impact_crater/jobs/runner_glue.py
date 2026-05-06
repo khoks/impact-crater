@@ -85,6 +85,8 @@ def submit_full_pipeline_job(
     audio_path: Path,
     router: LLMRouter,
     project_id: str | None = None,
+    mode: str = "standard",
+    section_to_media_nl: str | None = None,
 ) -> JobSnapshot:
     """Register a new job + spawn the background task. Returns immediately."""
     registry = get_registry()
@@ -93,11 +95,16 @@ def submit_full_pipeline_job(
     snap = JobSnapshot(job_id=job_id, project_id=final_project_id)
     registry.register(snap)
 
+    if mode not in ("standard", "music_video"):
+        raise ValueError(f"unsupported mode {mode!r}")
+
     config = FullJobConfig(
         media_paths=media_paths,
         brief=brief,
         target_duration_seconds=target_duration_seconds,
         audio_path=audio_path,
+        mode=mode,  # type: ignore[arg-type]
+        section_to_media_nl=section_to_media_nl,
         project_id=final_project_id,
     )
     reporter = _RegistryReporter(registry, job_id)

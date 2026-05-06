@@ -26,6 +26,12 @@ from impact_crater.llm_clients.base import ArcJudgment, MusicSpec
 from impact_crater.llm_clients.google_client import GoogleLLMClient
 from impact_crater.llm_clients.router import LLMRouter
 from impact_crater.media import ffmpeg as ff
+from impact_crater.media.music import (
+    LibrosaMusicAnalyzer,
+    MusicAnalysis,
+    MusicAnalyzer,
+    generate_cut_grid,
+)
 from impact_crater.pipeline import (
     stage1_ingest,
     stage2_bulk_ops,
@@ -112,6 +118,7 @@ async def run_headless_pipeline(
     router: LLMRouter | None = None,
     pool: WorkerPool | None = None,
     progress: ProgressReporter | None = None,
+    music_analysis: "MusicAnalysis | None" = None,
 ) -> HeadlessJobResult:
     """Run Stages 1-5 end-to-end and return the ArcJudgment.
 
@@ -217,6 +224,7 @@ async def run_headless_pipeline(
             target_duration_seconds=config.target_duration_seconds,
             mode=config.mode,
             music_spec=config.music_spec,
+            music_analysis=music_analysis,
         )
         await reporter.stage_completed(
             "stage_5_judge",
@@ -264,7 +272,8 @@ class FullJobConfig:
     brief: str
     target_duration_seconds: int
     audio_path: Path
-    mode: Literal["standard"] = "standard"  # music_video → M4
+    mode: Literal["standard", "music_video"] = "standard"
+    section_to_media_nl: str | None = None  # M4: optional NL spec
     project_id: str | None = None
     overrides: PreFilterOverrides | None = None
 
@@ -307,6 +316,7 @@ async def run_full_pipeline(
     router: LLMRouter | None = None,
     pool: WorkerPool | None = None,
     progress: ProgressReporter | None = None,
+    music_analyzer: MusicAnalyzer | None = None,
 ) -> FullJobResult:
     """Run Stages 1-7 end-to-end → rendered MP4 + JobCostSummary.
 
@@ -315,21 +325,49 @@ async def run_full_pipeline(
     JobLifecycleEvent + RenderEvent telemetry; final aggregation persisted
     as `snapshots/{snapshot_id}/cost_summary.json`.
     """
+    pool = pool or WorkerPool()
+    reporter: ProgressReporter = progress or _NoopReporter()
+
+    # When mode=music_video, run MusicAnalyzer up-front so Stage 5 sees
+    # the analysis + section-to-media NL spec. Sync mode skips this.
+    music_analysis = None
+    cut_grid = None
+    if config.mode == "music_video":
+        await reporter.stage_started("stage_0_music_analysis", detail="(M4)")
+        analyzer = music_analyzer or LibrosaMusicAnalyzer()
+        music_analysis = await analyzer.analyze(config.audio_path)
+        cut_grid = generate_cut_grid(music_analysis)
+        await reporter.stage_completed(
+            "stage_0_music_analysis",
+            detail=f"bpm={music_analysis.bpm:.0f}, {len(cut_grid.cut_points_ms)} cuts",
+        )
+
     # Reuse the M1 runner for Stages 1-5; it already handles the quota
-    # check + lifecycle telemetry.
+    # check + lifecycle telemetry. Pass the MusicSpec for music_video mode
+    # so Stage 5's prompt sees the section structure.
+    music_spec_for_judge = None
+    if config.mode == "music_video" and music_analysis is not None:
+        music_spec_for_judge = MusicSpec(
+            duration_ms=music_analysis.duration_ms,
+            bpm=music_analysis.bpm,
+            section_to_media_nl=config.section_to_media_nl,
+        )
+
     headless_config = HeadlessJobConfig(
         media_paths=config.media_paths,
         brief=config.brief,
         target_duration_seconds=config.target_duration_seconds,
-        mode="standard",
-        music_spec=None,
+        mode=config.mode,
+        music_spec=music_spec_for_judge,
         project_id=config.project_id,
         overrides=config.overrides,
     )
-    pool = pool or WorkerPool()
-    reporter: ProgressReporter = progress or _NoopReporter()
     headless = await run_headless_pipeline(
-        headless_config, router=router, pool=pool, progress=reporter
+        headless_config,
+        router=router,
+        pool=pool,
+        progress=reporter,
+        music_analysis=music_analysis,
     )
 
     # Stage 6 — compile plan with the user's audio.
@@ -338,6 +376,9 @@ async def run_full_pipeline(
     music = StandardMusicSpec(
         audio_path=str(config.audio_path),
         audio_duration_ms=audio_probe.duration_ms,
+        music_analysis=music_analysis,
+        cut_grid=cut_grid,
+        section_to_media_nl=config.section_to_media_nl,
     )
     # Reuse the media records the headless runner already produced
     # (idempotent ingest means re-running would be safe, but skipping the
@@ -347,7 +388,7 @@ async def run_full_pipeline(
         ingest_records=headless.media,
         project_id=headless.project_id,
         target_duration_seconds=config.target_duration_seconds,
-        mode="standard",
+        mode=config.mode,
         audio=music,
     )
     await reporter.stage_completed(
