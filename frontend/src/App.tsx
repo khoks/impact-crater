@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-
 
 import { fetchSetupStatus } from "./api/setup";
 import Dashboard from "./routes/Dashboard";
+import EffortAndCost from "./routes/EffortAndCost";
 import NewProject from "./routes/NewProject";
 import Setup from "./routes/Setup";
 import { useSetupStore } from "./stores/setupStore";
@@ -54,6 +55,7 @@ export default function App() {
       <Route path="/setup" element={<Setup />} />
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/projects/new" element={<NewProject />} />
+      <Route path="/projects/new/effort" element={<EffortAndCost />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );
