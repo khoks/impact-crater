@@ -410,7 +410,8 @@ async def test_compile_persists_music_spec() -> None:
 
 
 @pytest.mark.usefixtures("db_initialized")
-async def test_music_video_mode_raises_not_implemented_at_m2() -> None:
+async def test_music_video_mode_without_cut_grid_raises_value_error() -> None:
+    """music_video mode at M4 requires StandardMusicSpec.cut_grid."""
     photo = _photo_record("h-mv")
     arc = _arc(
         [
@@ -422,7 +423,7 @@ async def test_music_video_mode_raises_not_implemented_at_m2() -> None:
             )
         ]
     )
-    with pytest.raises(NotImplementedError, match="M4"):
+    with pytest.raises(ValueError, match="cut_grid"):
         await compile_plan(
             arc_judgment=arc,
             ingest_records=[photo],

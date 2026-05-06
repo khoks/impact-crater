@@ -77,10 +77,14 @@ weights/
 *.onnx
 
 # --- Local media work directories ---
-media/
-.cache-media/
-renders/
-exports/
+# Anchor to repo root so the `backend/impact_crater/media/` python
+# package is NOT ignored — that subtle bug ate the S-2.3.1 ffmpeg
+# resolver in M2 (file existed locally + tests passed but the file
+# never reached master).
+/media/
+/.cache-media/
+/renders/
+/exports/
 
 # --- Docker ---
 docker-compose.override.yml

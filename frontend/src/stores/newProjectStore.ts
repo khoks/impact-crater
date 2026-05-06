@@ -5,12 +5,17 @@
 
 import { create } from "zustand";
 
+export type ProjectMode = "standard" | "music_video";
+
 export interface NewProjectDraft {
   name: string;
   brief: string;
   folder_path: string;
   audio_path: string;
   target_duration_seconds: number;
+  // M4 music-video toggles
+  mode: ProjectMode;
+  section_to_media_nl: string;
   // Folder-scan results live here so the effort-level page doesn't re-fetch.
   scanned_media_paths: string[];
   scanned_photo_count: number;

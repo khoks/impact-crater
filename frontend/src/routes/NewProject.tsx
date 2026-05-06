@@ -8,12 +8,16 @@ import { Link, useNavigate } from "react-router-dom";
 import { scanFolder, type FolderScanResponse } from "../api/folder";
 import { useNewProjectStore } from "../stores/newProjectStore";
 
+type ProjectMode = "standard" | "music_video";
+
 interface FormState {
   name: string;
   brief: string;
   folder_path: string;
   audio_path: string;
   target_duration_seconds: number;
+  mode: ProjectMode;
+  section_to_media_nl: string;
 }
 
 const INITIAL: FormState = {
@@ -22,6 +26,8 @@ const INITIAL: FormState = {
   folder_path: "",
   audio_path: "",
   target_duration_seconds: 60,
+  mode: "standard",
+  section_to_media_nl: "",
 };
 
 export default function NewProject() {
@@ -65,6 +71,8 @@ export default function NewProject() {
         folder_path: form.folder_path.trim(),
         audio_path: form.audio_path.trim(),
         target_duration_seconds: form.target_duration_seconds,
+        mode: form.mode,
+        section_to_media_nl: form.section_to_media_nl.trim(),
         scanned_media_paths: scan.items.map((it) => it.path),
         scanned_photo_count: scan.photo_count,
         scanned_video_count: scan.video_count,
@@ -182,6 +190,57 @@ export default function NewProject() {
             <span>10 min</span>
           </div>
         </Field>
+
+        <Field label="Mode">
+          <div className="space-y-2">
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="radio"
+                name="mode"
+                value="standard"
+                checked={form.mode === "standard"}
+                onChange={() => setForm({ ...form, mode: "standard" })}
+                className="mt-1"
+              />
+              <span>
+                <strong>Standard</strong> — music sits under the curated
+                video. Cuts driven by the brief, not the beat.
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="radio"
+                name="mode"
+                value="music_video"
+                checked={form.mode === "music_video"}
+                onChange={() => setForm({ ...form, mode: "music_video" })}
+                className="mt-1"
+              />
+              <span>
+                <strong>Music video</strong> — cuts snap to the beat;
+                section structure of the song maps to media segments.
+              </span>
+            </label>
+          </div>
+        </Field>
+
+        {form.mode === "music_video" && (
+          <Field label="Section-to-media spec (optional)">
+            <textarea
+              value={form.section_to_media_nl}
+              onChange={(e) =>
+                setForm({ ...form, section_to_media_nl: e.target.value })
+              }
+              rows={3}
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+              placeholder="Intro should be slow scenic shots. Chorus is the summit attempt — the climbing footage. Bridge should be the rest stop with the kids playing. Outro is the sunset shots from the way back."
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Free-text — the narrative judge reads this verbatim alongside
+              the music's section structure.
+            </p>
+          </Field>
+        )}
       </div>
 
       {submitError && (

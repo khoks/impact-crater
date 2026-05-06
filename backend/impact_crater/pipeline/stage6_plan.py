@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from impact_crater import paths
 from impact_crater.llm_clients.base import ArcJudgment, SelectedItem
+from impact_crater.media.music import CutGrid, MusicAnalysis
 from impact_crater.pipeline.stage1_ingest import MediaRecord, SceneRecord
 from impact_crater.storage.db import connection
 
@@ -61,9 +62,8 @@ class RenderClip(BaseModel):
 class StandardMusicSpec(BaseModel):
     """M2 standard-mode music spec.
 
-    Music-video mode (beat-snap, section-mapping) lands at M4; this is
-    the simpler "background music under the video" shape per ADR-0012
-    standard mode.
+    Music-video mode (beat-snap, section-mapping) extends this shape
+    via `music_analysis` + `cut_grid` per ADR-0012.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -73,6 +73,10 @@ class StandardMusicSpec(BaseModel):
     fade_out_ms: int = 1500
     target_lufs: float = -16.0
     true_peak_db: float = -1.5
+    # Populated when mode=music_video (M4); None for standard mode.
+    music_analysis: MusicAnalysis | None = None
+    cut_grid: CutGrid | None = None
+    section_to_media_nl: str | None = None
 
 
 class RenderPlan(BaseModel):
@@ -110,24 +114,36 @@ async def compile_plan(
     audio: StandardMusicSpec | None = None,
     parent_snapshot_id: str | None = None,
 ) -> RenderPlan:
-    """Compile a `RenderPlan` from an `ArcJudgment` + ingest records."""
+    """Compile a `RenderPlan` from an `ArcJudgment` + ingest records.
+
+    In `music_video` mode, requires `audio.cut_grid` (computed by the
+    runner from `MusicAnalyzer.analyze`); clip durations snap to the
+    grid's cut points instead of linear-scaling. Per ADR-0011 + ADR-0012.
+    """
     if mode == "music_video":
-        raise NotImplementedError(
-            "music_video mode lands at M4 (E-2.5); M2 supports standard mode only"
-        )
+        if audio is None or audio.cut_grid is None:
+            raise ValueError(
+                "music_video mode requires StandardMusicSpec.cut_grid "
+                "(populated by the runner via MusicAnalyzer.analyze)"
+            )
 
     target_ms = max(target_duration_seconds, 1) * 1000
     clips = _build_clips(arc_judgment.selected_items, ingest_records)
     if not clips:
         raise ValueError("ArcJudgment selected_items produced zero resolvable clips")
-    clips = _scale_to_target(clips, target_ms)
+
+    if mode == "music_video":
+        assert audio is not None and audio.cut_grid is not None  # narrowed above
+        clips = _snap_clips_to_cut_grid(clips, audio.cut_grid, target_ms)
+    else:
+        clips = _scale_to_target(clips, target_ms)
 
     snapshot_id = uuid.uuid4().hex[:16]
     plan = RenderPlan(
         project_id=project_id,
         snapshot_id=snapshot_id,
         parent_snapshot_id=parent_snapshot_id,
-        mode="standard",
+        mode=mode,
         target_duration_ms=target_ms,
         clips=clips,
         music=audio,
@@ -260,6 +276,38 @@ def _pick_action_for_video(width: int, height: int) -> AspectRatioAction:
 
 
 # ---- Duration scaling --------------------------------------------------
+
+
+def _snap_clips_to_cut_grid(
+    clips: list[RenderClip],
+    cut_grid: CutGrid,
+    target_ms: int,
+) -> list[RenderClip]:
+    """Map each clip onto a cut-grid interval (music-video mode).
+
+    The grid yields N intervals from N+1 cut points. We assign clips
+    in order; if there are more clips than intervals we drop the tail
+    (Stage 5's selected_items are already ranked by placement_position
+    so the tail is the lowest-priority items). If there are fewer
+    clips than intervals we leave the rest of the timeline silent —
+    the user picked a target duration, not a "fill the song" mode.
+    """
+    cuts = [c for c in cut_grid.cut_points_ms if c <= target_ms]
+    if cuts and cuts[-1] < target_ms:
+        cuts = [*cuts, target_ms]
+    if len(cuts) < 2:
+        # Degenerate grid — fall back to linear scale.
+        return _scale_to_target(clips, target_ms)
+
+    intervals = list(zip(cuts, cuts[1:]))  # [(start_ms, end_ms), ...]
+    out: list[RenderClip] = []
+    for clip, (a, b) in zip(clips, intervals):
+        snapped_ms = max(b - a, 250)
+        if clip.kind == "video_scene":
+            scene_max = max(int((clip.end_seconds - clip.start_seconds) * 1000), 250)
+            snapped_ms = min(snapped_ms, scene_max)
+        out.append(clip.model_copy(update={"intended_duration_ms": snapped_ms}))
+    return out
 
 
 def _scale_to_target(

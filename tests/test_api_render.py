@@ -174,10 +174,12 @@ async def test_render_endpoint_produces_mp4(
     assert any(s["codec_type"] == "audio" for s in parsed["streams"])
 
 
-async def test_render_endpoint_rejects_music_video_at_m2(
+async def test_render_endpoint_accepts_music_video_mode(
     client: httpx.AsyncClient, tmp_path: Path
 ) -> None:
-    audio = _wav(tmp_path)
+    """M4: music_video mode is supported. Full happy path with mocked
+    router + real ffmpeg + real librosa-based MusicAnalyzer."""
+    audio = _wav(tmp_path, duration_ms=5000)
     photos: list[Path] = client._test_photo_paths  # type: ignore[attr-defined]
     r = await client.post(
         "/api/jobs/render",
@@ -187,10 +189,14 @@ async def test_render_endpoint_rejects_music_video_at_m2(
             "target_duration": 2,
             "audio_path": str(audio),
             "mode": "music_video",
+            "section_to_media_nl": "intro: warm; outro: cool",
         },
+        timeout=120.0,
     )
-    assert r.status_code == 501
-    assert "M4" in r.json()["detail"]
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert Path(body["render_path"]).is_file()
+    assert body["output_bytes"] > 0
 
 
 async def test_render_endpoint_400_for_missing_audio(

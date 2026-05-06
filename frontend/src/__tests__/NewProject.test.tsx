@@ -183,6 +183,85 @@ describe("NewProject", () => {
       brief: "warm to cool",
       audio_path: "/tmp/song.mp3",
       scanned_photo_count: 1,
+      mode: "standard",
+    });
+  });
+
+  it("reveals the section-to-media textarea when music_video is selected", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/projects/new"]}>
+        <Routes>
+          <Route path="/projects/new" element={<NewProject />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    // Default = standard, textarea hidden.
+    expect(screen.queryByPlaceholderText(/Intro should be slow/i)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: /Music video/i }));
+    expect(
+      screen.getByPlaceholderText(/Intro should be slow/i)
+    ).toBeInTheDocument();
+    // Switching back hides it.
+    await user.click(screen.getByRole("radio", { name: /Standard/i }));
+    expect(screen.queryByPlaceholderText(/Intro should be slow/i)).not.toBeInTheDocument();
+  });
+
+  it("stashes mode + section_to_media_nl in the draft", async () => {
+    mockFetchSequence([
+      {
+        ok: true,
+        status: 200,
+        body: {
+          folder: "/tmp/photos",
+          items: [
+            { path: "/tmp/photos/a.jpg", media_type: "photo", file_size: 1234 },
+          ],
+          photo_count: 1,
+          video_count: 0,
+          total_bytes: 1234,
+          truncated: false,
+        },
+      },
+    ]);
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/projects/new"]}>
+        <Routes>
+          <Route path="/projects/new" element={<NewProject />} />
+          <Route path="/projects/new/effort" element={<div>EFFORT</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await user.type(screen.getByPlaceholderText(/Alps trip/), "Hike");
+    await user.type(
+      screen.getByPlaceholderText(/Highlight reel/),
+      "summit attempt"
+    );
+    await user.type(
+      screen.getByPlaceholderText(/Pictures.Alps2026/),
+      "/tmp/photos"
+    );
+    await user.click(screen.getByRole("button", { name: /^Scan$/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/MB/)).toBeInTheDocument();
+    });
+    await user.type(
+      screen.getByPlaceholderText(/track\.mp3/),
+      "/tmp/song.mp3"
+    );
+    await user.click(screen.getByRole("radio", { name: /Music video/i }));
+    await user.type(
+      screen.getByPlaceholderText(/Intro should be slow/i),
+      "intro=warm; chorus=summit"
+    );
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+    await waitFor(() => {
+      expect(screen.getByText("EFFORT")).toBeInTheDocument();
+    });
+    expect(useNewProjectStore.getState().draft).toMatchObject({
+      mode: "music_video",
+      section_to_media_nl: "intro=warm; chorus=summit",
     });
   });
 });

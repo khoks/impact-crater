@@ -37,6 +37,8 @@ function seedDraft(): void {
       folder_path: "/tmp/photos",
       audio_path: "/tmp/song.mp3",
       target_duration_seconds: 30,
+      mode: "standard",
+      section_to_media_nl: "",
       scanned_media_paths: ["/tmp/photos/a.jpg", "/tmp/photos/b.jpg"],
       scanned_photo_count: 2,
       scanned_video_count: 0,
