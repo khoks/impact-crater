@@ -10,17 +10,24 @@ operation that consumes per-asset bytes (caption_image, score_image,
 extract_metadata_image, embed_image). Operations that don't consume bytes
 (parse_user_brief, judge_narrative_arc, recommend_*, explain_*) are
 keyed on a deterministic hash of their input arguments.
+
+Per-call telemetry: every dispatch (cache hit or miss) emits an
+`LLMCallEvent` so `JobCostSummary` can aggregate cost. The router can
+also be given a `ProgressSink` (the M3 JobRegistry) for live UI updates.
 """
 
 from __future__ import annotations
 
 import hashlib
+import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
 
+from impact_crater import rate_cards, telemetry
 from impact_crater.llm_clients import cache, prompts
 from impact_crater.llm_clients.base import (
     ArcJudgment,
@@ -31,6 +38,14 @@ from impact_crater.llm_clients.base import (
     MusicSpec,
 )
 from impact_crater.llm_clients.exceptions import LLMOperationFailed
+
+log = logging.getLogger(__name__)
+
+
+# Async callback the router invokes on every dispatch. Receives a dict
+# `{operation, provider, tier, cost_usd, cache_hit}`. The M3 JobRegistry
+# is the production sink; tests pass their own.
+ProgressSink = Callable[[dict[str, Any]], Awaitable[None]]
 
 # Repo-root-relative `config/llm-routing.yaml`.
 _CONFIG_PATH_DEFAULT = Path(__file__).resolve().parents[3] / "config" / "llm-routing.yaml"
@@ -70,6 +85,30 @@ class LLMRouter:
         """
         self._clients = clients
         self._routes = _load_routes(config_path or _CONFIG_PATH_DEFAULT, overrides or {})
+        self._progress_sink: ProgressSink | None = None
+        self._telemetry_context: dict[str, Any] = {
+            "project_id": "",
+            "snapshot_id": None,
+            "correlation_id": "",
+        }
+
+    def set_progress_sink(self, sink: ProgressSink | None) -> None:
+        """Attach (or detach) a per-call progress callback."""
+        self._progress_sink = sink
+
+    def set_telemetry_context(
+        self,
+        *,
+        project_id: str,
+        snapshot_id: str | None,
+        correlation_id: str,
+    ) -> None:
+        """Stamp project + correlation IDs on every emitted LLMCallEvent."""
+        self._telemetry_context = {
+            "project_id": project_id,
+            "snapshot_id": snapshot_id,
+            "correlation_id": correlation_id,
+        }
 
     # -- Introspection ---------------------------------------------------
 
@@ -109,6 +148,7 @@ class LLMRouter:
             params_canonical=params_canonical,
         )
         if cached is not None:
+            await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return str(cached)
 
         result = await client.caption_image(image_bytes, prompt_template=rendered, params=params)
@@ -122,6 +162,7 @@ class LLMRouter:
             prompt_version=prompt.prompt_version,
             params_canonical=params_canonical,
         )
+        await self._record_call(route, cache_hit=False, result_bytes_hash=content_hash)
         return result
 
     async def score_image(
@@ -160,6 +201,7 @@ class LLMRouter:
             params_canonical=params_canonical,
         )
         if cached is not None:
+            await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return float(cached)
 
         result = await client.score_image(
@@ -178,6 +220,7 @@ class LLMRouter:
             prompt_version=prompt.prompt_version,
             params_canonical=params_canonical,
         )
+        await self._record_call(route, cache_hit=False, result_bytes_hash=content_hash)
         return result
 
     async def extract_metadata_image(
@@ -207,6 +250,7 @@ class LLMRouter:
         )
         if cached is not None:
             assert isinstance(cached, dict)
+            await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return cached
 
         result = await client.extract_metadata_image(
@@ -225,6 +269,7 @@ class LLMRouter:
             prompt_version=prompt.prompt_version,
             params_canonical=params_canonical,
         )
+        await self._record_call(route, cache_hit=False, result_bytes_hash=content_hash)
         return result
 
     async def embed_image(self, image_bytes: bytes, *, content_hash: str) -> Embedding:
@@ -245,6 +290,7 @@ class LLMRouter:
             params_canonical=params_canonical,
         )
         if cached is not None:
+            await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return cached  # numpy ndarray
 
         result = await client.embed_image(image_bytes, params=params)
@@ -258,6 +304,7 @@ class LLMRouter:
             prompt_version=prompt_version,
             params_canonical=params_canonical,
         )
+        await self._record_call(route, cache_hit=False, result_bytes_hash=content_hash)
         return result
 
     async def embed_text(self, text: str, *, cache_key_text: str | None = None) -> Embedding:
@@ -284,6 +331,7 @@ class LLMRouter:
             params_canonical=params_canonical,
         )
         if cached is not None:
+            await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return cached
 
         result = await client.embed_text(text, params=params)
@@ -297,6 +345,7 @@ class LLMRouter:
             prompt_version=prompt_version,
             params_canonical=params_canonical,
         )
+        await self._record_call(route, cache_hit=False, result_bytes_hash=content_hash)
         return result
 
     async def judge_narrative_arc(
@@ -358,6 +407,7 @@ class LLMRouter:
         )
         if cached is not None:
             assert isinstance(cached, ArcJudgment)
+            await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return cached
 
         result = await client.judge_narrative_arc(
@@ -379,6 +429,7 @@ class LLMRouter:
             prompt_version=prompt.prompt_version,
             params_canonical=params_canonical,
         )
+        await self._record_call(route, cache_hit=False, result_bytes_hash=content_hash)
         return result
 
     async def parse_user_brief(
@@ -410,6 +461,7 @@ class LLMRouter:
         )
         if cached is not None:
             assert isinstance(cached, dict)
+            await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return cached
 
         result = await client.parse_user_brief(
@@ -428,9 +480,71 @@ class LLMRouter:
             prompt_version=prompt.prompt_version,
             params_canonical=params_canonical,
         )
+        await self._record_call(route, cache_hit=False, result_bytes_hash=content_hash)
         return result
 
     # -- Internal helpers -----------------------------------------------
+
+    async def _record_call(
+        self,
+        route: OperationRoute,
+        *,
+        cache_hit: bool,
+        latency_ms: int = 0,
+        result_bytes_hash: str = "",
+    ) -> None:
+        """Emit LLMCallEvent telemetry + invoke progress sink (if any).
+
+        Cost is best-effort estimated from rate cards. Missing rate cards
+        log a warning but don't fail the call. Cache hits report cost=0.
+        """
+        cost = 0.0
+        if not cache_hit:
+            try:
+                # Rough estimate — we don't have actual token counts at the
+                # router layer (they live inside each provider client). We
+                # ballpark per-tier averages from ADR-0009 §"per-job envelope".
+                cost = _ballpark_cost(route)
+            except Exception as exc:  # pragma: no cover — best-effort
+                log.debug("rate-card lookup failed for %s/%s: %s",
+                          route.provider, route.model, exc)
+                cost = 0.0
+
+        ctx = self._telemetry_context
+        try:
+            telemetry.emit(
+                telemetry.LLMCallEvent(
+                    operation=route.operation,
+                    provider=route.provider,
+                    model=route.model,
+                    model_version=route.model_version,
+                    input_tokens=0,
+                    output_tokens=0,
+                    latency_ms=latency_ms,
+                    cost_estimate_usd=cost,
+                    result_bytes_hash=result_bytes_hash,
+                    project_id=ctx.get("project_id", ""),
+                    snapshot_id=ctx.get("snapshot_id"),
+                    cache_hit=cache_hit,
+                    correlation_id=ctx.get("correlation_id", ""),
+                )
+            )
+        except Exception as exc:  # pragma: no cover
+            log.debug("telemetry emit failed: %s", exc)
+
+        if self._progress_sink is not None:
+            try:
+                await self._progress_sink(
+                    {
+                        "operation": route.operation,
+                        "provider": route.provider,
+                        "tier": route.tier,
+                        "cost_usd": cost,
+                        "cache_hit": cache_hit,
+                    }
+                )
+            except Exception as exc:  # pragma: no cover
+                log.debug("progress sink failed: %s", exc)
 
     def _client_for(self, route: OperationRoute) -> LLMClient:
         if route.provider not in self._clients:
@@ -491,6 +605,33 @@ def _hash_dict(d: dict[str, Any]) -> str:
     return hashlib.sha256(
         cache.canonicalize_params(d).encode("utf-8")
     ).hexdigest()[:16]
+
+
+# Per-tier ballpark cost in USD per call. Pulled from ADR-0009's per-job
+# envelope (~$7-22 for 1000 photos = ~3500 Tier-S + ~1500 Tier-M + 1 Tier-L).
+# These are placeholders until per-provider clients pass back actual token
+# counts from their usage objects (v1 enhancement).
+_TIER_COST_FALLBACK = {
+    "S": 0.001,
+    "M": 0.005,
+    "L": 0.50,
+    "embedding": 0.0001,
+}
+
+
+def _ballpark_cost(route: OperationRoute) -> float:
+    """Best-effort per-call cost without real token counts.
+
+    Tries to read the rate card to validate it exists; falls back to the
+    per-tier envelope from ADR-0009 if the rate card has no per-call
+    figure. Real token-aware costing arrives when each provider client
+    surfaces `usage` from its responses (v1).
+    """
+    try:
+        rate_cards.load(route.provider, route.model, route.model_version)
+    except FileNotFoundError:
+        pass
+    return _TIER_COST_FALLBACK.get(route.tier, 0.001)
 
 
 def _music_spec_dict(ms: MusicSpec | None) -> dict[str, Any] | None:

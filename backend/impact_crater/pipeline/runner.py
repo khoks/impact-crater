@@ -3,6 +3,11 @@
 `run_headless_pipeline` (M1) returns the structured ArcJudgment.
 `run_full_pipeline` (M2) takes the same inputs plus an `audio_path` and
 runs through Stages 6-7 to produce a rendered MP4 + JobCostSummary.
+
+Both runners accept an optional `progress` ProgressReporter (M3) that
+receives stage-boundary callbacks. The router separately accepts a
+ProgressSink for per-call cost telemetry; the API layer wires both to
+the JobRegistry.
 """
 
 from __future__ import annotations
@@ -13,7 +18,7 @@ import os
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from impact_crater import quota, telemetry
 from impact_crater.llm_clients.anthropic_client import AnthropicLLMClient
@@ -40,6 +45,31 @@ log = logging.getLogger(__name__)
 
 
 # ---- Public types ------------------------------------------------------
+
+
+@runtime_checkable
+class ProgressReporter(Protocol):
+    """Optional sink for stage-boundary callbacks. The M3 API layer
+    binds this to the JobRegistry; tests can pass their own."""
+
+    async def stage_started(self, stage: str, *, detail: str = "") -> None: ...
+
+    async def stage_completed(self, stage: str, *, detail: str = "") -> None: ...
+
+    async def stage_failed(self, stage: str, *, detail: str = "") -> None: ...
+
+
+class _NoopReporter:
+    """Default reporter — silence."""
+
+    async def stage_started(self, stage: str, *, detail: str = "") -> None:
+        return None
+
+    async def stage_completed(self, stage: str, *, detail: str = "") -> None:
+        return None
+
+    async def stage_failed(self, stage: str, *, detail: str = "") -> None:
+        return None
 
 
 @dataclass
@@ -81,6 +111,7 @@ async def run_headless_pipeline(
     *,
     router: LLMRouter | None = None,
     pool: WorkerPool | None = None,
+    progress: ProgressReporter | None = None,
 ) -> HeadlessJobResult:
     """Run Stages 1-5 end-to-end and return the ArcJudgment.
 
@@ -93,13 +124,22 @@ async def run_headless_pipeline(
       5. Stage 5 narrative-arc judgment.
 
     Telemetry: emits JobLifecycleEvent at start + completion. Per-call
-    LLMCallEvent emission lives at the LLMRouter layer (S-2.2.X follow-up
-    if not already wired); the runner just bookends the job.
+    LLMCallEvent emission happens inside the LLMRouter (M3 wired); the
+    runner additionally emits stage-boundary events via `progress` if
+    supplied — the M3 API layer wires this to the JobRegistry.
     """
     project_id = config.project_id or f"headless-{uuid.uuid4().hex[:12]}"
     correlation_id = uuid.uuid4().hex
     pool = pool or WorkerPool()
     router = router or _default_router_from_settings()
+    reporter: ProgressReporter = progress or _NoopReporter()
+
+    # Stamp telemetry context so LLMCallEvent rows carry the correlation_id.
+    router.set_telemetry_context(
+        project_id=project_id,
+        snapshot_id=None,
+        correlation_id=correlation_id,
+    )
 
     # 0. Quota pre-check (rough estimate — pessimistic per ADR-0015).
     estimated = _estimate_cost_per_provider(len(config.media_paths))
@@ -128,20 +168,34 @@ async def run_headless_pipeline(
 
     try:
         # Stage 1
+        await reporter.stage_started("stage_1_ingest")
         media = await stage1_ingest.ingest_media(
             project_id, config.media_paths, pool=pool
+        )
+        await reporter.stage_completed(
+            "stage_1_ingest", detail=f"{len(media)} media records"
         )
 
         # Stage 2 + 3 — sequentially (3 needs the full media list); inside
         # each stage we parallelize per-asset.
+        await reporter.stage_started("stage_2_bulk_ops")
         stage2 = await stage2_bulk_ops.run_stage2(
             router=router, media=media, brief=config.brief, pool=pool
         )
+        await reporter.stage_completed(
+            "stage_2_bulk_ops", detail=f"{len(stage2)} assets"
+        )
+
+        await reporter.stage_started("stage_3_metadata")
         stage3 = await stage3_metadata.run_stage3(
             router=router, media=media, brief=config.brief, pool=pool
         )
+        await reporter.stage_completed(
+            "stage_3_metadata", detail=f"{len(stage3)} extracted"
+        )
 
         # Stage 4
+        await reporter.stage_started("stage_4_prefilter")
         candidate_set = stage4_prefilter.prefilter(
             media=media,
             stage2=stage2,
@@ -149,8 +203,13 @@ async def run_headless_pipeline(
             target_duration_seconds=config.target_duration_seconds,
             overrides=config.overrides,
         )
+        await reporter.stage_completed(
+            "stage_4_prefilter",
+            detail=f"{len(candidate_set.items)}/{candidate_set.cluster_metadata.get('input_count', '?')} candidates",
+        )
 
         # Stage 5
+        await reporter.stage_started("stage_5_judge")
         arc_judgment = await stage5_judge.judge_narrative_arc(
             router=router,
             candidate_set=candidate_set,
@@ -158,6 +217,10 @@ async def run_headless_pipeline(
             target_duration_seconds=config.target_duration_seconds,
             mode=config.mode,
             music_spec=config.music_spec,
+        )
+        await reporter.stage_completed(
+            "stage_5_judge",
+            detail=f"confidence={arc_judgment.confidence:.2f}",
         )
 
         telemetry.emit(
@@ -243,6 +306,7 @@ async def run_full_pipeline(
     *,
     router: LLMRouter | None = None,
     pool: WorkerPool | None = None,
+    progress: ProgressReporter | None = None,
 ) -> FullJobResult:
     """Run Stages 1-7 end-to-end → rendered MP4 + JobCostSummary.
 
@@ -263,9 +327,13 @@ async def run_full_pipeline(
         overrides=config.overrides,
     )
     pool = pool or WorkerPool()
-    headless = await run_headless_pipeline(headless_config, router=router, pool=pool)
+    reporter: ProgressReporter = progress or _NoopReporter()
+    headless = await run_headless_pipeline(
+        headless_config, router=router, pool=pool, progress=reporter
+    )
 
     # Stage 6 — compile plan with the user's audio.
+    await reporter.stage_started("stage_6_plan")
     audio_probe = ff.probe_audio(config.audio_path)
     music = StandardMusicSpec(
         audio_path=str(config.audio_path),
@@ -282,10 +350,17 @@ async def run_full_pipeline(
         mode="standard",
         audio=music,
     )
+    await reporter.stage_completed(
+        "stage_6_plan", detail=f"{len(plan.clips)} clips"
+    )
 
     # Stage 7 — render.
+    await reporter.stage_started("stage_7_render")
     render_result = await stage7_render.render_plan(
         plan, correlation_id=headless.correlation_id, pool=pool
+    )
+    await reporter.stage_completed(
+        "stage_7_render", detail=f"{render_result.output_bytes} bytes"
     )
 
     # Aggregate JobCostSummary across the entire correlation_id family
