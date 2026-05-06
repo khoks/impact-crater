@@ -70,6 +70,9 @@ export default function EffortAndCost() {
         brief: draft.brief,
         target_duration: draft.target_duration_seconds,
         audio_path: draft.audio_path,
+        mode: draft.mode,
+        section_to_media_nl:
+          draft.mode === "music_video" ? draft.section_to_media_nl : null,
       });
       reset();
       navigate(`/jobs/${result.job_id}`, { replace: true });

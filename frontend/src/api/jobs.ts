@@ -5,6 +5,8 @@ export interface SubmitJobRequest {
   brief: string;
   target_duration: number;
   audio_path: string;
+  mode?: "standard" | "music_video";
+  section_to_media_nl?: string | null;
   project_id?: string;
 }
 
