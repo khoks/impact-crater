@@ -7,6 +7,7 @@ import EffortAndCost from "./routes/EffortAndCost";
 import JobInProgress from "./routes/JobInProgress";
 import JobPreview from "./routes/JobPreview";
 import NewProject from "./routes/NewProject";
+import Settings from "./routes/Settings";
 import Setup from "./routes/Setup";
 import { useSetupStore } from "./stores/setupStore";
 
@@ -60,6 +61,7 @@ export default function App() {
       <Route path="/projects/new/effort" element={<EffortAndCost />} />
       <Route path="/jobs/:job_id" element={<JobInProgress />} />
       <Route path="/jobs/:job_id/preview" element={<JobPreview />} />
+      <Route path="/settings" element={<Settings />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );
