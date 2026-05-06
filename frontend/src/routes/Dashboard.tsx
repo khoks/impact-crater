@@ -10,12 +10,14 @@ export default function Dashboard() {
     <main className="mx-auto max-w-3xl px-6 py-12">
       <header className="flex items-center justify-between">
         <h1 className="text-3xl font-semibold text-slate-900">Impact Crater</h1>
-        <Link
-          to="/settings"
-          className="text-sm font-medium text-slate-600 hover:text-slate-900"
-        >
-          Settings
-        </Link>
+        <nav className="flex items-center gap-4 text-sm font-medium text-slate-600">
+          <Link to="/people" className="hover:text-slate-900">
+            People
+          </Link>
+          <Link to="/settings" className="hover:text-slate-900">
+            Settings
+          </Link>
+        </nav>
       </header>
 
       <section className="mt-8">
