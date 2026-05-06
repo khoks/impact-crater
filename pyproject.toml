@@ -42,6 +42,13 @@ dependencies = [
     "imagehash>=4.3",
     "scenedetect[opencv-headless]>=0.6.5",
     "ffmpeg-python>=0.2",
+    # M4 music analysis. Madmom was the ADR-0012 first choice but does not
+    # build on Python 3.12 (last release 2024-01, predates 3.12). librosa
+    # alone covers beats + sections + energy at MVP-acceptable accuracy;
+    # the MusicAnalyzer abstraction lets v1 swap to BeatNet/Madmom when
+    # the local-LLM runtime brings torch into deps anyway.
+    "librosa>=0.11",
+    "soundfile>=0.13",
 ]
 
 [project.optional-dependencies]
@@ -107,6 +114,8 @@ module = [
     "scenedetect.*",
     "ffmpeg.*",
     "pillow_heif.*",
+    "librosa.*",
+    "soundfile.*",
 ]
 ignore_missing_imports = true
 
