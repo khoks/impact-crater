@@ -1,6 +1,6 @@
 # Board
 
-> **Last updated:** 2026-05-05 — **E-2.7 (M6 agentic refinement) DONE at MVP scope.** Stage 6 orchestrator second-guess (Tier-M check on the plan; auto-applies high-confidence overrides). Stage 9 N-009 thinking step (re-run Stage 5 with brief addendum or explain why not possible). POST /api/snapshots/{id}/refine endpoint. Frontend Refine button enabled with result panel. **265 tests green** (237 backend unit + 28 frontend unit). M0..M6 done; **E-2.8 (M7 YouTube publish) is Up Next**.
+> **Last updated:** 2026-05-05 — **E-2.8 (M7 YouTube publish) DONE at MVP scope.** Connector Protocol + YouTubeConnector with validation + Fernet-encrypted credential storage. Audit log (append-only JSONL + mirrored SQLite). Publish API + status + disconnect + audit-list endpoints. OAuth callback handler is a config follow-up (user provides their own Google Cloud client_secrets.json); the connector's transport-injection seam supports both real and mock paths. **286 tests green** (258 backend + 28 frontend). M0..M7 done; **E-2.9 (M8+M9 cross-project profile + polish + D-014 validation) is Up Next**.
 > **How to read this:** Hand-maintained mirror of frontmatter `status:` values. The `work-tracker` skill refreshes this file at end-of-session. If you see drift, re-derive from `grep -l "status:" project/{initiatives,epics,stories,tasks}/*.md`.
 
 ---
@@ -15,15 +15,11 @@
 
 | ID | Title | Type | Priority | Phase | Blocked by |
 |---|---|---|---|---|---|
-| [E-2.8](./epics/E-2.8-youtube-publish.md) | YouTube publish (M7) | Epic | P0 | mvp | E-2.7 done — ready |
+| [E-2.9](./epics/E-2.9-cross-project-profile-mvp.md) | Cross-project profile + polish + D-014 validation (M8 + M9) | Epic | P0 | mvp | E-2.8 done — ready |
 
 ## Backlog (mvp-phase, queued)
 
-The remaining MVP epic shells under [I-2 MVP](./initiatives/I-2-mvp.md).
-
-| ID | Title | Type | Priority | Phase | Blocked by |
-|---|---|---|---|---|---|
-| [E-2.9](./epics/E-2.9-cross-project-profile-mvp.md) | Cross-project profile + polish + D-014 validation (M8 + M9) | Epic | P0 | mvp | E-2.1..E-2.8 |
+(empty — all MVP epics are either done or in Up Next)
 
 ## Recently Done (last session)
 
@@ -52,7 +48,7 @@ The remaining MVP epic shells under [I-2 MVP](./initiatives/I-2-mvp.md).
 | ID | Title | Status | Phase |
 |---|---|---|---|
 | [I-1](./initiatives/I-1-project-foundation.md) | Project foundation | **done** (2026-05-03) | scaffolding |
-| [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | **in-progress** (2026-05-03; M0..M6 done) | mvp |
+| [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | **in-progress** (2026-05-03; M0..M7 done) | mvp |
 | (I-3 v1) | v1 — Local-first + live job + multi-platform + style + polish | (created when v1 opens) | v1 |
 | (I-4 v2) | v2 — Mobile + multi-agent + conversational + generated music | (created when v2 opens) | v2 |
 | (I-5 v3) | v3 — Hosted multi-tenant SaaS | (created when v3 opens) | v3 |
