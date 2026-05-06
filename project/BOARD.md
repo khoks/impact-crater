@@ -1,6 +1,6 @@
 # Board
 
-> **Last updated:** 2026-05-05 — **E-2.8 (M7 YouTube publish) DONE at MVP scope.** Connector Protocol + YouTubeConnector with validation + Fernet-encrypted credential storage. Audit log (append-only JSONL + mirrored SQLite). Publish API + status + disconnect + audit-list endpoints. OAuth callback handler is a config follow-up (user provides their own Google Cloud client_secrets.json); the connector's transport-injection seam supports both real and mock paths. **286 tests green** (258 backend + 28 frontend). M0..M7 done; **E-2.9 (M8+M9 cross-project profile + polish + D-014 validation) is Up Next**.
+> **Last updated:** 2026-05-05 — **E-2.9 (M8+M9) code-complete.** Cross-project user profile (N-010 deterministic frequency-based derivation per ADR-0014); feedback log (12 event types) → derive → JobSuggestions surface; Profile API (GET snapshot + POST derive/reset/feedback). **D-014 validation is user-side** (real 1000-photo + 50-video job on a real trip, publish to real YouTube account). **MVP code is feature-complete.** Final tally: **300 tests green** (272 backend unit + 28 frontend unit + 7 backend integration). All 9 epics under I-2 closed in this session run.
 > **How to read this:** Hand-maintained mirror of frontmatter `status:` values. The `work-tracker` skill refreshes this file at end-of-session. If you see drift, re-derive from `grep -l "status:" project/{initiatives,epics,stories,tasks}/*.md`.
 
 ---
@@ -13,9 +13,7 @@
 
 ## Up Next (Ready)
 
-| ID | Title | Type | Priority | Phase | Blocked by |
-|---|---|---|---|---|---|
-| [E-2.9](./epics/E-2.9-cross-project-profile-mvp.md) | Cross-project profile + polish + D-014 validation (M8 + M9) | Epic | P0 | mvp | E-2.8 done — ready |
+(empty — all MVP epics are code-complete; D-014 validation is the only remaining work and it's user-side)
 
 ## Backlog (mvp-phase, queued)
 
@@ -48,7 +46,7 @@
 | ID | Title | Status | Phase |
 |---|---|---|---|
 | [I-1](./initiatives/I-1-project-foundation.md) | Project foundation | **done** (2026-05-03) | scaffolding |
-| [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | **in-progress** (2026-05-03; M0..M7 done) | mvp |
+| [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | **code-complete** (2026-05-05; M0..M9 code done; D-014 validation pending user-side) | mvp |
 | (I-3 v1) | v1 — Local-first + live job + multi-platform + style + polish | (created when v1 opens) | v1 |
 | (I-4 v2) | v2 — Mobile + multi-agent + conversational + generated music | (created when v2 opens) | v2 |
 | (I-5 v3) | v3 — Hosted multi-tenant SaaS | (created when v3 opens) | v3 |

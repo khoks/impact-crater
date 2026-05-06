@@ -23,6 +23,7 @@ from impact_crater.api import (
     folder,
     jobs,
     persons,
+    profile,
     projects,
     publish,
     settings,
@@ -69,6 +70,7 @@ def create_app() -> FastAPI:
     app.include_router(snapshots.router, prefix="/api/snapshots", tags=["snapshots"])
     app.include_router(persons.router, prefix="/api/persons", tags=["persons"])
     app.include_router(publish.router, prefix="/api", tags=["publish"])
+    app.include_router(profile.router, prefix="/api/profile", tags=["profile"])
     app.include_router(ws.router, prefix="/api", tags=["ws"])
 
     _mount_frontend(app)
