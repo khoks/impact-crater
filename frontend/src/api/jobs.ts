@@ -186,3 +186,31 @@ async function safeDetail(r: Response): Promise<string> {
     return "";
   }
 }
+
+
+// ---- Refine (M6) ----
+
+export interface RefineResponse {
+  strategy: string;
+  rationale: string;
+  explanation: string | null;
+  brief_addendum: string | null;
+  new_arc_judgment: Record<string, unknown> | null;
+  turns_used: number;
+}
+
+export async function postRefine(
+  snapshotId: string,
+  message: string
+): Promise<RefineResponse> {
+  const r = await fetch(`/api/snapshots/${snapshotId}/refine`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ refinement_message: message }),
+  });
+  if (!r.ok) {
+    const detail = await safeDetail(r);
+    throw new Error(detail || `Refine failed: ${r.status}`);
+  }
+  return (await r.json()) as RefineResponse;
+}

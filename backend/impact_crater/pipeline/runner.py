@@ -39,6 +39,7 @@ from impact_crater.pipeline import (
     stage4_prefilter,
     stage5_judge,
     stage6_plan,
+    stage6_second_guess,
     stage7_render,
 )
 from impact_crater.pipeline.stage4_prefilter import CandidateSet, PreFilterOverrides
@@ -391,6 +392,34 @@ async def run_full_pipeline(
         mode=config.mode,
         audio=music,
     )
+
+    # M6 — orchestrator second-guess. Auto-applies high-confidence
+    # overrides; everything else is logged on the snapshot for the
+    # v1 user-reconfirm UI.
+    sg_router = router or _default_router_from_settings()
+    try:
+        sg_result = await stage6_second_guess.second_guess(
+            router=sg_router,
+            arc_judgment=headless.arc_judgment,
+            plan=plan,
+            music_spec=music_spec_for_judge,
+            brief=config.brief,
+        )
+    except Exception as exc:
+        log.warning("orchestrator second-guess failed: %s; proceeding with plan as-is", exc)
+        sg_result = None
+
+    if sg_result is not None and sg_result.overrides:
+        # Persist the full second-guess result for the v1 UI.
+        sg_path = stage6_plan.snapshot_dir(headless.project_id, plan.snapshot_id) / "second_guess.json"
+        sg_path.write_text(sg_result.model_dump_json(indent=2), encoding="utf-8")
+        if sg_result.overall_confidence > 0.85:
+            plan = stage6_plan.apply_overrides(plan, sg_result.overrides)
+            log.info(
+                "auto-applied %d second-guess overrides (confidence=%.2f)",
+                len(sg_result.overrides), sg_result.overall_confidence,
+            )
+
     await reporter.stage_completed(
         "stage_6_plan", detail=f"{len(plan.clips)} clips"
     )
