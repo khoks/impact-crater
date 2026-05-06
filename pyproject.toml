@@ -49,6 +49,11 @@ dependencies = [
     # the local-LLM runtime brings torch into deps anyway.
     "librosa>=0.11",
     "soundfile>=0.13",
+    # M5 privacy + face detection. ADR-0010 named pyexiv2 + dlib's
+    # face-recognition; we substitute piexif (pure Python) + mediapipe
+    # (pre-built wheels for Python 3.12 + Windows).
+    "piexif>=1.1",
+    "mediapipe>=0.10",
 ]
 
 [project.optional-dependencies]
