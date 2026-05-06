@@ -35,9 +35,12 @@ allows; flag in `arc_reasoning` where it doesn't.
 
 You are given a pre-filtered candidate set of {{ candidates|length }} items. Each candidate is a photo or video scene with its content_hash, optional scene_index, caption, summarized metadata, quality score (0–1), and a per-candidate narrative-relevance hint (0–1, computed deterministically by Stage 4 — treat as a hint, not gospel).
 
-Candidates (use the exact `ref` string verbatim in your selected_items.candidate_ref output):
+Candidates. The `ref` line for each is the **only** valid value for that
+candidate's `selected_items.candidate_ref` field — copy the whole string
+including any `#scene_index` suffix verbatim. **Do NOT output an integer
+or short index — your output must contain the full hex content_hash.**
 {% for c in candidates %}
-[{{ loop.index0 }}] ref={{ c.content_hash }}{% if c.scene_index is not none %}#{{ c.scene_index }}{% endif %}
+ref={{ c.content_hash }}{% if c.scene_index is not none %}#{{ c.scene_index }}{% endif %}
     caption: {{ c.caption or "(no caption)" }}
     metadata_summary: {{ c.metadata_summary or "(no metadata)" }}
     quality_score: {{ "%.2f"|format(c.quality_score) if c.quality_score is not none else "n/a" }}

@@ -434,6 +434,126 @@ async def test_music_video_mode_without_cut_grid_raises_value_error() -> None:
 
 
 @pytest.mark.usefixtures("db_initialized")
+async def test_integer_ref_fallback_resolves_via_candidate_refs() -> None:
+    """Opus sometimes emits a `[loop.index0]` integer instead of the ref
+    hash. The plan compiler resolves it via `candidate_refs` when supplied.
+    """
+    photos = [_photo_record(f"hash-{i:04d}") for i in range(3)]
+    arc = _arc(
+        [
+            # Opus emitted the index "1" instead of the hash; should
+            # rewrite to candidate_refs[1] = "hash-0001".
+            SelectedItem(
+                candidate_ref="1",
+                placement_position=0,
+                intended_duration_ms=2000,
+                role="opener",
+            ),
+            SelectedItem(
+                candidate_ref="hash-0002",
+                placement_position=1,
+                intended_duration_ms=2000,
+                role="closer",
+            ),
+        ]
+    )
+    plan = await compile_plan(
+        arc_judgment=arc,
+        ingest_records=photos,
+        project_id="p-fallback",
+        target_duration_seconds=4,
+        candidate_refs=["hash-0000", "hash-0001", "hash-0002"],
+    )
+    assert [c.candidate_ref for c in plan.clips] == ["hash-0001", "hash-0002"]
+
+
+@pytest.mark.usefixtures("db_initialized")
+async def test_integer_ref_fallback_no_candidate_refs_drops_bad_ref() -> None:
+    """Without candidate_refs, the fallback is unavailable and the bad
+    ref is dropped (existing behavior). Belt-and-suspenders.
+    """
+    photos = [_photo_record("hash-0000"), _photo_record("hash-0001")]
+    arc = _arc(
+        [
+            SelectedItem(
+                candidate_ref="1",
+                placement_position=0,
+                intended_duration_ms=2000,
+                role="opener",
+            ),
+            SelectedItem(
+                candidate_ref="hash-0001",
+                placement_position=1,
+                intended_duration_ms=2000,
+                role="closer",
+            ),
+        ]
+    )
+    plan = await compile_plan(
+        arc_judgment=arc,
+        ingest_records=photos,
+        project_id="p-no-fallback",
+        target_duration_seconds=4,
+    )
+    assert [c.candidate_ref for c in plan.clips] == ["hash-0001"]
+
+
+@pytest.mark.usefixtures("db_initialized")
+async def test_integer_ref_fallback_skipped_when_ref_already_valid_hash() -> None:
+    """A literal hash that happens to look numeric must not be reinterpreted
+    as an index when it matches a real ingest record."""
+    photos = [_photo_record("1234"), _photo_record("9999")]
+    arc = _arc(
+        [
+            SelectedItem(
+                candidate_ref="1234",
+                placement_position=0,
+                intended_duration_ms=2000,
+                role="opener",
+            )
+        ]
+    )
+    plan = await compile_plan(
+        arc_judgment=arc,
+        ingest_records=photos,
+        project_id="p-numeric-hash",
+        target_duration_seconds=2,
+        candidate_refs=["other-hash", "9999"],
+    )
+    assert [c.candidate_ref for c in plan.clips] == ["1234"]
+
+
+@pytest.mark.usefixtures("db_initialized")
+async def test_integer_ref_fallback_out_of_bounds_drops() -> None:
+    """Out-of-range integers fall through and get dropped normally."""
+    photos = [_photo_record("hash-0000")]
+    arc = _arc(
+        [
+            SelectedItem(
+                candidate_ref="999",
+                placement_position=0,
+                intended_duration_ms=2000,
+                role="opener",
+            ),
+            SelectedItem(
+                candidate_ref="hash-0000",
+                placement_position=1,
+                intended_duration_ms=2000,
+                role="closer",
+            ),
+        ]
+    )
+    plan = await compile_plan(
+        arc_judgment=arc,
+        ingest_records=photos,
+        project_id="p-oob",
+        target_duration_seconds=4,
+        candidate_refs=["hash-0000"],
+    )
+    assert [c.candidate_ref for c in plan.clips] == ["hash-0000"]
+
+
+@pytest.mark.usefixtures("db_initialized")
 async def test_zero_resolvable_clips_raises() -> None:
     photo = _photo_record("h-other")
     arc = _arc(
