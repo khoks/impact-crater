@@ -53,7 +53,7 @@ describe("JobPreview", () => {
     );
   });
 
-  it("Approve disabled (M7); Refine button enabled (M6)", async () => {
+  it("Approve & publish + Refine buttons are both enabled (M6 + M7 wired)", async () => {
     mockFetch({
       job_id: "job-1",
       project_id: "p1",
@@ -79,11 +79,10 @@ describe("JobPreview", () => {
         </Routes>
       </MemoryRouter>
     );
-    const approve = await screen.findByRole("button", { name: /Approve/ });
+    const approve = await screen.findByRole("button", { name: /Approve & publish/ });
     const refine = await screen.findByRole("button", { name: /Refine this result/ });
-    expect(approve).toBeDisabled();
+    expect(approve).not.toBeDisabled();
     expect(refine).not.toBeDisabled();
-    expect(approve).toHaveAttribute("title", expect.stringMatching(/M7/));
   });
 
   it("surfaces an error when the job is not yet succeeded", async () => {

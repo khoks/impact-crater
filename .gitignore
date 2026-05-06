@@ -94,6 +94,10 @@ docker-compose.override.yml
 tmp/
 *.log
 
+# --- Personal launcher scripts (not committed) ---
+start-impact-crater.bat
+start-impact-crater.sh
+
 # --- Claude Code ---
 .claude/settings.local.json
 .claude/state/

@@ -1,5 +1,6 @@
 // Settings panel — edit API keys + spend caps post-setup-wizard.
-// Privacy panel placeholder lands at M5 (E-2.6).
+// Privacy panel UI deferred to v1 per E-2.6 close-out (toggles are hard-coded
+// to ADR-0016 defaults at MVP; the panel surfaces them read-only).
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -145,15 +146,18 @@ export default function Settings() {
           </section>
 
           <section className="mt-6 rounded border border-dashed border-slate-300 bg-slate-50 p-4 text-xs text-slate-600">
-            <h2 className="text-sm font-semibold text-slate-700">Privacy panel</h2>
+            <h2 className="text-sm font-semibold text-slate-700">Privacy posture</h2>
             <ul className="mt-2 list-disc space-y-1 pl-5">
-              <li>Strip EXIF before sending to LLM</li>
-              <li>Strip GPS only</li>
-              <li>Blur faces before sending to LLM</li>
+              <li>Strip EXIF before sending to LLM — <strong>ON</strong></li>
+              <li>Strip GPS only — <strong>ON</strong> (subset of full EXIF strip)</li>
+              <li>Blur faces before sending to LLM — <strong>OFF</strong></li>
             </ul>
             <p className="mt-2">
-              Editable in M5 (E-2.6 person library + privacy panel). Defaults
-              follow ADR-0016 until then.
+              Locked to ADR-0016 defaults at MVP. Per-project toggles ship in
+              v1 alongside the local-LLM destination (per E-2.6 close-out;
+              toggling blur-faces=ON is meaningful only when a local provider
+              is available to take face-data ops, otherwise jobs would degrade
+              to recognized_persons=[]).
             </p>
           </section>
 

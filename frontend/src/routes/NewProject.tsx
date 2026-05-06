@@ -121,7 +121,7 @@ export default function NewProject() {
               value={form.folder_path}
               onChange={(e) => setForm({ ...form, folder_path: e.target.value })}
               className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none font-mono"
-              placeholder="C:\\Users\\you\\Pictures\\Alps2026  or  /home/you/Pictures/Alps2026"
+              placeholder={"C:\\Users\\you\\Pictures\\Alps2026  or  /home/you/Pictures/Alps2026"}
             />
             <button
               type="button"
@@ -164,7 +164,7 @@ export default function NewProject() {
             value={form.audio_path}
             onChange={(e) => setForm({ ...form, audio_path: e.target.value })}
             className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none font-mono"
-            placeholder="C:\\Users\\you\\Music\\track.mp3"
+            placeholder={"C:\\Users\\you\\Music\\track.mp3"}
           />
         </Field>
 

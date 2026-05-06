@@ -317,15 +317,16 @@ function StepStorage({ form }: { form: Form }) {
         </p>
       </div>
       <div className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-        <p className="font-medium text-slate-700">Privacy posture defaults (preview)</p>
+        <p className="font-medium text-slate-700">Privacy posture defaults</p>
         <ul className="mt-2 list-disc space-y-1 pl-5">
           <li>Strip EXIF before sending to LLM: ON</li>
           <li>Strip GPS only: ON (subset of full EXIF strip)</li>
           <li>Blur faces before sending to LLM: OFF</li>
         </ul>
         <p className="mt-2">
-          Editable per-project from Settings → Privacy. See{" "}
-          <code className="rounded bg-slate-100 px-1">ADR-0016</code> for the toggle interaction matrix.
+          Locked to these defaults at MVP. Per-project toggles ship in v1.
+          See <code className="rounded bg-slate-100 px-1">ADR-0016</code> for
+          the toggle interaction matrix.
         </p>
       </div>
     </div>
