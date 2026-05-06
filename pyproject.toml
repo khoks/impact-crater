@@ -54,6 +54,9 @@ dependencies = [
     # (pre-built wheels for Python 3.12 + Windows).
     "piexif>=1.1",
     "mediapipe>=0.10",
+    # M7 YouTube connector per ADR-0013.
+    "google-auth-oauthlib>=1.2",
+    "google-api-python-client>=2.150",
 ]
 
 [project.optional-dependencies]
