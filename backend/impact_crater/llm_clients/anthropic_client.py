@@ -401,13 +401,23 @@ class AnthropicLLMClient:
 # -- Module-level helpers ------------------------------------------------
 
 
-def _image_block(image_bytes: bytes, media_type: str = "image/jpeg") -> dict[str, Any]:
+def _image_block(image_bytes: bytes) -> dict[str, Any]:
+    """Wrap raw image bytes for Anthropic's Messages API.
+
+    Always declares `media_type="image/jpeg"` because `_fit_image_for_anthropic`
+    always returns JPEG bytes — even for PNG / WEBP / non-JPEG inputs. Anthropic
+    sniffs the magic bytes and rejects with a 400 if the declared media_type
+    doesn't match (real failure caught 2026-05-07: stage1 video-scene PNG
+    frames `scene-N-middle.png` were being sent as image/jpeg and Anthropic
+    400'd with `image was specified using image/jpeg media type, but the image
+    appears to be image/png`).
+    """
     fitted = _fit_image_for_anthropic(image_bytes)
     return {
         "type": "image",
         "source": {
             "type": "base64",
-            "media_type": "image/jpeg" if fitted is not image_bytes else media_type,
+            "media_type": "image/jpeg",
             "data": base64.b64encode(fitted).decode("ascii"),
         },
     }
@@ -425,23 +435,35 @@ _ANTHROPIC_RAW_BYTE_BUDGET = 3_500_000
 # pass even for noisy outdoor photos.
 _ANTHROPIC_MAX_EDGE_PX = 1568
 
+# JPEG magic bytes (SOI marker followed by an APP marker). Three bytes is
+# the smallest unambiguous prefix; PIL.Image.open is reliable beyond that
+# but we want to make the fast-path decision before allocating a decoder.
+_JPEG_MAGIC = b"\xff\xd8\xff"
+
 
 def _fit_image_for_anthropic(image_bytes: bytes) -> bytes:
-    """Return image bytes guaranteed to base64-encode under the 5 MB cap.
+    """Return JPEG bytes guaranteed to base64-encode under the 5 MB cap.
+
+    Two real failures motivated this function's full responsibility:
+      1. 2026-05-06: a 9.5 MB Pixel photo `PXL_*.jpg` exceeded the 5 MB
+         base64 cap → 400 `image exceeds 5 MB maximum`.
+      2. 2026-05-07: stage1's `scene-N-middle.png` (cv2.imwrite, PNG) was
+         being declared as `image/jpeg` → 400 `image appears to be a
+         image/png image`.
 
     Strategy:
-      1. If the raw bytes are already comfortably under the budget, no work.
-      2. Otherwise decode → convert to RGB → cap longest edge at 1568px →
-         re-encode JPEG at decreasing qualities until it fits.
-      3. As a last resort, halve the longest edge and try again.
+      - If the input is already a JPEG AND fits the byte budget, pass
+        through unchanged (fast path; no PIL decode work).
+      - Otherwise, decode → convert to RGB → cap longest edge at 1568px →
+        re-encode JPEG at decreasing qualities until it fits.
+      - As a last resort, halve the longest edge.
 
-    Real-world failure caught by user run on 2026-05-06: a 9.5 MB Pixel
-    photo (PXL_*.jpg) hit `messages.0.content.0.image.source.base64: image
-    exceeds 5 MB maximum: 6324756 bytes`. Phone photos almost always trip
-    this without resizing.
+    The output is *always* JPEG-encoded bytes, so callers never need to
+    sniff the source format to set the media_type correctly.
     """
 
-    if len(image_bytes) <= _ANTHROPIC_RAW_BYTE_BUDGET:
+    is_jpeg = image_bytes.startswith(_JPEG_MAGIC)
+    if is_jpeg and len(image_bytes) <= _ANTHROPIC_RAW_BYTE_BUDGET:
         return image_bytes
 
     img = Image.open(io.BytesIO(image_bytes))

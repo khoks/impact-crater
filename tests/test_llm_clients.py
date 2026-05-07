@@ -6,15 +6,31 @@ Real-API smoke is in tests/integration/test_real_providers.py (gated by
 
 from __future__ import annotations
 
+import io
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from PIL import Image
 
 from impact_crater.llm_clients.anthropic_client import AnthropicLLMClient
 from impact_crater.llm_clients.base import CallParams, LLMClient
 from impact_crater.llm_clients.exceptions import LLMOperationFailed
 from impact_crater.llm_clients.google_client import GoogleLLMClient
+
+
+def _real_jpeg_bytes() -> bytes:
+    """Minimum valid JPEG. Anthropic client now decodes non-JPEG inputs and
+    re-encodes to JPEG (fix for stage1 PNG scene frames being sent as
+    image/jpeg) — so tests must pass real magic-byte JPEGs through, not
+    `b"\\x00\\x00fake"` placeholders."""
+    img = Image.new("RGB", (16, 16), color=(80, 120, 160))
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=70)
+    return out.getvalue()
+
+
+_FAKE_JPEG = _real_jpeg_bytes()
 
 
 def _params(operation: str, model: str = "claude-sonnet-4-7") -> CallParams:
@@ -45,7 +61,7 @@ async def test_anthropic_caption_returns_first_text_block(mocker: pytest.Fixture
     client._client.messages.create = AsyncMock(return_value=fake_response)  # type: ignore[method-assign]
 
     out = await client.caption_image(
-        b"\x00\x00\x00fake-jpg",
+        _FAKE_JPEG,
         prompt_template="caption this",
         params=_params("caption_image"),
     )
@@ -61,7 +77,7 @@ async def test_anthropic_extract_metadata_uses_tool_use() -> None:
     client._client.messages.create = AsyncMock(return_value=fake_response)  # type: ignore[method-assign]
 
     out = await client.extract_metadata_image(
-        b"\x00\x00\x00fake-jpg",
+        _FAKE_JPEG,
         prompt_template="extract",
         schema={"type": "object"},
         params=_params("extract_metadata_image"),
@@ -78,7 +94,7 @@ async def test_anthropic_extract_metadata_raises_when_tool_not_called() -> None:
 
     with pytest.raises(LLMOperationFailed) as excinfo:
         await client.extract_metadata_image(
-            b"\x00\x00\x00fake-jpg",
+            _FAKE_JPEG,
             prompt_template="extract",
             schema={"type": "object"},
             params=_params("extract_metadata_image"),
@@ -137,7 +153,7 @@ async def test_anthropic_score_image_clamps_via_tool_use() -> None:
     client._client.messages.create = AsyncMock(return_value=fake_response)  # type: ignore[method-assign]
 
     score = await client.score_image(
-        b"\x00\x00\x00fake-jpg",
+        _FAKE_JPEG,
         prompt_template="rate quality",
         dimension="quality",
         params=_params("score_image"),
@@ -207,6 +223,26 @@ async def test_google_embed_text_substitutes_fallback_for_empty_input() -> None:
         assert captured["contents"].strip(), "fallback was whitespace-only"
 
 
+def test_google_sniff_mime_type_recognizes_real_formats() -> None:
+    """Real failure 2026-05-07 motivated this: stage1's video-scene PNG
+    frames were sent to Google with `mime_type="image/jpeg"`. Google was
+    lenient (Stage 2 succeeded) but Anthropic 400'd in Stage 3. Fix is to
+    sniff the actual mime type from magic bytes."""
+    from impact_crater.llm_clients.google_client import _sniff_mime_type
+
+    assert _sniff_mime_type(b"\xff\xd8\xff\xe0\x00\x10JFIF") == "image/jpeg"
+    assert _sniff_mime_type(b"\x89PNG\r\n\x1a\n\x00\x00") == "image/png"
+    assert _sniff_mime_type(b"GIF87a\x00\x00") == "image/gif"
+    assert _sniff_mime_type(b"GIF89a\x00\x00") == "image/gif"
+    assert _sniff_mime_type(b"RIFF\x00\x00\x00\x00WEBP") == "image/webp"
+    assert _sniff_mime_type(b"BM\x00\x00") == "image/bmp"
+    # Default (and sanity check that the WEBP guard doesn't false-positive
+    # on RIFF chunks that aren't WEBP — e.g. RIFF/WAVE audio).
+    assert _sniff_mime_type(b"RIFF\x00\x00\x00\x00WAVE") == "image/jpeg"
+    # Default for unrecognized bytes.
+    assert _sniff_mime_type(b"\x00\x00\x00\x00") == "image/jpeg"
+
+
 async def test_google_embed_image_falls_back_when_caption_is_empty() -> None:
     """End-to-end: an image whose caption comes back empty (safety filter,
     blank candidate, etc.) still produces a valid embedding via the
@@ -228,7 +264,7 @@ async def test_google_embed_image_falls_back_when_caption_is_empty() -> None:
     client._client.models.embed_content = MagicMock(side_effect=_capture)  # type: ignore[method-assign]
 
     emb = await client.embed_image(
-        b"\x00\x00\x00fake-jpg",
+        _FAKE_JPEG,
         params=CallParams(
             operation="embed_image",
             provider="google",
@@ -247,7 +283,7 @@ async def test_google_caption_image_extracts_text() -> None:
     client._client.models.generate_content = MagicMock(return_value=fake_response)  # type: ignore[method-assign]
 
     out = await client.caption_image(
-        b"\x00\x00\x00fake-jpg",
+        _FAKE_JPEG,
         prompt_template="caption",
         params=CallParams(
             operation="caption_image",
@@ -266,7 +302,7 @@ async def test_google_extract_metadata_returns_parsed_json() -> None:
     client._client.models.generate_content = MagicMock(return_value=fake_response)  # type: ignore[method-assign]
 
     out = await client.extract_metadata_image(
-        b"\x00\x00\x00fake-jpg",
+        _FAKE_JPEG,
         prompt_template="extract",
         schema={"type": "object"},
         params=CallParams(
@@ -286,7 +322,7 @@ async def test_google_extract_metadata_raises_on_non_json() -> None:
 
     with pytest.raises(LLMOperationFailed) as excinfo:
         await client.extract_metadata_image(
-            b"\x00\x00\x00fake-jpg",
+            _FAKE_JPEG,
             prompt_template="extract",
             schema={"type": "object"},
             params=CallParams(

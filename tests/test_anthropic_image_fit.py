@@ -14,7 +14,10 @@ import io
 import numpy as np
 from PIL import Image
 
-from impact_crater.llm_clients.anthropic_client import _fit_image_for_anthropic
+from impact_crater.llm_clients.anthropic_client import (
+    _fit_image_for_anthropic,
+    _image_block,
+)
 
 ANTHROPIC_BASE64_CAP = 5_242_880  # API hard limit, in base64 bytes
 
@@ -80,3 +83,51 @@ def test_oversized_rgba_png_round_trips_through_jpeg() -> None:
     out_img.load()
     assert out_img.mode == "RGB"
     assert len(base64.b64encode(fitted)) <= ANTHROPIC_BASE64_CAP
+
+
+def test_under_budget_png_is_re_encoded_to_jpeg() -> None:
+    """Real failure 2026-05-07: stage1 writes video-scene representative
+    frames as PNG (`scene-N-middle.png`, cv2.imwrite). Even when the PNG is
+    tiny (well under 3.5 MB) Anthropic 400'd because we declared the
+    media_type as image/jpeg. The fix: always re-encode non-JPEG inputs
+    to JPEG so the declared media_type is honest."""
+    img = Image.new("RGB", (640, 480), color=(50, 100, 200))
+    out = io.BytesIO()
+    img.save(out, format="PNG")
+    png_bytes = out.getvalue()
+    assert len(png_bytes) < 3_500_000  # comfortably under the budget
+    assert png_bytes.startswith(b"\x89PNG")
+
+    fitted = _fit_image_for_anthropic(png_bytes)
+    # Must NOT pass through unchanged — that's the exact bug.
+    assert fitted is not png_bytes
+    # Output must be a real JPEG (magic bytes + decodable as JPEG).
+    assert fitted.startswith(b"\xff\xd8\xff"), "fitted output isn't a JPEG"
+    out_img = Image.open(io.BytesIO(fitted))
+    out_img.load()
+    assert out_img.format == "JPEG"
+
+
+def test_under_budget_jpeg_passes_through_unchanged() -> None:
+    """Regression guard: don't accidentally re-encode every JPEG just
+    because we now re-encode PNGs. JPEG inputs that already fit the
+    budget should round-trip identically (no quality loss, no work)."""
+    raw = _jpeg_bytes(size=(800, 600))
+    assert raw.startswith(b"\xff\xd8\xff")
+    fitted = _fit_image_for_anthropic(raw)
+    assert fitted is raw  # identity check, not equality
+
+
+def test_image_block_always_declares_jpeg_for_png_input() -> None:
+    """The `_image_block` wrapper must declare image/jpeg unconditionally
+    because `_fit_image_for_anthropic` always returns JPEG bytes."""
+    img = Image.new("RGB", (320, 240), color=(10, 20, 30))
+    out = io.BytesIO()
+    img.save(out, format="PNG")
+    png_bytes = out.getvalue()
+
+    block = _image_block(png_bytes)
+    assert block["type"] == "image"
+    assert block["source"]["media_type"] == "image/jpeg"
+    decoded = base64.b64decode(block["source"]["data"])
+    assert decoded.startswith(b"\xff\xd8\xff")

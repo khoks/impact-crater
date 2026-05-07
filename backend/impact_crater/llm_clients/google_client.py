@@ -130,7 +130,7 @@ class GoogleLLMClient:
         self, image_bytes: bytes, *, prompt_template: str, params: CallParams
     ) -> str:
         contents = [
-            gtypes.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
+            gtypes.Part.from_bytes(data=image_bytes, mime_type=_sniff_mime_type(image_bytes)),
             prompt_template,
         ]
         result = await _retry(
@@ -155,7 +155,7 @@ class GoogleLLMClient:
         params: CallParams,
     ) -> str:
         contents: list[Any] = [
-            gtypes.Part.from_bytes(data=f, mime_type="image/jpeg") for f in scene_frames
+            gtypes.Part.from_bytes(data=f, mime_type=_sniff_mime_type(f)) for f in scene_frames
         ]
         contents.append(prompt_template)
         result = await _retry(
@@ -185,7 +185,7 @@ class GoogleLLMClient:
         # preamble that eats the token budget). Asking for a bare number
         # and parsing the first float we see is more robust.
         contents = [
-            gtypes.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
+            gtypes.Part.from_bytes(data=image_bytes, mime_type=_sniff_mime_type(image_bytes)),
             prompt_template
             + "\n\nReply with ONLY a single decimal number between 0.0 and 1.0. "
             "No words. No JSON. No explanation. Just the number.",
@@ -229,7 +229,7 @@ class GoogleLLMClient:
             params,
             schema=schema,
             contents=[
-                gtypes.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
+                gtypes.Part.from_bytes(data=image_bytes, mime_type=_sniff_mime_type(image_bytes)),
                 prompt_template,
             ],
         )
@@ -243,7 +243,7 @@ class GoogleLLMClient:
         params: CallParams,
     ) -> dict[str, Any]:
         contents: list[Any] = [
-            gtypes.Part.from_bytes(data=f, mime_type="image/jpeg") for f in scene_frames
+            gtypes.Part.from_bytes(data=f, mime_type=_sniff_mime_type(f)) for f in scene_frames
         ]
         contents.append(prompt_template)
         return await self._call_with_schema(params, schema=schema, contents=contents)
@@ -487,6 +487,34 @@ def _extract_text(result: Any) -> str:
             if t:
                 return str(t)
     return ""
+
+
+# Magic-byte prefixes for the image formats Gemini accepts. We sniff the
+# first few bytes rather than trusting the file extension or hardcoding
+# image/jpeg, because stage1's video-scene representative frames are PNG
+# (cv2.imwrite scene-N-middle.png) and historically those went out with a
+# false "image/jpeg" claim. Google was lenient (Stage 2 accepted them);
+# Anthropic was strict (Stage 3 400'd, real failure 2026-05-07).
+_IMAGE_MAGIC_PREFIXES: tuple[tuple[bytes, str], ...] = (
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+    # WebP: "RIFF" .... "WEBP"
+    (b"RIFF", "image/webp"),  # not perfect — WEBP has WEBP at offset 8, but RIFF alone is sufficiently rare for our inputs
+    (b"BM", "image/bmp"),
+)
+
+
+def _sniff_mime_type(image_bytes: bytes) -> str:
+    """Return the IANA mime type from magic bytes; default image/jpeg."""
+    for prefix, mime in _IMAGE_MAGIC_PREFIXES:
+        if image_bytes.startswith(prefix):
+            # Tighten WEBP detection by also checking the WEBP signature at offset 8
+            if mime == "image/webp" and not image_bytes[8:12] == b"WEBP":
+                continue
+            return mime
+    return "image/jpeg"
 
 
 def _strip_unsupported(node: Any) -> Any:
