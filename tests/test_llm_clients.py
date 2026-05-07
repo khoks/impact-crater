@@ -172,6 +172,75 @@ async def test_google_embed_text_returns_numpy_array() -> None:
     assert emb.shape[0] > 0
 
 
+async def test_google_embed_text_substitutes_fallback_for_empty_input() -> None:
+    """Real failure mode caught 2026-05-06: Gemini Flash returned an empty
+    caption for one image of a 545-asset job, that empty string flowed
+    into embed_content, and Google's API 400'd with `EmbedContentRequest.
+    content contains an empty Part`. embed_text now substitutes a benign
+    placeholder so a single problem image can't kill the whole job."""
+    client = GoogleLLMClient(api_key="AIza-test")
+    fake_embedding = SimpleNamespace(values=[0.1] * 768)
+    fake_response = SimpleNamespace(embeddings=[fake_embedding])
+    captured: dict[str, str] = {}
+
+    def _capture(*, model: str, contents: str) -> SimpleNamespace:
+        captured["contents"] = contents
+        return fake_response
+
+    client._client.models.embed_content = MagicMock(side_effect=_capture)  # type: ignore[method-assign]
+
+    for empty_in in ("", "   ", "\n\t  \n"):
+        captured.clear()
+        emb = await client.embed_text(
+            empty_in,
+            params=CallParams(
+                operation="embed_text",
+                provider="google",
+                model="gemini-embedding-001",
+                model_version="v1",
+            ),
+        )
+        assert emb.shape == (768,)
+        # The empty-string was replaced with a non-empty placeholder
+        # before the network call.
+        assert captured["contents"], f"empty input {empty_in!r} reached the API"
+        assert captured["contents"].strip(), "fallback was whitespace-only"
+
+
+async def test_google_embed_image_falls_back_when_caption_is_empty() -> None:
+    """End-to-end: an image whose caption comes back empty (safety filter,
+    blank candidate, etc.) still produces a valid embedding via the
+    placeholder caption path, instead of raising."""
+    client = GoogleLLMClient(api_key="AIza-test")
+
+    # Caption call returns empty text + no candidates.
+    empty_caption_response = SimpleNamespace(text=None, candidates=[])
+    client._client.models.generate_content = MagicMock(return_value=empty_caption_response)  # type: ignore[method-assign]
+
+    fake_embedding = SimpleNamespace(values=[0.2] * 768)
+    fake_embed_response = SimpleNamespace(embeddings=[fake_embedding])
+    captured: dict[str, str] = {}
+
+    def _capture(*, model: str, contents: str) -> SimpleNamespace:
+        captured["contents"] = contents
+        return fake_embed_response
+
+    client._client.models.embed_content = MagicMock(side_effect=_capture)  # type: ignore[method-assign]
+
+    emb = await client.embed_image(
+        b"\x00\x00\x00fake-jpg",
+        params=CallParams(
+            operation="embed_image",
+            provider="google",
+            model="gemini-embedding-001",
+            model_version="v1",
+        ),
+    )
+    assert emb.shape == (768,)
+    # The fallback caption was sent to embed_content, not an empty string.
+    assert captured["contents"], "empty caption reached embed_content"
+
+
 async def test_google_caption_image_extracts_text() -> None:
     client = GoogleLLMClient(api_key="AIza-test")
     fake_response = SimpleNamespace(text="A serene lake at dusk.", candidates=[])

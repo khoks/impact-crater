@@ -46,6 +46,15 @@ from impact_crater.llm_clients.exceptions import LLMOperationFailed, LLMTransien
 
 
 _EMBED_MODEL = "gemini-embedding-001"
+
+# Used when Gemini Flash returns an empty caption for an image (safety
+# filter / refusal / blank candidate). embed_text would otherwise call
+# Google's embed_content with an empty string and trip a 400. The
+# fallback is intentionally generic so one problem image produces a
+# benign embedding rather than killing the whole job; downstream
+# Stage 4 prefilter will likely drop the asset anyway because its
+# quality / narrative-relevance scores were computed on the same image.
+_EMPTY_TEXT_FALLBACK = "an image"
 # Embedding dimensionality is provider/model-specific; we don't assert a
 # specific value here. The router stores the actual emb.shape on the cache
 # key for the v1 reuse-class semantics.
@@ -69,6 +78,16 @@ class GoogleLLMClient:
         return await self.embed_text(caption, params=params)
 
     async def embed_text(self, text: str, *, params: CallParams) -> Embedding:
+        # Google's embed_content rejects empty content with a 400
+        # `EmbedContentRequest.content contains an empty Part`. Real failure
+        # caught by user run on 2026-05-06 at item 1066/2316 of Stage 2 —
+        # Gemini Flash had returned an empty caption (safety filter /
+        # refusal / blank candidate) for one image, that empty string
+        # flowed through embed_image, and the API rejected it. Fall back
+        # to a benign placeholder so a single problem image can't kill a
+        # whole 545-asset job.
+        if not text or not text.strip():
+            text = _EMPTY_TEXT_FALLBACK
         result = await _retry(
             params,
             lambda: _to_async(
@@ -91,11 +110,19 @@ class GoogleLLMClient:
             max_tokens=128,
             temperature=0.0,
         )
-        return await self.caption_image(
+        caption = await self.caption_image(
             image_bytes,
             prompt_template="Describe this image in one short, concrete sentence.",
             params=flash_params,
         )
+        if not caption or not caption.strip():
+            log.warning(
+                "google_caption_empty_for_embedding model=%s falling_back_to=%r",
+                flash_params.model,
+                _EMPTY_TEXT_FALLBACK,
+            )
+            return _EMPTY_TEXT_FALLBACK
+        return caption
 
     # -- Vision-language captioning + scoring ------------------------------
 
