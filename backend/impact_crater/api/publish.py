@@ -12,6 +12,7 @@ the Connect button when the user wires up their Google Cloud project.
 
 from __future__ import annotations
 
+import logging
 import secrets
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,7 @@ from impact_crater.connectors import (
 from impact_crater.connectors.youtube import YouTubeConnector
 from impact_crater.storage.db import connection
 
+log = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -104,20 +106,50 @@ async def publish_snapshot(
         visibility=req.visibility,
     )
 
+    log.info(
+        "publish_attempt platform=youtube snapshot_id=%s project_id=%s "
+        "render_path=%s title=%r visibility=%s",
+        snapshot_id,
+        row["project_id"],
+        str(render_path),
+        req.title[:120],
+        req.visibility,
+    )
+
     connector = _get_connector()
     try:
         result = await connector.upload(render_path, metadata)
     except ConnectorAuthError as exc:
+        log.warning(
+            "publish_auth_failed snapshot_id=%s project_id=%s error=%s",
+            snapshot_id,
+            row["project_id"],
+            str(exc)[:200],
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"reason": "auth", "message": str(exc), "suggested_action": exc.suggested_action},
         ) from exc
     except ConnectorValidationError as exc:
+        log.warning(
+            "publish_validation_failed snapshot_id=%s project_id=%s error=%s",
+            snapshot_id,
+            row["project_id"],
+            str(exc)[:200],
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"reason": "validation", "message": str(exc), "suggested_action": exc.suggested_action},
         ) from exc
     except ConnectorError as exc:
+        log.error(
+            "publish_connector_failed snapshot_id=%s project_id=%s "
+            "status_code=%s error=%s",
+            snapshot_id,
+            row["project_id"],
+            exc.status_code,
+            str(exc)[:300],
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={"reason": "connector", "message": str(exc), "status_code": exc.status_code},
@@ -137,6 +169,17 @@ async def publish_snapshot(
         visibility=result.visibility,
     )
     await audit.write(entry)
+
+    log.info(
+        "publish_succeeded platform=youtube snapshot_id=%s project_id=%s "
+        "external_id=%s external_url=%s visibility=%s audit_token=%s",
+        snapshot_id,
+        row["project_id"],
+        result.external_id,
+        result.external_url,
+        result.visibility,
+        audit_token,
+    )
 
     return PublishResponse(
         external_id=result.external_id,

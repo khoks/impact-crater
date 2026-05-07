@@ -188,10 +188,30 @@ async def _prerender_clips(
     leave that for M3+ once we have render-time profiling data.
     """
     out_paths: list[Path] = []
+    log.info(
+        "stage7_prerender_start snapshot_id=%s clip_count=%d",
+        plan.snapshot_id,
+        len(plan.clips),
+    )
     for i, clip in enumerate(plan.clips):
         seg_path = work_dir / f"seg-{i:04d}.mp4"
+        log.debug(
+            "stage7_clip_render snapshot_id=%s clip=%d/%d candidate_ref=%s "
+            "kind=%s duration_ms=%d",
+            plan.snapshot_id,
+            i + 1,
+            len(plan.clips),
+            clip.candidate_ref,
+            clip.kind,
+            clip.intended_duration_ms,
+        )
         await _prerender_one(clip, seg_path, pool=pool)
         out_paths.append(seg_path)
+    log.info(
+        "stage7_prerender_done snapshot_id=%s clip_count=%d",
+        plan.snapshot_id,
+        len(plan.clips),
+    )
     return out_paths
 
 
@@ -245,11 +265,20 @@ async def _prerender_one(
 
     rc, _stdout, stderr = await _run(args, pool=pool)
     if rc != 0:
+        stderr_str = stderr.decode("utf-8", errors="replace")
+        log.error(
+            "stage7_clip_failed candidate_ref=%s kind=%s ffmpeg_exit_code=%d "
+            "stderr_tail=%r",
+            clip.candidate_ref,
+            clip.kind,
+            rc,
+            stderr_str[-300:],
+        )
         raise RenderError(
             f"clip pre-render failed for {clip.candidate_ref!r}",
             stage="prerender",
             ffmpeg_exit_code=rc,
-            stderr_excerpt=stderr.decode("utf-8", errors="replace"),
+            stderr_excerpt=stderr_str,
         )
 
 

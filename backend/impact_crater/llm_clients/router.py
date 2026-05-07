@@ -519,6 +519,25 @@ class LLMRouter:
                 cost = 0.0
 
         ctx = self._telemetry_context
+        # Single structured log line on EVERY dispatch (cache hit or miss).
+        # Lets a developer grep for `operation=extract_metadata_image
+        # cache_hit=False` and see exactly which calls hit the network +
+        # which were served from cache. correlation_id ties this back to
+        # the owning job (set via `set_telemetry_context` from runner.py).
+        log.debug(
+            "llm_call operation=%s provider=%s tier=%s model=%s cache_hit=%s "
+            "cost_usd=%.6f result_hash=%s correlation_id=%s project_id=%s snapshot_id=%s",
+            route.operation,
+            route.provider,
+            route.tier,
+            route.model,
+            cache_hit,
+            cost,
+            result_bytes_hash[:12] if result_bytes_hash else "",
+            ctx.get("correlation_id", ""),
+            ctx.get("project_id", ""),
+            ctx.get("snapshot_id") or "",
+        )
         try:
             telemetry.emit(
                 telemetry.LLMCallEvent(

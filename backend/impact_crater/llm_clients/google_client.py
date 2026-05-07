@@ -15,6 +15,7 @@ Note: the older `google-generativeai` package was deprecated in favor of
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncIterator
 from typing import Any, Literal
 
@@ -27,6 +28,8 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
+
+log = logging.getLogger(__name__)
 
 from impact_crater.llm_clients.base import (
     ArcJudgment,
@@ -382,6 +385,12 @@ class GoogleLLMClient:
                     return json.loads(extracted)  # type: ignore[no-any-return]
                 except json.JSONDecodeError:
                     pass
+            log.warning(
+                "google_non_json_response operation=%s model=%s raw_prefix=%r",
+                params.operation,
+                params.model,
+                text[:200],
+            )
             raise LLMOperationFailed(
                 operation=params.operation,
                 provider=self.provider,
@@ -495,7 +504,21 @@ async def _retry(params: CallParams, callable_: Any) -> Any:
             except Exception as e:
                 last_error = e
                 if _is_transient(e):
+                    log.warning(
+                        "google_transient operation=%s model=%s attempt=%d/4 error=%r",
+                        params.operation,
+                        params.model,
+                        attempts,
+                        str(e)[:200],
+                    )
                     raise LLMTransientError(str(e)) from e
+                log.error(
+                    "google_failed operation=%s model=%s attempts=%d error=%r",
+                    params.operation,
+                    params.model,
+                    attempts,
+                    str(e)[:300],
+                )
                 raise LLMOperationFailed(
                     operation=params.operation,
                     provider=params.provider,
@@ -503,6 +526,13 @@ async def _retry(params: CallParams, callable_: Any) -> Any:
                     attempts=attempts,
                     last_error=e,
                 ) from e
+    log.error(
+        "google_retries_exhausted operation=%s model=%s attempts=%d last_error=%r",
+        params.operation,
+        params.model,
+        attempts,
+        str(last_error)[:300] if last_error else "unknown",
+    )
     raise LLMOperationFailed(
         operation=params.operation,
         provider=params.provider,

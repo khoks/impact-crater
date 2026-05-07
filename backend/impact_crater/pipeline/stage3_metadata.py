@@ -75,13 +75,38 @@ async def _extract(
     image_bytes = await asyncio.to_thread(asset.path.read_bytes)
     schema = schema_video if asset.scene_index is not None else schema_photo
 
-    raw = await router.extract_metadata_image(
-        image_bytes,
-        content_hash=asset.cache_hash,
-        schema=schema,
-        prompt_vars={"context_brief": brief},
-    )
-    metadata = _validate(raw, asset.scene_index is not None, attempt=1)
+    try:
+        raw = await router.extract_metadata_image(
+            image_bytes,
+            content_hash=asset.cache_hash,
+            schema=schema,
+            prompt_vars={"context_brief": brief},
+        )
+    except Exception as exc:
+        # Most likely failure modes here: Anthropic 5MB cap (now guarded),
+        # Pydantic schema mismatch from Gemini, or a transient API error
+        # that retries already exhausted. Log the asset identity so the
+        # developer can `grep content_hash=<prefix>` and find the row.
+        log.error(
+            "stage3_extract_failed operation=extract_metadata_image "
+            "content_hash=%s scene_index=%s path=%s error=%r",
+            asset.cache_hash,
+            asset.scene_index,
+            asset.path.name,
+            str(exc)[:300],
+        )
+        raise
+
+    try:
+        metadata = _validate(raw, asset.scene_index is not None, attempt=1)
+    except LLMOperationFailed as exc:
+        log.error(
+            "stage3_validation_failed content_hash=%s scene_index=%s error=%s",
+            asset.cache_hash,
+            asset.scene_index,
+            str(exc)[:300],
+        )
+        raise
 
     return Stage3AssetOutputs(
         content_hash=asset.content_hash,

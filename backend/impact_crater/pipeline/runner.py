@@ -149,6 +149,16 @@ async def run_headless_pipeline(
         correlation_id=correlation_id,
     )
 
+    log.info(
+        "headless_pipeline_start project_id=%s correlation_id=%s "
+        "media_count=%d target_duration_s=%d mode=%s",
+        project_id,
+        correlation_id,
+        len(config.media_paths),
+        config.target_duration_seconds,
+        config.mode,
+    )
+
     # 0. Quota pre-check (rough estimate — pessimistic per ADR-0015).
     estimated = _estimate_cost_per_provider(len(config.media_paths))
     quota_check = await quota.check_quota(estimated)
@@ -162,6 +172,16 @@ async def run_headless_pipeline(
         "estimate_usd": sum(estimated.values()),
     }
     if not quota_check.allowed:
+        log.warning(
+            "quota_denied project_id=%s correlation_id=%s reason=%s "
+            "estimate_usd=%.4f today_total_spent_usd=%.4f cap_total_usd=%s",
+            project_id,
+            correlation_id,
+            quota_check.reason,
+            sum(estimated.values()),
+            quota_check.today_total_spent_usd,
+            quota_check.cap_total_usd,
+        )
         raise QuotaDeniedError(quota_check.reason, quota_snapshot)
 
     telemetry.emit(
@@ -404,7 +424,24 @@ async def run_full_pipeline(
     # M6 — orchestrator second-guess. Auto-applies high-confidence
     # overrides; everything else is logged on the snapshot for the
     # v1 user-reconfirm UI.
+    # Update telemetry context now that we have a snapshot_id, so any
+    # remaining LLM calls (second-guess, refine) tag their LLMCallEvent
+    # rows with the snapshot they belong to.
     sg_router = router or _default_router_from_settings()
+    sg_router.set_telemetry_context(
+        project_id=headless.project_id,
+        snapshot_id=plan.snapshot_id,
+        correlation_id=headless.correlation_id,
+    )
+    log.info(
+        "stage6_plan_compiled project_id=%s snapshot_id=%s correlation_id=%s "
+        "clip_count=%d",
+        headless.project_id,
+        plan.snapshot_id,
+        headless.correlation_id,
+        len(plan.clips),
+    )
+
     try:
         sg_result = await stage6_second_guess.second_guess(
             router=sg_router,
@@ -414,7 +451,14 @@ async def run_full_pipeline(
             brief=config.brief,
         )
     except Exception as exc:
-        log.warning("orchestrator second-guess failed: %s; proceeding with plan as-is", exc)
+        log.warning(
+            "second_guess_failed project_id=%s snapshot_id=%s correlation_id=%s "
+            "error=%r — proceeding with plan as-is",
+            headless.project_id,
+            plan.snapshot_id,
+            headless.correlation_id,
+            str(exc)[:200],
+        )
         sg_result = None
 
     if sg_result is not None and sg_result.overrides:
@@ -424,8 +468,13 @@ async def run_full_pipeline(
         if sg_result.overall_confidence > 0.85:
             plan = stage6_plan.apply_overrides(plan, sg_result.overrides)
             log.info(
-                "auto-applied %d second-guess overrides (confidence=%.2f)",
-                len(sg_result.overrides), sg_result.overall_confidence,
+                "second_guess_overrides_applied project_id=%s snapshot_id=%s "
+                "correlation_id=%s overrides=%d confidence=%.2f",
+                headless.project_id,
+                plan.snapshot_id,
+                headless.correlation_id,
+                len(sg_result.overrides),
+                sg_result.overall_confidence,
             )
 
     await reporter.stage_completed(
@@ -451,6 +500,22 @@ async def run_full_pipeline(
     )
     summary_path = stage6_plan.snapshot_dir(headless.project_id, plan.snapshot_id) / "cost_summary.json"
     summary_path.write_text(json.dumps(asdict(summary), indent=2), encoding="utf-8")
+
+    log.info(
+        "full_pipeline_done project_id=%s snapshot_id=%s correlation_id=%s "
+        "media_count=%d clip_count=%d output_bytes=%d render_duration_ms=%d "
+        "total_cost_usd=%.4f cache_hits=%d cache_misses=%d",
+        headless.project_id,
+        plan.snapshot_id,
+        headless.correlation_id,
+        headless.media_count,
+        len(plan.clips),
+        render_result.output_bytes,
+        render_result.duration_ms,
+        summary.total_cost_usd,
+        summary.cache_hits,
+        summary.cache_misses,
+    )
 
     return FullJobResult(
         project_id=headless.project_id,

@@ -11,12 +11,15 @@ lifespan calls `run_pending_migrations()`).
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
 import aiosqlite
 
 from impact_crater.storage.db import connection
+
+log = logging.getLogger(__name__)
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations_sql"
 _VERSION_RE = re.compile(r"^(\d+)_.+\.sql$")
@@ -29,17 +32,33 @@ async def run_pending_migrations() -> None:
     async with connection() as db:
         await _ensure_migrations_table(db)
         applied = await _applied_versions(db)
-        for version, path in files:
-            if version in applied:
-                continue
-            sql = path.read_text(encoding="utf-8")
-            await db.executescript(sql)
-            await db.execute(
-                "INSERT INTO schema_migrations (version, filename, applied_at) "
-                "VALUES (?, ?, CURRENT_TIMESTAMP)",
-                (version, path.name),
+        pending = [(v, p) for v, p in files if v not in applied]
+        if pending:
+            log.info(
+                "migrations_pending count=%d versions=%s",
+                len(pending),
+                [v for v, _ in pending],
             )
-            await db.commit()
+        for version, path in pending:
+            log.info("migration_applying version=%d filename=%s", version, path.name)
+            try:
+                sql = path.read_text(encoding="utf-8")
+                await db.executescript(sql)
+                await db.execute(
+                    "INSERT INTO schema_migrations (version, filename, applied_at) "
+                    "VALUES (?, ?, CURRENT_TIMESTAMP)",
+                    (version, path.name),
+                )
+                await db.commit()
+            except Exception as exc:
+                log.error(
+                    "migration_failed version=%d filename=%s error=%r",
+                    version,
+                    path.name,
+                    str(exc)[:300],
+                )
+                raise
+            log.info("migration_applied version=%d filename=%s", version, path.name)
 
 
 def _discover_migrations() -> list[tuple[int, Path]]:

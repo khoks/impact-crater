@@ -11,12 +11,16 @@ an identical judgment is free.
 
 from __future__ import annotations
 
+import logging
+import time
 from typing import Any, Literal
 
 from impact_crater.llm_clients.base import ArcJudgment, MusicSpec
 from impact_crater.llm_clients.router import LLMRouter
 from impact_crater.media.music import MusicAnalysis
 from impact_crater.pipeline.stage4_prefilter import CandidateSet
+
+log = logging.getLogger(__name__)
 
 
 async def judge_narrative_arc(
@@ -38,11 +42,40 @@ async def judge_narrative_arc(
     extra: dict[str, Any] | None = None
     if music_analysis is not None:
         extra = {"music_analysis": music_analysis}
-    return await router.judge_narrative_arc(
-        candidates=candidate_set.items,
-        brief=brief,
-        target_duration=target_duration_seconds,
-        mode=mode,
-        music_spec=music_spec,
-        extra_prompt_vars=extra,
+
+    log.info(
+        "stage5_judge_start mode=%s candidate_count=%d target_duration_s=%d "
+        "music_video=%s",
+        mode,
+        len(candidate_set.items),
+        target_duration_seconds,
+        music_analysis is not None,
     )
+    started = time.monotonic()
+    try:
+        result = await router.judge_narrative_arc(
+            candidates=candidate_set.items,
+            brief=brief,
+            target_duration=target_duration_seconds,
+            mode=mode,
+            music_spec=music_spec,
+            extra_prompt_vars=extra,
+        )
+    except Exception as exc:
+        log.error(
+            "stage5_judge_failed mode=%s candidate_count=%d elapsed_s=%.1f error=%r",
+            mode,
+            len(candidate_set.items),
+            time.monotonic() - started,
+            str(exc)[:300],
+        )
+        raise
+
+    log.info(
+        "stage5_judge_done mode=%s selected=%d confidence=%.2f elapsed_s=%.1f",
+        mode,
+        len(result.selected_items),
+        result.confidence,
+        time.monotonic() - started,
+    )
+    return result

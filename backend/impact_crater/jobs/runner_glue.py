@@ -123,6 +123,7 @@ async def _run_and_capture(
     job_id: str,
 ) -> None:
     """Drive the pipeline + translate exceptions into terminal job states."""
+    log.info("job_running job_id=%s media_count=%d", job_id, len(config.media_paths))
     await registry.update_state(job_id, "running")
     try:
         result = await run_full_pipeline(
@@ -137,6 +138,16 @@ async def _run_and_capture(
             duration_ms=result.render_duration_ms,
             output_bytes=result.output_bytes,
         )
+        log.info(
+            "job_succeeded job_id=%s project_id=%s snapshot_id=%s "
+            "correlation_id=%s output_bytes=%d render_duration_ms=%d",
+            job_id,
+            result.project_id,
+            result.snapshot_id,
+            result.correlation_id,
+            result.output_bytes,
+            result.render_duration_ms,
+        )
         await registry.update_state(
             job_id,
             "succeeded",
@@ -144,22 +155,41 @@ async def _run_and_capture(
             render_path=result.render_path,
         )
     except QuotaDeniedError as exc:
+        log.warning(
+            "job_quota_denied job_id=%s reason=%s estimate_usd=%.4f",
+            job_id,
+            exc.reason,
+            exc.quota_snapshot.get("estimate_usd", 0.0),
+        )
         await registry.update_state(
             job_id,
             "failed",
             failure_reason=f"quota_denied:{exc.reason}",
         )
     except RenderError as exc:
+        log.error(
+            "job_render_failed job_id=%s stage=%s ffmpeg_exit_code=%s "
+            "stderr_tail=%r",
+            job_id,
+            exc.stage,
+            exc.ffmpeg_exit_code,
+            (exc.stderr_excerpt or "")[-300:],
+        )
         await registry.update_state(
             job_id,
             "failed",
             failure_reason=f"render_failed:{exc.stage}",
         )
     except asyncio.CancelledError:
+        log.info("job_cancelled job_id=%s", job_id)
         await registry.update_state(job_id, "cancelled", failure_reason="cancelled")
         raise
     except Exception as exc:
-        log.exception("background job %s failed", job_id)
+        log.exception(
+            "job_failed_unexpected job_id=%s error=%r",
+            job_id,
+            str(exc)[:200],
+        )
         await registry.update_state(
             job_id, "failed", failure_reason=str(exc)[:200]
         )
