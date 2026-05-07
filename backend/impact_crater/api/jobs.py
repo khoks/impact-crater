@@ -13,12 +13,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field
+
+log = logging.getLogger(__name__)
 
 from impact_crater.jobs import get_registry
 from impact_crater.jobs.runner_glue import submit_full_pipeline_job
@@ -322,11 +325,14 @@ async def ws_job_progress(websocket: WebSocket, job_id: str) -> None:
     await websocket.accept()
     registry = get_registry()
     if registry.get(job_id) is None:
+        log.warning("ws_unknown_job job_id=%s", job_id)
         await websocket.send_json({"type": "error", "detail": "unknown job"})
         await websocket.close(code=4404)
         return
 
+    log.info("ws_connected job_id=%s", job_id)
     queue = await registry.subscribe(job_id)
+    disconnected = False
     try:
         while True:
             event = await queue.get()
@@ -341,13 +347,16 @@ async def ws_job_progress(websocket: WebSocket, job_id: str) -> None:
                 }
             )
     except WebSocketDisconnect:
-        pass
+        disconnected = True
+        log.info("ws_disconnected_early job_id=%s", job_id)
     finally:
         await registry.unsubscribe(job_id, queue)
         try:
             await websocket.close()
         except Exception:
             pass
+        if not disconnected:
+            log.info("ws_closed job_id=%s", job_id)
 
 
 # Suppress ruff F401 for stdlib helpers used by error formatting only.

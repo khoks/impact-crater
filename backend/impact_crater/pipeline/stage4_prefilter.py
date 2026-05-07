@@ -26,6 +26,7 @@ can surface "we dropped 47 photos due to quality floor; 12 due to dedup."
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass, field
 from typing import Any
@@ -33,6 +34,8 @@ from typing import Any
 from impact_crater.llm_clients.base import CandidateRef
 from impact_crater.pipeline.stage1_ingest import MediaRecord
 from impact_crater.pipeline.types import Stage2AssetOutputs, Stage3AssetOutputs
+
+log = logging.getLogger(__name__)
 
 
 # ---- Public types ------------------------------------------------------
@@ -142,6 +145,28 @@ def prefilter(
         "location_cluster_count": len(location_clusters),
         "input_count": input_count,
     }
+
+    if not after_quality:
+        log.warning(
+            "stage4_quality_floor_dropped_all input_count=%d quality_threshold=%.2f",
+            input_count,
+            quality_threshold,
+        )
+    log.info(
+        "stage4_prefilter_done input_count=%d kept=%d floor=%d ceiling=%d "
+        "target_size=%d quality_threshold=%.2f dedup_factor=%d "
+        "dedup_clusters=%d location_clusters=%d",
+        input_count,
+        len(chosen),
+        floor,
+        ceiling,
+        target_size,
+        quality_threshold,
+        dedup_factor,
+        len(dedup_clusters),
+        len(location_clusters),
+    )
+
     return CandidateSet(
         items=items,
         cluster_metadata=cluster_metadata,

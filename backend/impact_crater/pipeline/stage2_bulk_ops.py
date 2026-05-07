@@ -50,11 +50,23 @@ async def run_stage2(
     pool = pool or default_pool()
     brief_hash = _short_hash(brief)
     work_items = list(_enumerate_assets(media))
-    return await pool.submit_many(
+    log.info(
+        "stage2_start asset_count=%d media_count=%d brief_hash=%s",
+        len(work_items),
+        len(media),
+        brief_hash,
+    )
+    results = await pool.submit_many(
         "network",
         work_items,
         lambda item: _run_for_asset(router, item, brief, brief_hash),
     )
+    log.info(
+        "stage2_done asset_count=%d brief_hash=%s",
+        len(results),
+        brief_hash,
+    )
+    return results
 
 
 # ---- Per-asset workhorse ----------------------------------------------
