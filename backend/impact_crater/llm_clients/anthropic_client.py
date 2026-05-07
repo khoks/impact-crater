@@ -11,12 +11,14 @@ recommend_*, explain_*, orchestrator_reasoning) and Tier-L Opus (judge_narrative
 from __future__ import annotations
 
 import base64
+import io
 import json
 from collections.abc import AsyncIterator
 from typing import Any, Literal
 
 import anthropic
 import numpy as np
+from PIL import Image
 from tenacity import (
     AsyncRetrying,
     retry_if_exception_type,
@@ -397,14 +399,84 @@ class AnthropicLLMClient:
 
 
 def _image_block(image_bytes: bytes, media_type: str = "image/jpeg") -> dict[str, Any]:
+    fitted = _fit_image_for_anthropic(image_bytes)
     return {
         "type": "image",
         "source": {
             "type": "base64",
-            "media_type": media_type,
-            "data": base64.b64encode(image_bytes).decode("ascii"),
+            "media_type": "image/jpeg" if fitted is not image_bytes else media_type,
+            "data": base64.b64encode(fitted).decode("ascii"),
         },
     }
+
+
+# Anthropic Messages API rejects any base64 image > 5 MB (5_242_880 bytes).
+# Base64 expands by ~4/3, so the raw byte budget is ~3.93 MB. We pick a
+# slightly tighter raw-byte threshold so headers/JSON wrapping stay safe.
+_ANTHROPIC_RAW_BYTE_BUDGET = 3_500_000
+
+# Anthropic's vision recommendation: ≤1.15 MP gives best accuracy; larger
+# images don't materially help and just burn tokens. 1568px on the longest
+# edge with a 4:3 aspect ratio lands at ~1.6 MP — close enough to optimal,
+# and after JPEG q=85 it almost always fits the byte budget on the first
+# pass even for noisy outdoor photos.
+_ANTHROPIC_MAX_EDGE_PX = 1568
+
+
+def _fit_image_for_anthropic(image_bytes: bytes) -> bytes:
+    """Return image bytes guaranteed to base64-encode under the 5 MB cap.
+
+    Strategy:
+      1. If the raw bytes are already comfortably under the budget, no work.
+      2. Otherwise decode → convert to RGB → cap longest edge at 1568px →
+         re-encode JPEG at decreasing qualities until it fits.
+      3. As a last resort, halve the longest edge and try again.
+
+    Real-world failure caught by user run on 2026-05-06: a 9.5 MB Pixel
+    photo (PXL_*.jpg) hit `messages.0.content.0.image.source.base64: image
+    exceeds 5 MB maximum: 6324756 bytes`. Phone photos almost always trip
+    this without resizing.
+    """
+
+    if len(image_bytes) <= _ANTHROPIC_RAW_BYTE_BUDGET:
+        return image_bytes
+
+    img = Image.open(io.BytesIO(image_bytes))
+    img.load()
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+
+    max_edge = _ANTHROPIC_MAX_EDGE_PX
+    for quality in (85, 75, 65, 55):
+        scaled = _resize_to_max_edge(img, max_edge)
+        out = io.BytesIO()
+        scaled.save(out, format="JPEG", quality=quality, optimize=True)
+        data = out.getvalue()
+        if len(data) <= _ANTHROPIC_RAW_BYTE_BUDGET:
+            return data
+
+    # Fallback: shrink dimensions further. We expect this to be rare —
+    # 1024px @ q=55 is well under 1 MB for any real photo.
+    for max_edge in (1280, 1024, 768):
+        scaled = _resize_to_max_edge(img, max_edge)
+        out = io.BytesIO()
+        scaled.save(out, format="JPEG", quality=70, optimize=True)
+        data = out.getvalue()
+        if len(data) <= _ANTHROPIC_RAW_BYTE_BUDGET:
+            return data
+
+    # If we somehow can't fit even a 768px JPEG (extreme edge case),
+    # return the smallest version we produced so the API gets *something*.
+    return data
+
+
+def _resize_to_max_edge(img: Image.Image, max_edge: int) -> Image.Image:
+    w, h = img.size
+    longest = max(w, h)
+    if longest <= max_edge:
+        return img
+    scale = max_edge / longest
+    return img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
 
 
 def _first_text(msg: anthropic.types.Message) -> str:

@@ -27,11 +27,17 @@ export default function EffortAndCost() {
   const [submitting, setSubmitting] = useState(false);
 
   // Bounce back to the form if the user landed here without a draft.
+  // IMPORTANT: only check on initial mount — `onSubmit` clears the draft via
+  // `reset()` *before* navigating to /jobs/:id, and if this effect re-ran on
+  // every draft change it would race the post-submit navigate and bounce the
+  // user to /projects/new (real bug surfaced by user-reported regression on
+  // 2026-05-06).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (draft === null) {
       navigate("/projects/new", { replace: true });
     }
-  }, [draft, navigate]);
+  }, []);
 
   useEffect(() => {
     if (draft === null) return;
