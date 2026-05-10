@@ -87,12 +87,20 @@ def submit_full_pipeline_job(
     project_id: str | None = None,
     mode: str = "standard",
     section_to_media_nl: str | None = None,
+    project_name: str = "",
 ) -> JobSnapshot:
     """Register a new job + spawn the background task. Returns immediately."""
     registry = get_registry()
     job_id = uuid.uuid4().hex
     final_project_id = project_id or f"project-{uuid.uuid4().hex[:12]}"
-    snap = JobSnapshot(job_id=job_id, project_id=final_project_id)
+    snap = JobSnapshot(
+        job_id=job_id,
+        project_id=final_project_id,
+        project_name=project_name,
+        brief=brief,
+        media_count=len(media_paths),
+        target_duration_seconds=target_duration_seconds,
+    )
     registry.register(snap)
 
     if mode not in ("standard", "music_video"):

@@ -248,6 +248,7 @@ class SubmitJobRequest(BaseModel):
     mode: Literal["standard", "music_video"] = "standard"
     section_to_media_nl: str | None = None
     project_id: str | None = None
+    project_name: str = ""
 
 
 class SubmitJobResponse(BaseModel):
@@ -293,6 +294,7 @@ async def post_submit_job(req: SubmitJobRequest) -> SubmitJobResponse:
         project_id=req.project_id,
         mode=req.mode,
         section_to_media_nl=req.section_to_media_nl,
+        project_name=req.project_name,
     )
     return SubmitJobResponse(
         job_id=snap.job_id,
@@ -310,6 +312,25 @@ async def get_job(job_id: str) -> dict[str, Any]:
     if snap is None:
         raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
     return asdict(snap)
+
+
+@router.post("/{job_id}/cancel", status_code=status.HTTP_202_ACCEPTED)
+async def post_cancel_job(job_id: str) -> dict[str, Any]:
+    """Request cancellation of a running job. The cancel signal flows
+    through asyncio.CancelledError → runner_glue catches it → sets state
+    to "cancelled". Returns 404 if the job doesn't exist; 409 if it's
+    already in a terminal state."""
+    registry = get_registry()
+    snap = registry.get(job_id)
+    if snap is None:
+        raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
+    if snap.state in ("succeeded", "failed", "cancelled"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"job is already in terminal state: {snap.state}",
+        )
+    cancelled = await registry.cancel_job(job_id)
+    return {"cancellation_requested": cancelled, "current_state": snap.state}
 
 
 # ---- WebSocket (M3) ----------------------------------------------------

@@ -89,6 +89,10 @@ function baseSnapshot(): unknown {
     render_path: null,
     failure_reason: null,
     correlation_id: "cid",
+    project_name: "Test project",
+    brief: "Test brief",
+    media_count: 100,
+    target_duration_seconds: 60,
   };
 }
 
@@ -107,8 +111,10 @@ describe("JobInProgress", () => {
       </MemoryRouter>
     );
     await waitFor(() => {
-      expect(screen.getByText(/Stage 1 · Ingest/)).toBeInTheDocument();
-      expect(screen.getByText(/Stage 7 · Render/)).toBeInTheDocument();
+      // The 7 stages are listed in order; labels were shortened (the
+      // numeric prefix is implicit from row position now).
+      expect(screen.getByText(/^Ingest$/)).toBeInTheDocument();
+      expect(screen.getByText(/^Render$/)).toBeInTheDocument();
     });
   });
 
@@ -247,5 +253,41 @@ describe("JobInProgress", () => {
       expect(screen.getByText(/render_failed:loudnorm/)).toBeInTheDocument();
       expect(screen.getByText(/Job failed/)).toBeInTheDocument();
     });
+  });
+
+  it("renders the project name + brief in the header when supplied", async () => {
+    mockFetchByUrl({
+      "/api/jobs/job-1": {
+        ok: true,
+        status: 200,
+        body: { ...(baseSnapshot() as Record<string, unknown>), project_name: "Alps trip" },
+      },
+    });
+    render(
+      <MemoryRouter initialEntries={["/jobs/job-1"]}>
+        <Routes>
+          <Route path="/jobs/:job_id" element={<JobInProgress />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: /Alps trip/ })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Show brief/ })).toBeInTheDocument();
+    });
+  });
+
+  it("shows a Cancel job button while running", async () => {
+    mockFetchByUrl({
+      "/api/jobs/job-1": { ok: true, status: 200, body: baseSnapshot() },
+    });
+    render(
+      <MemoryRouter initialEntries={["/jobs/job-1"]}>
+        <Routes>
+          <Route path="/jobs/:job_id" element={<JobInProgress />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    const btn = await screen.findByRole("button", { name: /Cancel job/ });
+    expect(btn).not.toBeDisabled();
   });
 });
