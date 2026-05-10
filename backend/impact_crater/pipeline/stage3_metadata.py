@@ -17,6 +17,7 @@ import asyncio
 import logging
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -43,12 +44,30 @@ async def run_stage3(
     brief: str,
     pool: WorkerPool | None = None,
 ) -> list[Stage3AssetOutputs]:
-    """Run rich-metadata extraction over every photo + every scene."""
+    """Run rich-metadata extraction over every photo + every scene.
+
+    Per-asset failures are logged and silently dropped — Stage 4's
+    prefilter handles missing entries gracefully (the asset has no
+    metadata available and falls out via the quality floor when its
+    score also defaults to 0). One bad image used to kill the job.
+
+    Raises if EVERY asset failed (something is systemic).
+    """
     pool = pool or default_pool()
     schema_photo = RichMetadataPhoto.model_json_schema()
     schema_video = RichMetadataVideoScene.model_json_schema()
     work_items = list(_enumerate_assets(media))
-    return await pool.submit_many(
+
+    def _on_error(idx: int, item: Any, exc: BaseException) -> None:
+        log.warning(
+            "stage3_asset_skipped idx=%d content_hash=%s scene_index=%s error=%r",
+            idx,
+            getattr(item, "cache_hash", "?"),
+            getattr(item, "scene_index", None),
+            str(exc)[:200],
+        )
+
+    raw = await pool.submit_many_tolerant(
         "network",
         work_items,
         lambda item: _extract(
@@ -58,7 +77,21 @@ async def run_stage3(
             schema_photo=schema_photo,
             schema_video=schema_video,
         ),
+        on_error=_on_error,
     )
+    results = [r for r in raw if r is not None]
+    failed = len(raw) - len(results)
+    if work_items and not results:
+        raise RuntimeError(
+            f"stage3: every asset failed ({failed}/{len(work_items)}); "
+            "see WARN-level stage3_asset_skipped logs above"
+        )
+    log.info(
+        "stage3_done asset_count=%d failed=%d",
+        len(results),
+        failed,
+    )
+    return results
 
 
 # ---- Per-asset workhorse ----------------------------------------------

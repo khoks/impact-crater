@@ -23,6 +23,7 @@ import hashlib
 import logging
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 from impact_crater.llm_clients.router import LLMRouter
 from impact_crater.pipeline.stage1_ingest import MediaRecord
@@ -44,8 +45,13 @@ async def run_stage2(
 ) -> list[Stage2AssetOutputs]:
     """Run embed + caption + score over every photo + every scene.
 
-    Returns one Stage2AssetOutputs per asset (photos: one per record;
-    videos: one per scene).
+    Returns one Stage2AssetOutputs per asset that succeeded (photos: one
+    per record; videos: one per scene). Per-asset failures are logged
+    and silently dropped — Stage 4's prefilter handles missing entries
+    gracefully (the asset gets a default 0.0 quality score and falls out
+    via the quality floor). One bad image used to kill the whole job.
+
+    Raises if EVERY asset failed (something is systemic).
     """
     pool = pool or default_pool()
     brief_hash = _short_hash(brief)
@@ -56,14 +62,33 @@ async def run_stage2(
         len(media),
         brief_hash,
     )
-    results = await pool.submit_many(
+
+    def _on_error(idx: int, item: Any, exc: BaseException) -> None:
+        log.warning(
+            "stage2_asset_skipped idx=%d content_hash=%s scene_index=%s error=%r",
+            idx,
+            getattr(item, "cache_hash", "?"),
+            getattr(item, "scene_index", None),
+            str(exc)[:200],
+        )
+
+    raw = await pool.submit_many_tolerant(
         "network",
         work_items,
         lambda item: _run_for_asset(router, item, brief, brief_hash),
+        on_error=_on_error,
     )
+    results = [r for r in raw if r is not None]
+    failed = len(raw) - len(results)
+    if work_items and not results:
+        raise RuntimeError(
+            f"stage2: every asset failed ({failed}/{len(work_items)}); "
+            "see WARN-level stage2_asset_skipped logs above"
+        )
     log.info(
-        "stage2_done asset_count=%d brief_hash=%s",
+        "stage2_done asset_count=%d failed=%d brief_hash=%s",
         len(results),
+        failed,
         brief_hash,
     )
     return results

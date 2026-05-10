@@ -131,3 +131,71 @@ async def test_submit_after_cancel_raises_immediately() -> None:
     await pool.cancel()
     with pytest.raises(JobCancelled):
         await pool.submit("cpu", lambda: asyncio.sleep(0))
+
+
+# ---- submit_many_tolerant: per-asset failure isolation -------------------
+
+
+async def test_submit_many_tolerant_returns_none_for_failures() -> None:
+    """One failing task must NOT kill the batch — it yields None and the
+    other items complete. Real failure motivating this: one bad image in
+    a 545-asset Stage 2 batch killed the whole job."""
+    pool = WorkerPool()
+
+    async def maybe_fail(item: int) -> int:
+        if item == 3:
+            raise ValueError("boom on item 3")
+        return item * 10
+
+    results = await pool.submit_many_tolerant("cpu", [1, 2, 3, 4, 5], maybe_fail)
+    assert results == [10, 20, None, 40, 50]
+
+
+async def test_submit_many_tolerant_calls_on_error_with_index_item_exc() -> None:
+    pool = WorkerPool()
+    captured: list[tuple[int, int, str]] = []
+
+    def on_error(idx: int, item: int, exc: BaseException) -> None:
+        captured.append((idx, item, type(exc).__name__))
+
+    async def fail_evens(item: int) -> int:
+        if item % 2 == 0:
+            raise RuntimeError(f"even {item}")
+        return item
+
+    await pool.submit_many_tolerant("cpu", [1, 2, 3, 4], fail_evens, on_error=on_error)
+    # Indices for items [1, 2, 3, 4] are [0, 1, 2, 3]; failures at 1 and 3.
+    assert captured == [(1, 2, "RuntimeError"), (3, 4, "RuntimeError")]
+
+
+async def test_submit_many_tolerant_propagates_cancellation() -> None:
+    """JobCancelled (pool shutdown) must NOT be swallowed even by tolerant."""
+    pool = WorkerPool()
+    await pool.cancel()
+    with pytest.raises(JobCancelled):
+        await pool.submit_many_tolerant("cpu", [1, 2, 3], lambda i: asyncio.sleep(0))
+
+
+async def test_submit_many_tolerant_on_error_callback_failure_doesnt_break_batch() -> None:
+    """If the on_error callback itself raises, we still produce results
+    for the surviving tasks (the callback is best-effort logging)."""
+    pool = WorkerPool()
+
+    def bad_callback(*_: object) -> None:
+        raise RuntimeError("logger blew up")
+
+    async def fail_threes(item: int) -> int:
+        if item == 3:
+            raise ValueError("boom")
+        return item
+
+    results = await pool.submit_many_tolerant(
+        "cpu", [1, 2, 3, 4], fail_threes, on_error=bad_callback
+    )
+    assert results == [1, 2, None, 4]
+
+
+async def test_submit_many_tolerant_empty_list() -> None:
+    pool = WorkerPool()
+    results = await pool.submit_many_tolerant("cpu", [], lambda _: asyncio.sleep(0))
+    assert results == []

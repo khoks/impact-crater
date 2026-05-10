@@ -126,11 +126,51 @@ class WorkerPool:
 
         Concurrency is bounded by the class's semaphore, not by the number
         of items, so callers can pass thousands of items safely.
+
+        Fails fast on the first exception. For partial-failure tolerance,
+        use `submit_many_tolerant`.
         """
         async def _one(item: Any) -> T:
             return await self.submit(worker_class, lambda: coro_factory(item))
 
         return await asyncio.gather(*[_one(item) for item in items])
+
+    async def submit_many_tolerant(
+        self,
+        worker_class: WorkerClass,
+        items: Iterable[Any],
+        coro_factory: Callable[[Any], Awaitable[T]],
+        *,
+        on_error: Callable[[int, Any, BaseException], None] | None = None,
+    ) -> list[T | None]:
+        """Like `submit_many` but a failing task yields `None` instead of
+        propagating. CancelledError still propagates (so user-cancellation
+        works); JobCancelled still propagates (so pool shutdown works).
+
+        Per-asset failure tolerance for Stage 2 + Stage 3: one bad image
+        used to kill a 545-asset job. Now it's logged via `on_error` and
+        the asset just doesn't appear in downstream prefilter scoring,
+        which already handles missing entries gracefully.
+
+        `on_error(index, item, exc)` runs synchronously per failure; use
+        it for structured logging. Don't block in it.
+        """
+        items_list = list(items)
+
+        async def _one(idx: int, item: Any) -> T | None:
+            try:
+                return await self.submit(worker_class, lambda: coro_factory(item))
+            except (asyncio.CancelledError, JobCancelled):
+                raise  # never swallow cancellation
+            except BaseException as exc:
+                if on_error is not None:
+                    try:
+                        on_error(idx, item, exc)
+                    except Exception:
+                        pass  # never let the error-handler crash the batch
+                return None
+
+        return await asyncio.gather(*[_one(i, it) for i, it in enumerate(items_list)])
 
     def register_subprocess(self, proc: asyncio.subprocess.Process) -> None:
         """Track a subprocess so `cancel()` can SIGTERM it."""
