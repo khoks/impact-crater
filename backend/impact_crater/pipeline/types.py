@@ -54,6 +54,68 @@ def _coerce_str_list(value: Any) -> Any:
     return [p for p in parts if p]
 
 
+def _coerce_people_obs(value: Any) -> Any:
+    """Pydantic before-validator for the `people` field.
+
+    Real Anthropic tool_use observation (user job 2026-05-07):
+        people = '\\n<parameter name="count">3'
+    Sonnet leaked its tool-use parameter wrapper into the value as a raw
+    string instead of returning the structured object. We try to recover:
+      - If it's already a dict / PeopleObservation, pass through.
+      - If it's a string, try JSON-parse first (covers LLMs that send
+        '{\"count\": 3, ...}').
+      - If the string contains XML-ish `<parameter name="count">N` tags,
+        extract the count and return a minimal observation.
+      - Otherwise return an empty observation rather than killing the job.
+    """
+    if isinstance(value, (dict, BaseModel)):
+        return value
+    if not isinstance(value, str):
+        return value
+    s = value.strip()
+    if not s:
+        return {"count": 0, "in_focus": []}
+    try:
+        parsed = json.loads(s)
+        if isinstance(parsed, dict):
+            return parsed
+    except (json.JSONDecodeError, ValueError):
+        pass
+    # XML-ish tool-use leak: `<parameter name="count">3` etc. Tolerate
+    # optional surrounding quotes on the value (Sonnet sometimes wraps).
+    import re
+    m = re.search(r'name="count"[^>]*>\s*"?\s*(\d+)', s)
+    count = int(m.group(1)) if m else 0
+    return {"count": count, "in_focus": []}
+
+
+def _coerce_location_obs(value: Any) -> Any:
+    """Pydantic before-validator for the `location` field.
+
+    Real Anthropic tool_use observation (user job 2026-05-07):
+        location = '\\n<parameter name="description">Foothills in Zion National Park'
+    Same family as _coerce_people_obs. We try JSON, then extract a
+    `description` from XML-ish content, then return an empty obs.
+    """
+    if isinstance(value, (dict, BaseModel)):
+        return value
+    if not isinstance(value, str):
+        return value
+    s = value.strip()
+    if not s:
+        return {"description": None, "lat_long": None}
+    try:
+        parsed = json.loads(s)
+        if isinstance(parsed, dict):
+            return parsed
+    except (json.JSONDecodeError, ValueError):
+        pass
+    import re
+    m = re.search(r'name="description"[^>]*>\s*([^<]+)', s)
+    description = m.group(1).strip() if m else None
+    return {"description": description, "lat_long": None}
+
+
 class PeopleObservation(BaseModel):
     model_config = ConfigDict(extra="ignore")
     count: int = Field(default=0, ge=0)
@@ -107,6 +169,15 @@ class RichMetadataPhoto(BaseModel):
     _coerce_clothing = field_validator("clothing", mode="before")(_coerce_str_list)
     _coerce_generic_tags = field_validator("generic_tags", mode="before")(_coerce_str_list)
     _coerce_task_context_tags = field_validator("task_context_tags", mode="before")(_coerce_str_list)
+
+    # Nested-model tolerance: Sonnet sometimes leaks its tool-use parameter
+    # wrapper as a raw string into nested-model fields (real failure 2026-05-07
+    # on user job: people=`'\n<parameter name="count">3'` and
+    # location=`'\n<parameter name="description">...'`). The before-validators
+    # try JSON-parse first, then extract from the XML-ish leak, then default
+    # to an empty observation. See _coerce_people_obs / _coerce_location_obs.
+    _coerce_people = field_validator("people", mode="before")(_coerce_people_obs)
+    _coerce_location = field_validator("location", mode="before")(_coerce_location_obs)
 
 
 class RichMetadataVideoScene(RichMetadataPhoto):

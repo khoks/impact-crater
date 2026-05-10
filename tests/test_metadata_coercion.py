@@ -80,3 +80,84 @@ def test_non_string_non_list_value_unchanged() -> None:
     raw = {"generic_tags": 42}
     with pytest.raises(Exception):
         RichMetadataPhoto.model_validate(raw)
+
+
+# ---- Nested-model coercion (real failure 2026-05-07) -------------------
+#
+# Sonnet sometimes leaks its tool-use parameter wrapper into the value as
+# a raw string, e.g.
+#     people   = '\n<parameter name="count">3'
+#     location = '\n<parameter name="description">Foothills in Zion National Park'
+# instead of the structured PeopleObservation / LocationObservation dicts.
+# The before-validators recover what they can and don't kill the job.
+
+
+def test_people_xml_leak_extracts_count() -> None:
+    raw = {"people": '\n<parameter name="count">3'}
+    p = RichMetadataPhoto.model_validate(raw)
+    assert p.people.count == 3
+    assert p.people.in_focus == []
+
+
+def test_people_xml_leak_with_quoted_count() -> None:
+    raw = {"people": '<parameter name="count">"7"</parameter>'}
+    p = RichMetadataPhoto.model_validate(raw)
+    assert p.people.count == 7
+
+
+def test_people_already_a_dict_passes_through() -> None:
+    raw = {"people": {"count": 4, "in_focus": ["father", "child"]}}
+    p = RichMetadataPhoto.model_validate(raw)
+    assert p.people.count == 4
+    assert p.people.in_focus == ["father", "child"]
+
+
+def test_people_json_string_parses() -> None:
+    raw = {"people": '{"count": 5, "in_focus": ["a", "b"]}'}
+    p = RichMetadataPhoto.model_validate(raw)
+    assert p.people.count == 5
+    assert p.people.in_focus == ["a", "b"]
+
+
+def test_people_unrecoverable_string_defaults_empty() -> None:
+    raw = {"people": "totally garbage string with no markers"}
+    p = RichMetadataPhoto.model_validate(raw)
+    assert p.people.count == 0
+    assert p.people.in_focus == []
+
+
+def test_location_xml_leak_extracts_description() -> None:
+    raw = {"location": '\n<parameter name="description">Foothills in Zion National Park'}
+    p = RichMetadataPhoto.model_validate(raw)
+    assert p.location.description == "Foothills in Zion National Park"
+    assert p.location.lat_long is None
+
+
+def test_location_already_a_dict_passes_through() -> None:
+    raw = {"location": {"description": "Times Square", "lat_long": (40.758, -73.985)}}
+    p = RichMetadataPhoto.model_validate(raw)
+    assert p.location.description == "Times Square"
+    assert p.location.lat_long == (40.758, -73.985)
+
+
+def test_location_json_string_parses() -> None:
+    raw = {"location": '{"description": "Eiffel Tower", "lat_long": null}'}
+    p = RichMetadataPhoto.model_validate(raw)
+    assert p.location.description == "Eiffel Tower"
+    assert p.location.lat_long is None
+
+
+def test_full_xml_leak_combo_from_real_job() -> None:
+    """The exact failure pattern from user job 2a245c1b on 2026-05-07."""
+    raw = {
+        "time_of_day": "midday",
+        "people": '\n<parameter name="count">3',
+        "location": '\n<parameter name="description">Foothills in Zion National Park',
+        "mood": "adventurous",
+        "objects": ["backpack", "hiking poles"],
+    }
+    p = RichMetadataPhoto.model_validate(raw)
+    assert p.people.count == 3
+    assert p.location.description == "Foothills in Zion National Park"
+    assert p.mood == "adventurous"
+    assert p.objects == ["backpack", "hiking poles"]

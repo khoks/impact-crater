@@ -428,6 +428,14 @@ def _image_block(image_bytes: bytes) -> dict[str, Any]:
 # slightly tighter raw-byte threshold so headers/JSON wrapping stay safe.
 _ANTHROPIC_RAW_BYTE_BUDGET = 3_500_000
 
+# Anthropic Messages API also rejects images where any single pixel
+# dimension exceeds 8000 pixels (real failure 2026-05-07: a Pixel NIGHT
+# mode photo `PXL_20260405_030656922.NIGHT.jpg` had a long edge >8000px,
+# slipped the 3.5 MB byte check, and 400'd with `At least one of the
+# image dimensions exceed max allowed size: 8000 pixels`). We use a
+# slightly tighter cap so a future API change doesn't bite.
+_ANTHROPIC_MAX_DIM_PX = 7900
+
 # Anthropic's vision recommendation: ≤1.15 MP gives best accuracy; larger
 # images don't materially help and just burn tokens. 1568px on the longest
 # edge with a 4:3 aspect ratio lands at ~1.6 MP — close enough to optimal,
@@ -442,29 +450,45 @@ _JPEG_MAGIC = b"\xff\xd8\xff"
 
 
 def _fit_image_for_anthropic(image_bytes: bytes) -> bytes:
-    """Return JPEG bytes guaranteed to base64-encode under the 5 MB cap.
+    """Return JPEG bytes guaranteed to be accepted by Anthropic's vision API.
 
-    Two real failures motivated this function's full responsibility:
+    Three real failures motivated this function's full responsibility:
       1. 2026-05-06: a 9.5 MB Pixel photo `PXL_*.jpg` exceeded the 5 MB
          base64 cap → 400 `image exceeds 5 MB maximum`.
-      2. 2026-05-07: stage1's `scene-N-middle.png` (cv2.imwrite, PNG) was
-         being declared as `image/jpeg` → 400 `image appears to be a
+      2. 2026-05-07a: stage1's `scene-N-middle.png` (cv2.imwrite, PNG)
+         was being declared as `image/jpeg` → 400 `image appears to be a
          image/png image`.
+      3. 2026-05-07b: a Pixel NIGHT mode photo had one dimension > 8000px
+         (file size was small, dimensions were not) → 400 `At least one
+         of the image dimensions exceed max allowed size: 8000 pixels`.
 
     Strategy:
-      - If the input is already a JPEG AND fits the byte budget, pass
-        through unchanged (fast path; no PIL decode work).
+      - Fast path: already JPEG AND under the byte budget AND under the
+        pixel-dimension cap → pass through unchanged (no PIL work). The
+        dimension check uses PIL's lazy header parser, which only reads
+        a few bytes for JPEG SOF markers.
       - Otherwise, decode → convert to RGB → cap longest edge at 1568px →
         re-encode JPEG at decreasing qualities until it fits.
       - As a last resort, halve the longest edge.
 
-    The output is *always* JPEG-encoded bytes, so callers never need to
-    sniff the source format to set the media_type correctly.
+    The output is *always* JPEG-encoded bytes AND under both caps, so
+    callers never need to sniff the source format to set media_type.
     """
 
     is_jpeg = image_bytes.startswith(_JPEG_MAGIC)
     if is_jpeg and len(image_bytes) <= _ANTHROPIC_RAW_BYTE_BUDGET:
-        return image_bytes
+        # Cheap dimension check via PIL's header-only parser. PIL doesn't
+        # decode pixel data here, just reads the SOF marker — the lazy
+        # parse is what makes this fast-path viable on large JPEGs.
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as probe:
+                w, h = probe.size
+            if max(w, h) <= _ANTHROPIC_MAX_DIM_PX:
+                return image_bytes
+        except Exception:
+            # If we can't even read the header, fall through to the full
+            # decode path which will raise a more useful error.
+            pass
 
     img = Image.open(io.BytesIO(image_bytes))
     img.load()

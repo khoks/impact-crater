@@ -131,3 +131,31 @@ def test_image_block_always_declares_jpeg_for_png_input() -> None:
     assert block["source"]["media_type"] == "image/jpeg"
     decoded = base64.b64decode(block["source"]["data"])
     assert decoded.startswith(b"\xff\xd8\xff")
+
+
+def test_under_byte_budget_but_oversized_dimension_is_resized() -> None:
+    """Real failure 2026-05-07: a Pixel NIGHT mode photo
+    `PXL_20260405_030656922.NIGHT.jpg` had a long edge >8000px but a
+    small file size (well under 3.5 MB). It slipped the byte check and
+    Anthropic 400'd: `At least one of the image dimensions exceed max
+    allowed size: 8000 pixels`. The fast path now also enforces the
+    pixel-dimension cap; oversized dims trigger the full re-encode."""
+    # Build a 9000×500 JPEG. Flat color compresses tiny — file size will
+    # be well under 3.5 MB but the long edge exceeds the 8000px API cap.
+    img = Image.new("RGB", (9000, 500), color=(50, 100, 200))
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=70)
+    raw = out.getvalue()
+    assert len(raw) < 3_500_000, f"fixture too big: {len(raw)}"
+    # Sanity: the fixture really does have a >8000px long edge.
+    with Image.open(io.BytesIO(raw)) as probe:
+        assert max(probe.size) > 8000
+
+    fitted = _fit_image_for_anthropic(raw)
+    # Must NOT pass through unchanged — exact bug shape.
+    assert fitted is not raw
+    # Output must be JPEG and within both caps.
+    assert fitted.startswith(b"\xff\xd8\xff")
+    assert len(base64.b64encode(fitted)) <= ANTHROPIC_BASE64_CAP
+    with Image.open(io.BytesIO(fitted)) as out_img:
+        assert max(out_img.size) <= 7900  # the configured dim cap
