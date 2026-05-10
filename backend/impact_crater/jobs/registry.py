@@ -95,6 +95,12 @@ class JobSnapshot:
     render_path: str | None = None
     failure_reason: str | None = None
     correlation_id: str = ""
+    # Optional metadata so the UI can show "Alps trip — June" instead of
+    # `project-195c12955192`. Populated by submit_full_pipeline_job.
+    project_name: str = ""
+    brief: str = ""
+    media_count: int = 0
+    target_duration_seconds: int = 0
 
 
 class JobRegistry:
@@ -261,6 +267,27 @@ class JobRegistry:
         await self._emit(
             JobProgressEvent(type="log", job_id=job_id, payload={"message": message})
         )
+
+    # ---- Cancellation ----
+
+    async def cancel_job(self, job_id: str) -> bool:
+        """Request cancellation of a running job. Returns True if a task
+        was found and cancellation was signalled, False otherwise.
+
+        The cancel signal flows through asyncio.CancelledError: the
+        runner_glue catch-block updates state to "cancelled" with
+        failure_reason="cancelled" before re-raising. The WS stream
+        closes naturally on the terminal state.
+        """
+        snap = self._jobs.get(job_id)
+        if snap is None or snap.state in TERMINAL_STATES:
+            return False
+        task = self._tasks.get(job_id)
+        if task is None or task.done():
+            return False
+        log.info("job_cancel_requested job_id=%s", job_id)
+        task.cancel()
+        return True
 
     # ---- WS subscription ----
 

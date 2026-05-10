@@ -8,6 +8,7 @@ export interface SubmitJobRequest {
   mode?: "standard" | "music_video";
   section_to_media_nl?: string | null;
   project_id?: string;
+  project_name?: string;
 }
 
 export interface SubmitJobResponse {
@@ -43,6 +44,24 @@ export interface JobSnapshot {
   render_path: string | null;
   failure_reason: string | null;
   correlation_id: string;
+  project_name: string;
+  brief: string;
+  media_count: number;
+  target_duration_seconds: number;
+}
+
+export interface CancelJobResponse {
+  cancellation_requested: boolean;
+  current_state: string;
+}
+
+export async function cancelJob(jobId: string): Promise<CancelJobResponse> {
+  const r = await fetch(`/api/jobs/${jobId}/cancel`, { method: "POST" });
+  if (!r.ok) {
+    const detail = await safeDetail(r);
+    throw new Error(detail || `Cancel failed: ${r.status}`);
+  }
+  return (await r.json()) as CancelJobResponse;
 }
 
 export type JobProgressEvent =
