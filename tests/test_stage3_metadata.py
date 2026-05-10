@@ -123,19 +123,44 @@ async def test_stage3_propagates_brief_via_prompt_vars(tmp_path: Path) -> None:
     assert call.kwargs["prompt_vars"]["context_brief"] == "vacation in italy"
 
 
-async def test_stage3_raises_on_schema_mismatch(tmp_path: Path) -> None:
+async def test_stage3_raises_when_every_asset_fails_schema(tmp_path: Path) -> None:
+    """Per-asset failures are now tolerated (the asset is skipped + logged
+    as WARN); but if EVERY asset fails the stage raises so we don't
+    silently produce a degraded job. Single-asset input here = 100% rate."""
     router = AsyncMock()
     # `quality` out of [0,1] range — Pydantic ValidationError → LLMOperationFailed.
     bad = _valid_photo_metadata() | {"quality": 1.7}
     router.extract_metadata_image = AsyncMock(return_value=bad)
 
-    with pytest.raises(LLMOperationFailed) as excinfo:
+    with pytest.raises(RuntimeError) as excinfo:
         await stage3_metadata.run_stage3(
             router=router,
             media=[_photo_record(tmp_path)],
             brief="b",
         )
-    assert "schema mismatch" in str(excinfo.value)
+    assert "every asset failed" in str(excinfo.value)
+
+
+async def test_stage3_skips_failing_asset_and_returns_partial_results(tmp_path: Path) -> None:
+    """One bad asset out of three should NOT kill the batch — the surviving
+    two are returned and the failure is logged. Real failure motivating
+    this: one bad image killed a 545-asset Stage 3."""
+    router = AsyncMock()
+    good = _valid_photo_metadata()
+    bad = _valid_photo_metadata() | {"quality": 1.7}  # ValidationError on bad
+    seq = iter([good, bad, good])
+    router.extract_metadata_image = AsyncMock(side_effect=lambda *a, **k: next(seq))
+
+    media = []
+    for i in range(3):
+        p = tmp_path / f"p{i}"
+        p.mkdir()
+        media.append(_photo_record(p, content_hash=f"h{i}"))
+
+    out = await stage3_metadata.run_stage3(router=router, media=media, brief="b")
+    # Two of three survive — the bad one is skipped silently in the result.
+    assert len(out) == 2
+    assert {a.content_hash for a in out} == {"h0", "h2"}
 
 
 async def test_stage3_handles_multiple_photos(tmp_path: Path) -> None:
