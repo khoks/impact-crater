@@ -144,12 +144,22 @@ async def test_stage3_raises_when_every_asset_fails_schema(tmp_path: Path) -> No
 async def test_stage3_skips_failing_asset_and_returns_partial_results(tmp_path: Path) -> None:
     """One bad asset out of three should NOT kill the batch — the surviving
     two are returned and the failure is logged. Real failure motivating
-    this: one bad image killed a 545-asset Stage 3."""
+    this: one bad image killed a 545-asset Stage 3.
+
+    Stage 3 dispatches via `pool.submit_many_tolerant` which awaits all
+    items concurrently via asyncio.gather. The order in which the mock's
+    side_effect runs is therefore NOT deterministic, so we route by
+    content_hash (the kwarg the router passes through) rather than by
+    iteration order — that way the bad payload always lands on the same
+    asset regardless of scheduling."""
     router = AsyncMock()
     good = _valid_photo_metadata()
     bad = _valid_photo_metadata() | {"quality": 1.7}  # ValidationError on bad
-    seq = iter([good, bad, good])
-    router.extract_metadata_image = AsyncMock(side_effect=lambda *a, **k: next(seq))
+
+    async def _by_hash(*args: object, content_hash: str = "", **kwargs: object) -> dict:
+        return bad if content_hash == "h1" else good
+
+    router.extract_metadata_image = AsyncMock(side_effect=_by_hash)
 
     media = []
     for i in range(3):
@@ -158,7 +168,7 @@ async def test_stage3_skips_failing_asset_and_returns_partial_results(tmp_path: 
         media.append(_photo_record(p, content_hash=f"h{i}"))
 
     out = await stage3_metadata.run_stage3(router=router, media=media, brief="b")
-    # Two of three survive — the bad one is skipped silently in the result.
+    # Two of three survive — h1 is skipped silently in the result.
     assert len(out) == 2
     assert {a.content_hash for a in out} == {"h0", "h2"}
 
