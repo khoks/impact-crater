@@ -92,6 +92,7 @@ docker-compose.override.yml
 # --- Misc ---
 .cache/
 tmp/
+temp/
 *.log
 
 # --- Personal launcher scripts (not committed) ---

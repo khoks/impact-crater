@@ -27,7 +27,7 @@ from typing import Any, Literal
 
 import yaml
 
-from impact_crater import rate_cards, telemetry
+from impact_crater import quota, rate_cards, telemetry
 from impact_crater.llm_clients import cache, prompts
 from impact_crater.llm_clients.base import (
     ArcJudgment,
@@ -558,6 +558,23 @@ class LLMRouter:
             )
         except Exception as exc:  # pragma: no cover
             log.debug("telemetry emit failed: %s", exc)
+
+        # Bump the daily quota_state table so Settings → "Today's spend"
+        # and the next job's pre-flight quota check see this spend. Real
+        # bug 2026-05-07: this call was missing; quota.record_spend was
+        # defined + documented but no caller existed, so Settings always
+        # showed $0.00 today regardless of what the user had spent.
+        # record_spend short-circuits on cost<=0 so cache hits are free.
+        if not cache_hit and cost > 0:
+            try:
+                await quota.record_spend(route.provider, cost)
+            except Exception as exc:  # pragma: no cover
+                log.warning(
+                    "quota_record_spend_failed provider=%s cost=%.6f error=%r",
+                    route.provider,
+                    cost,
+                    str(exc)[:200],
+                )
 
         if self._progress_sink is not None:
             try:

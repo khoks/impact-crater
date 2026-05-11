@@ -7,6 +7,7 @@ import pytest
 from impact_crater.pipeline.stage1_ingest import MediaRecord
 from impact_crater.pipeline.stage4_prefilter import (
     PreFilterOverrides,
+    Stage4EmptyCandidateSet,
     compute_envelope,
     prefilter,
 )
@@ -268,3 +269,41 @@ def test_prefilter_default_target_is_30_percent() -> None:
     assert cs.target_size == 300
     # The actual output is bounded by what survives the prior steps.
     assert len(cs.items) <= cs.target_size
+
+
+# ---- Fail-fast on zero candidates (Bug 3 fix from 2026-05-07 UI test) ----
+
+
+def test_prefilter_raises_when_all_dropped_by_quality_floor() -> None:
+    """Real failure 2026-05-07: a vague brief + cached low quality scores
+    dropped every asset in Stage 4, but the pipeline still ran Stage 5
+    (Tier-L Opus, ~$0.50) before Stage 6 finally raised. Now Stage 4
+    raises immediately so no expensive call follows zero candidates."""
+    media, stage2, stage3 = _records(20)
+    for s in stage2:
+        s.quality_score = 0.1  # below the default 0.40 floor
+
+    with pytest.raises(Stage4EmptyCandidateSet) as excinfo:
+        prefilter(
+            media=media,
+            stage2=stage2,
+            stage3=stage3,
+            target_duration_seconds=30,
+        )
+
+    exc = excinfo.value
+    assert exc.input_count == 20
+    assert exc.after_quality_count == 0
+    assert exc.quality_threshold == pytest.approx(0.40)
+    # The message must guide the user to the actionable diagnosis.
+    msg = str(exc)
+    assert "input=20" in msg
+    assert "after_quality_floor" in msg
+
+
+def test_prefilter_does_not_raise_for_empty_input() -> None:
+    """input_count=0 is the legitimate empty-folder case — return an empty
+    CandidateSet without raising, so the runner can surface that one
+    cause to the user separately (Stage 1 would have already noted it)."""
+    cs = prefilter(media=[], stage2=[], stage3=[], target_duration_seconds=30)
+    assert len(cs.items) == 0
