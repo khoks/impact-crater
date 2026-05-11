@@ -167,6 +167,21 @@ def prefilter(
         len(location_clusters),
     )
 
+    # Fail-fast if we'd hand zero candidates to Stage 5. Real cost
+    # 2026-05-07: a vague brief + cached low quality scores dropped all
+    # 36 candidates here, but the pipeline still ran Stage 5 (Tier-L
+    # Opus, ~$0.50) before Stage 6 finally raised. With this guard the
+    # job fails with a clear, cheap, actionable message before any
+    # remote LLM call is wasted on an empty arc judgment.
+    if input_count > 0 and not chosen:
+        raise Stage4EmptyCandidateSet(
+            input_count=input_count,
+            quality_threshold=quality_threshold,
+            after_quality_count=len(after_quality),
+            after_dedup_count=len(after_dedup),
+            after_location_count=len(after_location),
+        )
+
     return CandidateSet(
         items=items,
         cluster_metadata=cluster_metadata,
@@ -175,6 +190,37 @@ def prefilter(
         floor=floor,
         ceiling=ceiling,
     )
+
+
+class Stage4EmptyCandidateSet(RuntimeError):
+    """Raised when Stage 4's pre-filter eliminates every asset, so Stage 5
+    would have nothing to judge. Carries the funnel stats so the
+    runner_glue catch can surface an actionable failure_reason."""
+
+    def __init__(
+        self,
+        *,
+        input_count: int,
+        quality_threshold: float,
+        after_quality_count: int,
+        after_dedup_count: int,
+        after_location_count: int,
+    ) -> None:
+        self.input_count = input_count
+        self.quality_threshold = quality_threshold
+        self.after_quality_count = after_quality_count
+        self.after_dedup_count = after_dedup_count
+        self.after_location_count = after_location_count
+        reason = (
+            f"stage4_empty_candidate_set input={input_count} "
+            f"after_quality_floor({quality_threshold:.2f})={after_quality_count} "
+            f"after_dedup={after_dedup_count} "
+            f"after_location={after_location_count}. "
+            "Likely cause: vague brief produced low narrative-relevance scores "
+            "and/or the source folder's photos all score below the quality "
+            "threshold. Try a more specific brief or different media."
+        )
+        super().__init__(reason)
 
 
 # ---- Envelope math ----------------------------------------------------

@@ -29,7 +29,9 @@ from impact_crater.pipeline.runner import (
     QuotaDeniedError,
     run_full_pipeline,
 )
+from impact_crater.pipeline.stage4_prefilter import Stage4EmptyCandidateSet
 from impact_crater.pipeline.stage7_render import RenderError
+from impact_crater.workers import JobCancelled
 
 log = logging.getLogger(__name__)
 
@@ -174,6 +176,26 @@ async def _run_and_capture(
             "failed",
             failure_reason=f"quota_denied:{exc.reason}",
         )
+    except Stage4EmptyCandidateSet as exc:
+        # Stage 4 produced zero candidates after the quality floor /
+        # dedup / location passes. Surface the funnel stats so the user
+        # understands which filter dropped everything. Fails before the
+        # expensive Stage 5 L-tier call runs.
+        log.warning(
+            "job_stage4_empty job_id=%s input=%d after_quality=%d "
+            "after_dedup=%d after_location=%d quality_threshold=%.2f",
+            job_id,
+            exc.input_count,
+            exc.after_quality_count,
+            exc.after_dedup_count,
+            exc.after_location_count,
+            exc.quality_threshold,
+        )
+        await registry.update_state(
+            job_id,
+            "failed",
+            failure_reason=str(exc)[:300],
+        )
     except RenderError as exc:
         log.error(
             "job_render_failed job_id=%s stage=%s ffmpeg_exit_code=%s "
@@ -188,10 +210,24 @@ async def _run_and_capture(
             "failed",
             failure_reason=f"render_failed:{exc.stage}",
         )
-    except asyncio.CancelledError:
-        log.info("job_cancelled job_id=%s", job_id)
+    except (asyncio.CancelledError, JobCancelled) as exc:
+        # `asyncio.CancelledError` fires when the task itself is cancelled
+        # (e.g. user clicks Cancel → registry.cancel_job → task.cancel()).
+        # `JobCancelled` fires when the cancel signal reaches the task
+        # while it's inside `pool.submit(...)`, which wraps the inner
+        # CancelledError to make the cause less ambiguous. Both must
+        # result in state="cancelled" — real bug 2026-05-07: cancelling
+        # mid-Stage-2 produced state="failed" with reason "task cancelled"
+        # because JobCancelled fell through to the generic Exception
+        # branch below.
+        log.info("job_cancelled job_id=%s via=%s", job_id, type(exc).__name__)
         await registry.update_state(job_id, "cancelled", failure_reason="cancelled")
-        raise
+        # Re-raise only for asyncio.CancelledError (so the surrounding
+        # event loop sees the cancellation). JobCancelled is a normal
+        # Exception — swallowing it is correct because we've already
+        # recorded the terminal state.
+        if isinstance(exc, asyncio.CancelledError):
+            raise
     except Exception as exc:
         log.exception(
             "job_failed_unexpected job_id=%s error=%r",

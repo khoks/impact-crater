@@ -369,3 +369,46 @@ async def test_call_params_pass_through_correctly(
     assert params.model_version == "v1"
     assert params.max_tokens == 256
     assert params.temperature == 0.0
+
+
+# ---- Quota wiring (Bug 2 fix from 2026-05-07 UI test) -----------------
+
+
+@pytest.mark.usefixtures("db_initialized")
+async def test_cache_miss_bumps_daily_quota_spend(
+    routing_config: Path, prompts_dir: Path
+) -> None:
+    """Every successful non-cached LLM dispatch must record the cost into
+    the quota_state table so Settings → 'Today's spend' reflects reality.
+
+    Real bug: quota.record_spend() was defined + documented as "every
+    LLMCallEvent emit triggers exactly one record_spend" but no caller
+    ever invoked it. Settings always read $0.00 today regardless of
+    actual usage."""
+    from impact_crater import quota
+    from impact_crater.storage import settings as settings_store
+
+    # Set a cap so check_quota is meaningful; not strictly needed for this test.
+    await settings_store.set_value(settings_store.KEY_TOTAL_CAP_USD, "10.00")
+
+    today_before = await quota.get_today_spend()
+    assert today_before.get("_total_", 0.0) == 0.0
+    assert today_before.get("google", 0.0) == 0.0
+
+    google = _mock_client("google")
+    google.caption_image = AsyncMock(return_value="A red apple.")
+    router = LLMRouter(clients={"google": google}, config_path=routing_config)
+
+    # First call is a cache miss → records spend.
+    await router.caption_image(b"\x00fake-jpg", content_hash="hash-X")
+
+    today_after_miss = await quota.get_today_spend()
+    assert today_after_miss.get("_total_", 0.0) > 0.0
+    assert today_after_miss.get("google", 0.0) > 0.0
+    assert today_after_miss["_total_"] == pytest.approx(today_after_miss["google"])
+
+    # Second call is a cache hit → NO additional spend recorded.
+    miss_total = today_after_miss["_total_"]
+    await router.caption_image(b"\x00fake-jpg", content_hash="hash-X")
+    today_after_hit = await quota.get_today_spend()
+    assert today_after_hit["_total_"] == pytest.approx(miss_total)
