@@ -95,6 +95,10 @@ tmp/
 temp/
 *.log
 
+# Smoke-test rendered outputs (wiki_smoke_test.py and friends drop these
+# at repo root). Binary, regenerated on every run.
+*-smoke-test.mp4
+
 # --- Personal launcher scripts (not committed) ---
 start-impact-crater.bat
 start-impact-crater.sh
