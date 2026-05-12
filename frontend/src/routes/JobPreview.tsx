@@ -9,11 +9,14 @@ import { Link, useParams } from "react-router-dom";
 
 import { getJob, postRefine, type JobSnapshot, type RefineResponse } from "../api/jobs";
 import {
-  fetchYouTubeStatus,
+  ALL_PLATFORMS,
+  PLATFORM_LABELS,
+  fetchAllConnectorsStatus,
   publishSnapshot,
+  type AllConnectorsStatus,
+  type Platform,
   type PublishResponse,
   type Visibility,
-  type YouTubeStatusResponse,
 } from "../api/publish";
 
 export default function JobPreview() {
@@ -30,7 +33,8 @@ export default function JobPreview() {
 
   // Publish modal state.
   const [publishOpen, setPublishOpen] = useState(false);
-  const [ytStatus, setYtStatus] = useState<YouTubeStatusResponse | null>(null);
+  const [connectorsStatus, setConnectorsStatus] = useState<AllConnectorsStatus | null>(null);
+  const [publishPlatform, setPublishPlatform] = useState<Platform>("youtube");
   const [publishTitle, setPublishTitle] = useState("");
   const [publishDescription, setPublishDescription] = useState("");
   const [publishVisibility, setPublishVisibility] = useState<Visibility>("public");
@@ -58,14 +62,20 @@ export default function JobPreview() {
         setError(err instanceof Error ? err.message : String(err));
       });
 
-    // YouTube status loads in parallel — failure is non-fatal (we just won't
-    // show the connected/disconnected banner).
-    fetchYouTubeStatus()
+    // Connector statuses load in parallel — failure is non-fatal (the
+    // modal still opens; we just won't show the per-platform connected
+    // badges).
+    fetchAllConnectorsStatus()
       .then((s) => {
-        if (!cancelled) setYtStatus(s);
+        if (!cancelled) setConnectorsStatus(s);
       })
       .catch(() => {
-        if (!cancelled) setYtStatus({ connected: false, user_handle: null });
+        if (!cancelled) {
+          setConnectorsStatus({
+            platforms: ALL_PLATFORMS.map((p) => ({ platform: p, connected: false })),
+            dry_run: true,
+          });
+        }
       });
 
     return () => {
@@ -120,6 +130,7 @@ export default function JobPreview() {
         title: publishTitle.trim(),
         description: publishDescription.trim(),
         visibility: publishVisibility,
+        platform: publishPlatform,
       });
       setPublishResult(result);
     } catch (err) {
@@ -242,37 +253,101 @@ export default function JobPreview() {
 
       {publishOpen && (
         <section className="mt-6 rounded border border-slate-200 bg-white p-4">
-          <h2 className="text-sm font-semibold text-slate-700">Publish to YouTube</h2>
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-sm font-semibold text-slate-700">
+              Publish to {PLATFORM_LABELS[publishPlatform]}
+            </h2>
+            {connectorsStatus?.dry_run && (
+              <span
+                className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+                title="IC_PUBLISH_DRY_RUN=1 — validates request without actually posting. Flip env to 0 to enable real posting."
+              >
+                DRY-RUN
+              </span>
+            )}
+          </div>
 
-          {ytStatus === null ? (
-            <p className="mt-2 text-xs text-slate-500">Checking connection…</p>
-          ) : ytStatus.connected ? (
-            <p className="mt-2 rounded bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-              Connected
-              {ytStatus.user_handle ? (
-                <>
-                  {" as "}
-                  <span className="font-mono">{ytStatus.user_handle}</span>
-                </>
-              ) : (
-                ""
-              )}
-              .
-            </p>
-          ) : (
-            <p className="mt-2 rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              YouTube isn't connected yet. The publish API + audit log are
-              ready, but OAuth wiring is per-user — you supply a Google Cloud
-              OAuth client and run the connect flow before publishing. See{" "}
-              <code className="rounded bg-amber-100 px-1">ADR-0013</code>.
-            </p>
-          )}
+          {/* Platform picker (v1 — multi-platform). */}
+          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+            {ALL_PLATFORMS.map((p) => {
+              const status = connectorsStatus?.platforms.find((s) => s.platform === p);
+              const isSelected = publishPlatform === p;
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => {
+                    setPublishPlatform(p);
+                    setPublishResult(null);
+                    setPublishError(null);
+                  }}
+                  className={
+                    "rounded border px-3 py-1 transition " +
+                    (isSelected
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-300 bg-white hover:border-slate-500")
+                  }
+                >
+                  {PLATFORM_LABELS[p]}
+                  {status && (
+                    <span
+                      className={
+                        "ml-2 inline-block h-1.5 w-1.5 rounded-full align-middle " +
+                        (status.connected ? "bg-emerald-400" : "bg-slate-300")
+                      }
+                      aria-hidden
+                      title={status.connected ? "creds present in env" : "creds missing in env"}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Per-platform connection / setup hint. */}
+          {connectorsStatus !== null && (() => {
+            const status = connectorsStatus.platforms.find(
+              (s) => s.platform === publishPlatform
+            );
+            if (status?.connected) {
+              return (
+                <p className="mt-3 rounded bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                  {PLATFORM_LABELS[publishPlatform]} creds detected in env.
+                  {connectorsStatus.dry_run
+                    ? " Dry-run is ON — this publish will validate without posting."
+                    : " Live posting is ON — this publish will actually post."}
+                </p>
+              );
+            }
+            return (
+              <p className="mt-3 rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                {PLATFORM_LABELS[publishPlatform]} env vars are missing. See{" "}
+                <code className="rounded bg-amber-100 px-1">
+                  docs/connectors/{publishPlatform}-setup.md
+                </code>{" "}
+                for the credential setup. Dry-run will still validate the
+                request shape without hitting the platform.
+              </p>
+            );
+          })()}
 
           {publishResult ? (
-            <div className="mt-3 rounded bg-emerald-50 p-3 text-xs text-emerald-900">
-              <p className="font-semibold">Published.</p>
+            <div
+              className={
+                "mt-3 rounded p-3 text-xs " +
+                (publishResult.dry_run
+                  ? "bg-amber-50 text-amber-900"
+                  : "bg-emerald-50 text-emerald-900")
+              }
+            >
+              <p className="font-semibold">
+                {publishResult.dry_run ? "Dry-run validated." : "Published."}
+              </p>
               <p className="mt-1">
-                External URL:{" "}
+                Platform: <span className="font-mono">{publishResult.platform}</span>
+              </p>
+              <p className="mt-1">
+                {publishResult.dry_run ? "Would publish to: " : "External URL: "}
                 <a
                   href={publishResult.external_url}
                   target="_blank"
@@ -311,7 +386,11 @@ export default function JobPreview() {
                   onChange={(e) => setPublishDescription(e.target.value)}
                   rows={3}
                   className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-                  placeholder="What's the video about?"
+                  placeholder={
+                    publishPlatform === "instagram"
+                      ? "Becomes part of the Instagram caption (with title)."
+                      : "What's the video about?"
+                  }
                 />
               </div>
               <div className="mt-3">
@@ -330,6 +409,17 @@ export default function JobPreview() {
                     </label>
                   ))}
                 </div>
+                {publishPlatform === "instagram" && (
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Instagram Reels are always public — visibility selector
+                    is ignored.
+                  </p>
+                )}
+                {publishPlatform === "facebook" && publishVisibility === "unlisted" && (
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Facebook "unlisted" = saved as a Draft in the Page's drafts inbox.
+                  </p>
+                )}
               </div>
               <div className="mt-3 flex justify-end">
                 <button
@@ -338,7 +428,9 @@ export default function JobPreview() {
                   disabled={publishing || !publishTitle.trim()}
                   className="rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
                 >
-                  {publishing ? "Publishing…" : "Publish to YouTube"}
+                  {publishing
+                    ? "Publishing…"
+                    : `Publish to ${PLATFORM_LABELS[publishPlatform]}`}
                 </button>
               </div>
             </>

@@ -1,20 +1,31 @@
 """YouTubeConnector per ADR-0013.
 
-OAuth via google-auth-oauthlib (loopback redirect on a random local port);
-upload via google-api-python-client's resumable `videos.insert`.
+Two credential paths, in order of precedence:
 
-Tokens persist Fernet-encrypted in `connector_credentials` per ADR-0006.
+  1. **Env-var path** (v1 — multi-platform, env-driven). Reads
+     `IC_YOUTUBE_CLIENT_ID`, `IC_YOUTUBE_CLIENT_SECRET`,
+     `IC_YOUTUBE_REFRESH_TOKEN` from the process env. Builds a Google
+     `Credentials` object and uses google-api-python-client to upload
+     via resumable `videos.insert`. No DB writes, no OAuth dance — the
+     user obtained the refresh token once via a separate one-time
+     consent flow (see docs/connectors/youtube-setup.md).
 
-Tests use the `transport` injection point: callers can pass a synchronous
-test transport (or stub-`google` libraries) to drive the OAuth + upload
-paths without real HTTP. Production callers don't pass anything and the
-real google client lib is used.
+  2. **DB-backed path** (M7 — original ADR-0013 design). Reads creds
+     from the `connector_credentials` table (Fernet-encrypted). The
+     OAuth init/callback that writes those rows was never finished;
+     this path stays for the eventual Connect-in-Settings UI.
+
+Tests use the `transport` injection point: callers can pass a stub
+that fakes the YouTube API surface without real HTTP. Production
+callers don't pass anything and the real google-api-python-client is
+used.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -31,6 +42,12 @@ from impact_crater.connectors.base import (
     Visibility,
 )
 from impact_crater.storage.db import connection
+
+# Env vars for the env-driven credential path (v1).
+_ENV_CLIENT_ID = "IC_YOUTUBE_CLIENT_ID"
+_ENV_CLIENT_SECRET = "IC_YOUTUBE_CLIENT_SECRET"
+_ENV_REFRESH_TOKEN = "IC_YOUTUBE_REFRESH_TOKEN"
+_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
 log = logging.getLogger(__name__)
 
@@ -68,6 +85,10 @@ class YouTubeConnector:
     # ---- Connection state --------------------------------------------
 
     async def is_connected(self) -> bool:
+        # Env-var path takes precedence — if all three are set, we're
+        # connected regardless of what's in the DB.
+        if _has_env_credentials():
+            return True
         creds = await _read_credentials()
         return creds is not None
 
@@ -143,22 +164,48 @@ class YouTubeConnector:
                 status_code=400,
                 suggested_action="; ".join(validation.suggested_actions),
             )
+
+        # Path 1: env-driven creds (v1). Real google-api-python-client.
+        # Tests inject a transport to bypass the real HTTP.
+        if _has_env_credentials():
+            body = _metadata_to_youtube_body(metadata)
+            if self._transport is not None:
+                return await self._transport.upload(
+                    render_path=render_path,
+                    metadata=body,
+                    credentials={
+                        "client_id": os.environ[_ENV_CLIENT_ID],
+                        "client_secret": os.environ[_ENV_CLIENT_SECRET],
+                        "refresh_token": os.environ[_ENV_REFRESH_TOKEN],
+                    },
+                    on_progress=on_progress,
+                )
+            return await _real_youtube_upload(
+                render_path=render_path,
+                body=body,
+                on_progress=on_progress,
+            )
+
+        # Path 2: DB-backed creds (M7 original design). Kept for the
+        # eventual Connect-in-Settings UI; not exercised today.
         creds = await _read_credentials()
         if creds is None:
             raise ConnectorAuthError(
-                "YouTube not connected",
-                suggested_action="Connect YouTube in Settings.",
+                "YouTube not connected. Set IC_YOUTUBE_CLIENT_ID, "
+                "IC_YOUTUBE_CLIENT_SECRET, IC_YOUTUBE_REFRESH_TOKEN in the "
+                "process env (see docs/connectors/youtube-setup.md).",
+                suggested_action="Add env vars and restart the server.",
             )
 
         if self._transport is None:
             raise ConnectorError(
-                "no transport injected — real google-api-python-client wiring is "
-                "an installation-time follow-up",
+                "DB-backed creds present but no transport injected — the "
+                "in-app OAuth UI is not wired yet. Prefer the env-driven path "
+                "for v1.",
                 status_code=500,
-                suggested_action="Configure OAuth credentials per the README.",
+                suggested_action="Use IC_YOUTUBE_* env vars instead.",
             )
 
-        # Test transport: returns a dict matching the YouTube API success shape.
         return await self._transport.upload(
             render_path=render_path,
             metadata=_metadata_to_youtube_body(metadata),
@@ -254,6 +301,108 @@ async def _delete_credentials() -> None:
 # Public for the OAuth-callback handler that writes after a successful auth.
 async def store_credentials(creds: dict[str, Any]) -> None:
     await _write_credentials(creds)
+
+
+# ---- Env-driven credential helpers (v1 path) ---------------------------
+
+
+def _has_env_credentials() -> bool:
+    """True when all three env vars are non-empty."""
+    return all(
+        os.environ.get(name, "").strip()
+        for name in (_ENV_CLIENT_ID, _ENV_CLIENT_SECRET, _ENV_REFRESH_TOKEN)
+    )
+
+
+async def _real_youtube_upload(
+    *,
+    render_path: Path,
+    body: dict[str, Any],
+    on_progress: ProgressCallback | None,
+) -> ConnectorUploadResult:
+    """Real upload via google-api-python-client. Runs the synchronous
+    google client in a worker thread so the asyncio event loop stays
+    free during the resumable upload."""
+    import asyncio
+
+    def _sync_upload() -> dict[str, Any]:
+        # Import here so test environments without google-api-python-client
+        # available can still import this module (real wiring only needed
+        # when the env path is exercised).
+        from google.oauth2.credentials import Credentials  # type: ignore[import-not-found]
+        from googleapiclient.discovery import build  # type: ignore[import-not-found]
+        from googleapiclient.http import MediaFileUpload  # type: ignore[import-not-found]
+
+        creds = Credentials(
+            token=None,
+            refresh_token=os.environ[_ENV_REFRESH_TOKEN],
+            client_id=os.environ[_ENV_CLIENT_ID],
+            client_secret=os.environ[_ENV_CLIENT_SECRET],
+            token_uri=_TOKEN_URI,
+            scopes=["https://www.googleapis.com/auth/youtube.upload"],
+        )
+        youtube = build("youtube", "v3", credentials=creds, cache_discovery=False)
+
+        media = MediaFileUpload(
+            str(render_path),
+            mimetype="video/mp4",
+            chunksize=8 * 1024 * 1024,  # 8 MB chunks for resumable upload
+            resumable=True,
+        )
+        request = youtube.videos().insert(
+            part="snippet,status",
+            body=body,
+            media_body=media,
+        )
+
+        response: dict[str, Any] | None = None
+        while response is None:
+            status, response = request.next_chunk()
+            # status carries progress 0..1 — ignored here because callback
+            # is async and we're in a thread; the on_progress hook fires
+            # below at completion. Live progress would need a thread→loop
+            # bridge, deferred to v1+.
+            if status is not None:
+                log.debug(
+                    "youtube_upload_chunk progress=%.2f", status.progress()
+                )
+        return response
+
+    try:
+        response = await asyncio.to_thread(_sync_upload)
+    except Exception as exc:
+        msg = str(exc)
+        # Surface auth failures (refresh-token revoked, etc.) as
+        # ConnectorAuthError so the publish API returns 401 not 502.
+        if "invalid_grant" in msg.lower() or "unauthorized" in msg.lower():
+            raise ConnectorAuthError(
+                f"YouTube auth rejected: {msg}",
+                suggested_action="Refresh token is invalid or revoked. "
+                "Regenerate it per docs/connectors/youtube-setup.md.",
+            ) from exc
+        raise ConnectorError(
+            f"YouTube upload failed: {msg}",
+            status_code=502,
+            suggested_action="See server logs for the underlying Google API error.",
+        ) from exc
+
+    if on_progress is not None:
+        try:
+            await on_progress(1.0)
+        except Exception:  # pragma: no cover
+            pass
+
+    video_id = str(response.get("id", ""))
+    visibility = str(
+        response.get("status", {}).get("privacyStatus", body["status"]["privacyStatus"])
+    )
+    return ConnectorUploadResult(
+        external_id=video_id,
+        external_url=f"https://www.youtube.com/watch?v={video_id}",
+        visibility=visibility,  # type: ignore[arg-type]
+        response_code=200,
+        response_summary=json.dumps({"kind": response.get("kind"), "id": video_id}),
+    )
 
 
 # Re-export for ruff

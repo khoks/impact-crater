@@ -22,11 +22,16 @@ from pydantic import BaseModel, Field
 
 from impact_crater import audit
 from impact_crater.connectors import (
+    LIVE_PUBLISH_PLATFORMS,
+    Connector,
     ConnectorAuthError,
     ConnectorError,
     ConnectorValidationError,
+    Platform,
     PublishMetadata,
     Visibility,
+    get_connector,
+    is_dry_run_enabled,
 )
 from impact_crater.connectors.youtube import YouTubeConnector
 from impact_crater.storage.db import connection
@@ -40,6 +45,8 @@ class PublishRequest(BaseModel):
     description: str = ""
     tags: list[str] = []
     visibility: Visibility = "public"
+    # v1 multi-platform: optional, defaults to "youtube" so M7 callers still work.
+    platform: Platform = "youtube"
 
 
 class PublishResponse(BaseModel):
@@ -47,26 +54,39 @@ class PublishResponse(BaseModel):
     external_url: str
     visibility: str
     audit_token: str
+    platform: str
+    dry_run: bool
 
 
-_connector_factory: "callable[[], YouTubeConnector]" = lambda: YouTubeConnector()
+# Test-only injection point — see `set_connector_factory` below.
+_connector_factory_override: "callable[[str], Connector] | None" = None
 
 
-def set_connector_factory(factory: "callable[[], YouTubeConnector]") -> None:
-    """Tests + the OAuth wiring use this to inject a transport-equipped connector."""
-    global _connector_factory
-    _connector_factory = factory
+def set_connector_factory(factory: "callable[[], YouTubeConnector] | callable[[str], Connector]") -> None:
+    """Tests inject a connector factory. Two signatures supported for
+    backward compatibility:
 
-
-def _get_connector() -> YouTubeConnector:
-    """Return a YouTubeConnector instance.
-
-    M7 baseline returns a connector without a transport — production
-    callers won't reach the upload path until the user has wired OAuth
-    and a real google-api-python-client transport is bound. The Settings
-    UI's "Connect YouTube" button is what triggers that wiring.
+      - 0-arg `() -> YouTubeConnector`  — legacy M7 tests, treated as YouTube.
+      - 1-arg `(platform) -> Connector` — v1 multi-platform tests.
     """
-    return _connector_factory()
+    import inspect
+    global _connector_factory_override
+    try:
+        n_params = len(inspect.signature(factory).parameters)
+    except (TypeError, ValueError):
+        n_params = 0
+    if n_params == 0:
+        _connector_factory_override = lambda _platform: factory()  # type: ignore[misc]
+    else:
+        _connector_factory_override = factory  # type: ignore[assignment]
+
+
+def _get_connector(platform: str = "youtube") -> Connector:
+    """Resolve a connector for `platform`. Returns dry-run-wrapped per
+    the factory in `connectors.__init__`."""
+    if _connector_factory_override is not None:
+        return _connector_factory_override(platform)
+    return get_connector(platform)
 
 
 # ---- Snapshot publish -------------------------------------------------
@@ -106,22 +126,33 @@ async def publish_snapshot(
         visibility=req.visibility,
     )
 
+    try:
+        connector = _get_connector(req.platform)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"reason": "validation", "message": str(exc)},
+        ) from exc
+
+    dry_run = is_dry_run_enabled()
     log.info(
-        "publish_attempt platform=youtube snapshot_id=%s project_id=%s "
-        "render_path=%s title=%r visibility=%s",
+        "publish_attempt platform=%s snapshot_id=%s project_id=%s "
+        "render_path=%s title=%r visibility=%s dry_run=%s",
+        req.platform,
         snapshot_id,
         row["project_id"],
         str(render_path),
         req.title[:120],
         req.visibility,
+        dry_run,
     )
 
-    connector = _get_connector()
     try:
         result = await connector.upload(render_path, metadata)
     except ConnectorAuthError as exc:
         log.warning(
-            "publish_auth_failed snapshot_id=%s project_id=%s error=%s",
+            "publish_auth_failed platform=%s snapshot_id=%s project_id=%s error=%s",
+            req.platform,
             snapshot_id,
             row["project_id"],
             str(exc)[:200],
@@ -132,7 +163,8 @@ async def publish_snapshot(
         ) from exc
     except ConnectorValidationError as exc:
         log.warning(
-            "publish_validation_failed snapshot_id=%s project_id=%s error=%s",
+            "publish_validation_failed platform=%s snapshot_id=%s project_id=%s error=%s",
+            req.platform,
             snapshot_id,
             row["project_id"],
             str(exc)[:200],
@@ -143,8 +175,9 @@ async def publish_snapshot(
         ) from exc
     except ConnectorError as exc:
         log.error(
-            "publish_connector_failed snapshot_id=%s project_id=%s "
+            "publish_connector_failed platform=%s snapshot_id=%s project_id=%s "
             "status_code=%s error=%s",
+            req.platform,
             snapshot_id,
             row["project_id"],
             exc.status_code,
@@ -156,10 +189,13 @@ async def publish_snapshot(
         ) from exc
 
     audit_token = secrets.token_urlsafe(16)
+    # Audit row records dry-run vs live so post-hoc you can tell which
+    # external_ids are real.
+    audit_platform = f"{req.platform} (dry-run)" if dry_run else req.platform
     entry = audit.AuditEntry(
         project_id=row["project_id"],
         snapshot_id=snapshot_id,
-        platform="youtube",
+        platform=audit_platform,
         external_id=result.external_id,
         external_url=result.external_url,
         user_approval_token=audit_token,
@@ -171,14 +207,16 @@ async def publish_snapshot(
     await audit.write(entry)
 
     log.info(
-        "publish_succeeded platform=youtube snapshot_id=%s project_id=%s "
-        "external_id=%s external_url=%s visibility=%s audit_token=%s",
+        "publish_succeeded platform=%s snapshot_id=%s project_id=%s "
+        "external_id=%s external_url=%s visibility=%s audit_token=%s dry_run=%s",
+        req.platform,
         snapshot_id,
         row["project_id"],
         result.external_id,
         result.external_url,
         result.visibility,
         audit_token,
+        dry_run,
     )
 
     return PublishResponse(
@@ -186,6 +224,8 @@ async def publish_snapshot(
         external_url=result.external_url,
         visibility=result.visibility,
         audit_token=audit_token,
+        platform=req.platform,
+        dry_run=dry_run,
     )
 
 
@@ -194,7 +234,7 @@ async def publish_snapshot(
 
 @router.get("/connectors/youtube/status")
 async def youtube_status() -> dict[str, Any]:
-    connector = _get_connector()
+    connector = _get_connector("youtube")
     connected = await connector.is_connected()
     handle = None
     if connected:
@@ -210,8 +250,50 @@ async def youtube_status() -> dict[str, Any]:
 
 @router.post("/connectors/youtube/disconnect")
 async def youtube_disconnect() -> dict[str, bool]:
-    await _get_connector().disconnect()
+    await _get_connector("youtube").disconnect()
     return {"disconnected": True}
+
+
+@router.get("/connectors/{platform}/status")
+async def connector_status(platform: str) -> dict[str, Any]:
+    """Generic per-platform connection status (v1 multi-platform).
+
+    Returns {connected, dry_run, env_vars_missing}. For YouTube we also
+    include the user_handle from the DB if present (M7 OAuth path)."""
+    if platform not in LIVE_PUBLISH_PLATFORMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"unknown platform {platform!r}",
+        )
+    try:
+        connector = _get_connector(platform)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    connected = await connector.is_connected()
+    return {
+        "platform": platform,
+        "connected": connected,
+        "dry_run": is_dry_run_enabled(),
+    }
+
+
+@router.get("/connectors/status")
+async def all_connectors_status() -> dict[str, Any]:
+    """Snapshot of every supported platform's connection state, plus the
+    dry-run flag. Used by the publish modal to populate the platform
+    picker with per-platform `connected` badges in one round trip."""
+    results: list[dict[str, Any]] = []
+    for platform in LIVE_PUBLISH_PLATFORMS:
+        try:
+            connector = _get_connector(platform)
+            connected = await connector.is_connected()
+        except Exception:  # pragma: no cover
+            connected = False
+        results.append({"platform": platform, "connected": connected})
+    return {
+        "platforms": results,
+        "dry_run": is_dry_run_enabled(),
+    }
 
 
 # ---- Audit log --------------------------------------------------------

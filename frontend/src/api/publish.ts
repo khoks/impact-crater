@@ -1,10 +1,30 @@
-// Wrappers around the publish API per ADR-0013 (E-2.8 / M7).
+// Wrappers around the publish API. M7 shipped YouTube only (ADR-0013);
+// v1 adds Instagram + Facebook via the multi-platform connector framework.
 
 export type Visibility = "private" | "unlisted" | "public";
+export type Platform = "youtube" | "instagram" | "facebook";
+
+export const ALL_PLATFORMS: Platform[] = ["youtube", "instagram", "facebook"];
+
+export const PLATFORM_LABELS: Record<Platform, string> = {
+  youtube: "YouTube",
+  instagram: "Instagram",
+  facebook: "Facebook",
+};
 
 export interface YouTubeStatusResponse {
   connected: boolean;
   user_handle: string | null;
+}
+
+export interface ConnectorStatus {
+  platform: Platform;
+  connected: boolean;
+}
+
+export interface AllConnectorsStatus {
+  platforms: ConnectorStatus[];
+  dry_run: boolean;
 }
 
 export interface PublishRequest {
@@ -12,6 +32,7 @@ export interface PublishRequest {
   description?: string;
   tags?: string[];
   visibility?: Visibility;
+  platform?: Platform;
 }
 
 export interface PublishResponse {
@@ -19,6 +40,8 @@ export interface PublishResponse {
   external_url: string;
   visibility: Visibility;
   audit_token: string;
+  platform: Platform;
+  dry_run: boolean;
 }
 
 export async function fetchYouTubeStatus(): Promise<YouTubeStatusResponse> {
@@ -27,6 +50,14 @@ export async function fetchYouTubeStatus(): Promise<YouTubeStatusResponse> {
     throw new Error(`GET /api/connectors/youtube/status → ${r.status}`);
   }
   return (await r.json()) as YouTubeStatusResponse;
+}
+
+export async function fetchAllConnectorsStatus(): Promise<AllConnectorsStatus> {
+  const r = await fetch("/api/connectors/status");
+  if (!r.ok) {
+    throw new Error(`GET /api/connectors/status → ${r.status}`);
+  }
+  return (await r.json()) as AllConnectorsStatus;
 }
 
 export async function publishSnapshot(
@@ -43,7 +74,7 @@ export async function publishSnapshot(
     // 401 = ConnectorAuthError. Surface a more actionable message.
     if (r.status === 401) {
       throw new Error(
-        detail || "YouTube isn't connected. Bind a Google Cloud OAuth client per ADR-0013."
+        detail || "Connector isn't authenticated. Check env vars per docs/connectors/<platform>-setup.md."
       );
     }
     throw new Error(detail || `Publish failed: ${r.status}`);

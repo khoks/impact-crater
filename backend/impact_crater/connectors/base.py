@@ -9,6 +9,12 @@ from typing import Literal, Protocol, runtime_checkable
 
 Visibility = Literal["private", "unlisted", "public"]
 
+# v1 multi-platform publish — D-007 (MVP=YouTube only) → I-3. Each
+# platform implements the `Connector` Protocol and is dispatched via
+# `connectors.get_connector(platform)`.
+Platform = Literal["youtube", "instagram", "facebook"]
+LIVE_PUBLISH_PLATFORMS: tuple[Platform, ...] = ("youtube", "instagram", "facebook")
+
 
 @dataclass
 class PublishMetadata:
