@@ -1005,3 +1005,27 @@ E-1.4 round 1 needs to ratify or trim this expanded scope before sequencing. Cut
 
 
 
+
+---
+
+### D-040 — LLM cache payload filenames must embed the cache key
+
+- **Status:** accepted
+- **Date:** 2026-06-11
+- **Context:** The 2026-06-11 manual test job failed with `stage4_empty_candidate_set` (all 36 assets below the 0.40 quality floor). Root cause: `cache_key()` includes `params_canonical` (score dimension + brief hash) but the on-disk payload path did not, so the quality score and every brief''s narrative-relevance score for one photo shared a single file — each write overwrote it while all `cache_index` rows kept pointing at it. A "quality" cache hit could return a stale narrative score from an earlier brief; one photo had 8 index rows → 1 file. First symptom had appeared 2026-05-07 and was misattributed to a vague brief.
+- **Decision:** Payload filename embeds `cache_key[:12]` (`{operation}_{prompt_version[:16]}_{cache_key[:12]}.{json|npy}`), making the file unique per index row. Poisoned `score_image` rows purged via SQL migration `002_purge_score_image_cache.sql` (`DELETE FROM cache_index WHERE operation=''score_image''`); orphaned payload files left on disk (harmless). Cache-class invalidation by migration is now the established pattern. Stage4EmptyCandidateSet additionally reports the observed quality-score range and labels the all-zeros case an app bug rather than blaming the user''s brief.
+- **Alternatives considered:** Purge only provably-colliding rows (rejected: every score_image row was untrustworthy — cannot tell which dimension''s value a file holds); bump the score prompt template to rotate prompt_version (rejected: obscures intent, leaves the latent path bug in place).
+- **Consequences:** Re-scoring a 36-asset job after the purge costs ~$0.04 (Tier-S Flash). Every cached operation is now collision-safe per params variant. Fixed in PR #35.
+- **Linked ADRs / items:** ADR-0006 (cache_index), ADR-0007 (LLM abstraction), A-011 / N-007 (content-addressed analysis cache).
+
+---
+
+### D-041 — Music-video beat-snap: clip boundaries snap to the grid; never truncate the timeline
+
+- **Status:** accepted
+- **Date:** 2026-06-11
+- **Context:** ADR-0012 says clip durations come "from the snapped grid". The M4 implementation read that as one clip per beat-grid interval, dropping any timeline beyond the last selected clip: a 13-clip / 60s-target Zion job rendered 25.3 seconds and the song stopped mid-crescendo. Stage 5 had already paced the 13 clips to cover the 60s arc; Stage 6 discarded that pacing.
+- **Decision:** Stage 6 music-video mode now (1) linear-scales the Stage-5 clip durations so the timeline sum ≈ target duration, then (2) snaps each clip *boundary* to the nearest beat-grid cut point (monotonic, ≥250ms per clip), forcing the final boundary to the target. Cuts land on beats; the video covers the full target; video-scene clips stay capped by their natural length. Two companion render fixes ride the same decision: Stage 7 trims + fades audio against the actual summed timeline (not `target_duration_ms` — the mux is `-shortest`, so a fade computed past the video end never played), and Stage 1 ingest + the Anthropic re-encode path apply `ImageOps.exif_transpose` so portrait phone photos carry display dimensions through aspect decisions and reach vision LLMs upright.
+- **Alternatives considered:** One clip per grid interval, silent tail (status quo — rejected: violates the user''s target duration and discards Stage-5 pacing); filling the tail by looping clips (rejected: "the user picked a target duration" cuts both ways — invent no content the judge didn''t order).
+- **Consequences:** Music-video renders run the requested duration with beat-aligned transitions (retest: 60.0s exactly, 11/12 interior boundaries on cuts, the off-grid one a natural-length-capped video scene). Audible fade-out in both modes (−19→−39 dB measured). No more sideways/pillarboxed portrait photos. Fixed in PR #36.
+- **Linked ADRs / items:** ADR-0011 (Stage 6 plan compile), ADR-0012 (music alignment), D-040 (same test session).
