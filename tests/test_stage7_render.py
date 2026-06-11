@@ -161,6 +161,85 @@ async def test_render_with_music_normalizes_audio(tmp_path: Path) -> None:
 
 
 @pytest.mark.usefixtures("db_initialized")
+async def test_audio_fade_lands_inside_actual_timeline(tmp_path: Path) -> None:
+    """Regression: audio was trimmed/faded against target_duration_ms, so
+    whenever the clip timeline came in short of the target (±10% scaling
+    tolerance), the fade-out sat past the video's end and the song cut
+    off cold. The fade must end exactly at the timeline's end.
+
+    Timeline here: 2 photos × 1400ms = 2800ms vs a 3s target — a 6.7%
+    shortfall, inside compile's ±10% no-scale tolerance, exactly like the
+    real job (56.3s timeline, 60s target). Audio source is 6s, fade_out
+    500ms. The produced audio.m4a must be ~2.8s with its final 250ms much
+    quieter than its middle."""
+    p1 = _photo_file(tmp_path, "p1.jpg", (220, 40, 10))
+    p2 = _photo_file(tmp_path, "p2.jpg", (10, 40, 220))
+    wav = tmp_path / "song.wav"
+    _synthetic_wav(wav, duration_ms=6000)
+
+    arc = ArcJudgment(
+        selected_items=[
+            SelectedItem(candidate_ref="h1", placement_position=0, intended_duration_ms=1400, role="opener"),
+            SelectedItem(candidate_ref="h2", placement_position=1, intended_duration_ms=1400, role="closer"),
+        ],
+        arc_reasoning="short",
+        confidence=0.6,
+    )
+    music = StandardMusicSpec(
+        audio_path=str(wav),
+        audio_duration_ms=6000,
+        fade_in_ms=300,
+        fade_out_ms=500,
+    )
+    plan = await stage6_plan.compile_plan(
+        arc_judgment=arc,
+        ingest_records=[_photo_record(p1, "h1"), _photo_record(p2, "h2")],
+        project_id="render-fade",
+        target_duration_seconds=3,
+        audio=music,
+    )
+    timeline_ms = sum(c.intended_duration_ms for c in plan.clips)
+    result = await stage7_render.render_plan(plan, correlation_id="cid-fade")
+    assert result.status == "success"
+
+    out = Path(result.render_path)
+    probe = _ffprobe_video(out)
+    duration_s = float(probe["format"]["duration"])
+    # Output runs the timeline length, NOT the 3s target.
+    assert abs(duration_s - timeline_ms / 1000.0) < 0.35
+
+    # The intermediate audio artifact must match the timeline too.
+    audio_art = out.parent / "work" / "audio.m4a"
+    assert audio_art.is_file()
+    aprobe = _ffprobe_video(audio_art)
+    a_dur = float(aprobe["format"]["duration"])
+    assert abs(a_dur - timeline_ms / 1000.0) < 0.35
+
+    # Fade check: mean level of the final 250ms is way below the middle.
+    def _mean_volume(start_s: float, dur_s: float) -> float:
+        cp = ff.run_ffmpeg(
+            [
+                "-ss", f"{start_s:.3f}",
+                "-t", f"{dur_s:.3f}",
+                "-i", str(audio_art),
+                "-af", "volumedetect",
+                "-f", "null",
+                "-",
+            ]
+        )
+        text = cp.stderr.decode("utf-8", errors="replace")
+        import re as _re
+
+        m = _re.search(r"mean_volume:\s*(-?[\d.]+) dB", text)
+        assert m, f"volumedetect output missing mean_volume: {text[-400:]}"
+        return float(m.group(1))
+
+    mid = _mean_volume(0.8, 0.4)
+    tail = _mean_volume(timeline_ms / 1000.0 - 0.25, 0.25)
+    assert tail < mid - 6.0, f"no audible fade-out: mid={mid}dB tail={tail}dB"
+
+
+@pytest.mark.usefixtures("db_initialized")
 async def test_render_updates_snapshot_render_status(tmp_path: Path) -> None:
     p = _photo_file(tmp_path, "p.jpg", (100, 100, 100))
     arc = ArcJudgment(

@@ -122,6 +122,32 @@ async def test_ingest_photo_writes_row_and_thumbnails(
 
 
 @pytest.mark.usefixtures("db_initialized")
+async def test_ingest_applies_exif_orientation(tmp_path: Path) -> None:
+    """A portrait phone photo stored landscape + Orientation=6 must ingest
+    with display (portrait) dimensions, and its thumbnail must be portrait
+    too — the thumbnails feed the vision LLMs and Stage 6's aspect-ratio
+    decision reads quick_stats. Real failure 2026-06-11: 3 Zion photos
+    rendered sideways-pillarboxed because ingest kept stored dimensions."""
+    img = Image.new("RGB", (320, 240))
+    for x in range(320):
+        for y in range(240):
+            img.putpixel((x, y), (x % 256, y % 256, 60))
+    exif = Image.Exif()
+    exif[274] = 6  # Orientation: rotate 90° CW to display
+    out = tmp_path / "rotated.jpg"
+    img.save(out, format="JPEG", quality=85, exif=exif)
+
+    records = await stage1_ingest.ingest_media("proj-exif", [out])
+    rec = records[0]
+    # Display orientation: 240 wide × 320 tall.
+    assert rec.quick_stats["width"] == 240
+    assert rec.quick_stats["height"] == 320
+    with Image.open(rec.thumb_256_path) as thumb:
+        tw, th = thumb.size
+    assert th > tw, f"thumbnail still landscape: {tw}x{th}"
+
+
+@pytest.mark.usefixtures("db_initialized")
 async def test_ingest_writes_source_sidecar(synthetic_jpeg: Path) -> None:
     records = await stage1_ingest.ingest_media("proj-A", [synthetic_jpeg])
     rec = records[0]

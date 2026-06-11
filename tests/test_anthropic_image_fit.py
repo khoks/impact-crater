@@ -118,6 +118,29 @@ def test_under_budget_jpeg_passes_through_unchanged() -> None:
     assert fitted is raw  # identity check, not equality
 
 
+def test_reencode_applies_exif_orientation() -> None:
+    """Re-encoding strips EXIF, so the orientation must be baked into the
+    pixels first. A landscape-stored Orientation=6 JPEG big enough to hit
+    the re-encode path must come out portrait — not sideways with no tag.
+    Real failure 2026-06-11: 3 Zion portrait photos reached Stage 3
+    metadata extraction lying on their side."""
+    rng = np.random.default_rng(seed=2)
+    arr = rng.integers(0, 256, size=(4000, 6000, 3), dtype=np.uint8)
+    img = Image.fromarray(arr, mode="RGB")
+    exif = Image.Exif()
+    exif[274] = 6  # rotate 90° CW to display
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=98, exif=exif)
+    raw = out.getvalue()
+    assert len(base64.b64encode(raw)) > ANTHROPIC_BASE64_CAP  # forces re-encode
+
+    fitted = _fit_image_for_anthropic(raw)
+    assert fitted is not raw
+    with Image.open(io.BytesIO(fitted)) as out_img:
+        w, h = out_img.size
+    assert h > w, f"orientation not applied: {w}x{h} still landscape"
+
+
 def test_image_block_always_declares_jpeg_for_png_input() -> None:
     """The `_image_block` wrapper must declare image/jpeg unconditionally
     because `_fit_image_for_anthropic` always returns JPEG bytes."""
