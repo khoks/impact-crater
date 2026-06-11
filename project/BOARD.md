@@ -1,6 +1,6 @@
 # Board
 
-> **Last updated:** 2026-05-05 — **E-2.9 (M8+M9) code-complete.** Cross-project user profile (N-010 deterministic frequency-based derivation per ADR-0014); feedback log (12 event types) → derive → JobSuggestions surface; Profile API (GET snapshot + POST derive/reset/feedback). **D-014 validation is user-side** (real 1000-photo + 50-video job on a real trip, publish to real YouTube account). **MVP code is feature-complete.** Final tally: **300 tests green** (272 backend unit + 28 frontend unit + 7 backend integration). All 9 epics under I-2 closed in this session run.
+> **Last updated:** 2026-06-11 — **E-2.9 reopened for D-014 validation hot-fixes.** First real-media validation run (33 Zion photos + 1 video + mp3, both modes) surfaced 4 blocking bugs, all fixed and verified same-session as **S-2.9.1** (PRs #35–#37; decisions D-040/D-041): LLM-cache payload-path poisoning (the `stage4_empty_candidate_set` failure), music-video timeline truncation (25.3s of a 60s target), audio fade-out never playing, EXIF portrait photos pillarboxed/sideways. Retest green: standard 56.3s with fade + smart-crop; music video 60.0s with 11/12 beat-aligned cuts. **342 backend tests green.** Validation gaps filed: S-2.9.2 dashboard project list (P1), S-2.9.3 brief persistence (P2), S-2.9.4 crossfades (parked v1). D-014's real 1000-photo run remains user-side.
 > **How to read this:** Hand-maintained mirror of frontmatter `status:` values. The `work-tracker` skill refreshes this file at end-of-session. If you see drift, re-derive from `grep -l "status:" project/{initiatives,epics,stories,tasks}/*.md`.
 
 ---
@@ -10,16 +10,28 @@
 | ID | Title | Type | Priority | Phase |
 |---|---|---|---|---|
 | [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | Initiative | P0 | mvp |
+| [E-2.9](./epics/E-2.9-cross-project-profile-mvp.md) | Cross-project profile + polish + **D-014 validation** (reopened 2026-06-11) | Epic | P0 | mvp |
 
 ## Up Next (Ready)
 
-(empty — all MVP epics are code-complete; D-014 validation is the only remaining work and it's user-side)
+| ID | Title | Type | Priority | Phase |
+|---|---|---|---|---|
+| [S-2.9.2](./stories/S-2.9.2-dashboard-project-list-render-history.md) | Dashboard project list + render history (replace M0 stub) | Story | P1 | mvp |
+| [S-2.9.3](./stories/S-2.9.3-persist-project-brief-and-name.md) | Persist brief + name on project rows at job submit | Story | P2 | mvp |
 
-## Backlog (mvp-phase, queued)
+## Backlog (queued)
 
-(empty — all MVP epics are either done or in Up Next)
+| ID | Title | Type | Priority | Phase |
+|---|---|---|---|---|
+| [S-2.9.4](./stories/S-2.9.4-crossfade-transitions-slow-tempo.md) | Crossfade transitions on slow-tempo music (ADR-0011/0012) | Story | P3 | v1 |
 
-## Recently Done (last session)
+## Recently Done (this session)
+
+| ID | Title | Type | Done |
+|---|---|---|---|
+| **[S-2.9.1](./stories/S-2.9.1-validation-hotfixes-2026-06-11.md)** | **Validation hot-fixes 2026-06-11 — cache poisoning (D-040), beat-snap (D-041), audio fade, EXIF; PRs #35–#37** | Story | 2026-06-11 |
+
+## Previously Done (last sessions)
 
 | ID | Title | Type | Done |
 |---|---|---|---|
@@ -46,7 +58,7 @@
 | ID | Title | Status | Phase |
 |---|---|---|---|
 | [I-1](./initiatives/I-1-project-foundation.md) | Project foundation | **done** (2026-05-03) | scaffolding |
-| [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | **code-complete** (2026-05-05; M0..M9 code done; D-014 validation pending user-side) | mvp |
+| [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | **in-progress** (E-2.9 reopened 2026-06-11 for D-014 validation; M0..M8 code done) | mvp |
 | (I-3 v1) | v1 — Local-first + live job + multi-platform + style + polish | (created when v1 opens) | v1 |
 | (I-4 v2) | v2 — Mobile + multi-agent + conversational + generated music | (created when v2 opens) | v2 |
 | (I-5 v3) | v3 — Hosted multi-tenant SaaS | (created when v3 opens) | v3 |
