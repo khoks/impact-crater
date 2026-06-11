@@ -1029,3 +1029,15 @@ E-1.4 round 1 needs to ratify or trim this expanded scope before sequencing. Cut
 - **Alternatives considered:** One clip per grid interval, silent tail (status quo — rejected: violates the user''s target duration and discards Stage-5 pacing); filling the tail by looping clips (rejected: "the user picked a target duration" cuts both ways — invent no content the judge didn''t order).
 - **Consequences:** Music-video renders run the requested duration with beat-aligned transitions (retest: 60.0s exactly, 11/12 interior boundaries on cuts, the off-grid one a natural-length-capped video scene). Audible fade-out in both modes (−19→−39 dB measured). No more sideways/pillarboxed portrait photos. Fixed in PR #36.
 - **Linked ADRs / items:** ADR-0011 (Stage 6 plan compile), ADR-0012 (music alignment), D-040 (same test session).
+
+---
+
+### D-042 — Trip Package is the north-star feature, gated on single-video quality mastery
+
+- **Status:** accepted
+- **Date:** 2026-06-11
+- **Context:** In the 2026-06-11 grooming session the user articulated the product''s ultimate feature (A-020 / N-013): dump a whole multi-day trip''s media, walk away, and receive a complete package — per-location/event videos, reels of special moments, an overall trip video, and a montage. In the same breath the user set the sequencing constraint: "unless the individual videos created are acceptable quality, the ultimate package feature obviously doesn''t make sense, because it is built on top of this individual video creation capability."
+- **Decision:** (1) The Trip Package (A-020/N-013) is groomed and slotted at **v2**, with its deterministic seeds in v1.2''s multi-output orchestration. (2) Single-video quality mastery is the explicit gate: v1 quality work — A-016 cheap-first analysis hardening, A-017 semantic near-duplicate suppression, quality-floor calibration (A-007), style learning (v1.4), auto-editing (v1.6) — ships first and is judged against the user''s taste on real media. (3) Supporting casts: A-018 auto trip cast (v1-late/v2, design N-012) feeds both curation quality and the package planner; A-019 crowd removal parks at v2+. (4) No package-feature code lands before the gate is met; the MVP gate discipline (CLAUDE.md) applies unchanged.
+- **Alternatives considered:** Build a thin package pilot now on top of the current pipeline (rejected: multiplies an unproven quality bar across N artifacts and burns Tier-L spend per artifact); slot the package at v1 (rejected: v1 is already a committed 9-milestone sequence per D-039, and the planner belongs naturally with the v2.2 multi-agent harness).
+- **Consequences:** RECOMMENDED_ADDITIONS gains A-016..A-020; NOVEL_IDEAS gains N-012/N-013; GROOMED_FEATURES gains a new theme 14 (Trip Package) and curation-engine rows; S-2.9.5 + S-2.9.6 filed as the first two v1 quality stories. ROADMAP v1/v2 milestone tables remain unchanged per D-039 — A-016/A-017 fold into existing v1.5/v1.6-class polish slots; A-020 anchors v2 scope when v2 opens.
+- **Linked ADRs / items:** A-016, A-017, A-018, A-019, A-020, N-012, N-013, D-039, S-2.9.5, S-2.9.6.

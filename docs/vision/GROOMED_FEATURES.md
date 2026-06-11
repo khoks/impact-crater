@@ -55,6 +55,9 @@ Cross-references:
 | Cross-job content-addressed analysis cache | mvp-lite (universal + model-versioned) / v1 (full reuse-class semantics) | Don't re-analyze the same photo across jobs | A-011, N-007 |
 | Quality floor + user override | v1 | Quality model needs calibration first | A-007 |
 | Reference-media style fingerprint applied to curation objective | v1 | Style influences *what gets selected*, not just render | A-014, N-004 |
+| Cheap-first analysis hardening (thumbs to LLMs + time-bounded scene sampling) | v1 | Analysis renditions feed every LLM call; long scenes get extra frames | A-016, S-2.9.5 |
+| Semantic near-duplicate suppression (best-of-burst) | v1 | Embedding-similarity clustering keeps the best retake, drops the rest | A-017, S-2.9.6 |
+| Auto-derived trip cast + coverage-aware curation | v1-late / v2 | Unique-face inventory, group-vs-crowd inference, "is everyone included?" | A-018, N-012 |
 
 ### 3. Story Video generation
 
@@ -136,6 +139,7 @@ Cross-references:
 | Feature | Phase | One-line | Linked |
 |---|---|---|---|
 | Auto highlights / shadows / contrast / color grading per scene | v1 | Per RAW_VISION; not on MVP critical path | (RAW_VISION) |
+| AI crowd removal (inpaint non-group people) | v2+ | Generative fill over A-018 cast masks; opt-in per photo in refine | A-019, N-012, ADR-0016 |
 
 ### 11. Conversational refinement & agentic editing dialogue
 
@@ -155,6 +159,18 @@ Cross-references:
 | Feature | Phase | One-line | Linked |
 |---|---|---|---|
 | Hosted multi-tenant deployment | v3 | Per CLAUDE.md mission; config flip on the self-hosted-first design | (CLAUDE.md) |
+
+### 14. Trip Package — autonomous multi-artifact creation (the north star)
+
+| Feature | Phase | One-line | Linked |
+|---|---|---|---|
+| Trip segmentation (time + GPS + content clustering into events/locations/themes) | v2 | Requires ingest-side EXIF GPS *parsing* (today GPS is only stripped for privacy) | A-020, N-013 |
+| Density-driven artifact allocation | v2 | Rich clusters earn dedicated videos; thin clusters merge; standouts become reels | A-020, N-013, D-042 |
+| Package plan → N artifact briefs executed by the single-video pipeline | v2 | One shared analysis pass via the content-addressed cache; cost paid once | A-020, N-007 |
+| Package preview + per-artifact approve/refine/publish | v2 | One approval surface for the whole portfolio | A-020, D-020 |
+| Overall trip video + montage as standing package members | v2 | Every cluster contributes weighted material | A-020 |
+
+> **Sequencing gate (D-042, user-stated):** no package code before single-video quality is mastered — A-016/A-017 and the v1 quality milestones come first. Deterministic seeds may pilot inside v1.2's multi-output orchestration.
 
 ---
 

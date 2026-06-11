@@ -287,3 +287,93 @@ Each addition gets a heading with an `A-NNN` ID (monotonically incrementing, nev
 **Tradeoff against scope.** MVP scope is bounded; the recommendation engine reuses the same orchestrator (D-017).
 
 **Linked items.** D-012, D-013, D-016, D-017, A-004, N-006, [`project/tasks/T-1.2.1.4-job-model-scale-success-criterion.md`](../../project/tasks/T-1.2.1.4-job-model-scale-success-criterion.md).
+
+---
+
+### A-016 — Cheap-first analysis hardening: thumbnails to LLMs + time-bounded scene sampling (2026-06-11)
+
+**Status:** accepted — phase **v1**
+
+**Why this matters.** The user's instinct from the 2026-06-11 session: "analyzing full-scale images and going through the full video will be very slow and expensive — should the app create thumbnails and snapshot videos first?" The architecture already half-agrees: Stage 1 builds 256px + 1024px thumbnails per photo and runs scenedetect ContentDetector per video with 3 representative frames per scene (content-aware sampling — strictly better than fixed every-N-seconds for cut-rich footage). But the expensive halves are not wired together: Stage 2/3 read the FULL-SIZE source bytes (9–12 MB Pixel JPEGs) and ship them to providers per call. The Anthropic client downscales internally to ≤1568px when over budget; the Gemini path uploads the original bytes every time. And a long single-take video (one 10-minute scene) still yields only 3 analyzed frames — under-sampled in exactly the case the user described.
+
+**What it would look like.**
+- Stage 2/3 LLM calls consume `thumb_1024` (or a purpose-built ~1568px analysis rendition) instead of source bytes. The cross-job cache keys on the source content_hash + prompt/params — not the uploaded bytes — so this changes nothing about caching and invalidates nothing.
+- Scene sampling gains a time floor: scenes longer than ~20s get an extra representative frame per ~5–10s (capped per scene), so single-take footage is no longer summarized by 3 frames. Per-scene metadata then aggregates over frames.
+- Upload payload telemetry (bytes-per-job before/after) so the win is measurable.
+
+**Open questions.** Right analysis resolution (1024 vs 1568 — Anthropic's max edge); per-scene frame cap so a 2-hour video can't explode the Tier-S call count; whether video scenes should also get a cheap motion/blur score locally before any LLM call.
+
+**Tradeoff against scope.** Small (the renditions already exist); large win: ~10× upload-bandwidth reduction per job, faster Stage 2/3 wall-clock, lower egress on metered connections. No quality loss at VLM input resolutions.
+
+**Linked items.** ADR-0010, ADR-0011 Stage 1–3, A-011/N-007 (cache unaffected), S-2.9.5.
+
+---
+
+### A-017 — Semantic near-duplicate suppression: best-of-burst selection (2026-06-11)
+
+**Status:** accepted — phase **v1**
+
+**Why this matters.** Real shoots produce retakes: the same pose, same people, same scene, shot 2–5 times with slightly different focus/angle/exposure. Stage 4's pHash clustering (Hamming ≤ 5) only catches near-identical pixels — a retake from one step to the left lands in a different cluster and BOTH copies survive into Stage 5, wasting judge attention and risking visibly-repetitive videos. The user's requirement from 2026-06-11: unless shots are considerably different, keep only the best one; discard lower-quality/lower-impact duplicates from analysis, planning, and the final video.
+
+**What it would look like.**
+- Stage 2 already computes and caches an embedding per asset (.npy, content-addressed) — today only its dimensionality is used. Stage 4 adds an embedding-similarity clustering pass (cosine ≥ threshold, e.g. ~0.92, time-windowed to ±2 minutes so genuinely-recurring scenery across days does not collapse) layered on top of pHash.
+- Each semantic cluster keeps its best member by the existing combined score (quality + narrative relevance + diversity), annotated `burst_best_of: N`; losers are dropped with filter-log reasons so the cost-transparency UI can show "suppressed 38 retakes."
+- Stage 5's prompt gains the `burst_best_of` context so the judge knows a shot represents a moment, not a one-off.
+
+**Open questions.** Threshold calibration against real trip data (the Zion subset is a good fixture: it contains true retake pairs); whether video scenes participate (scene-frame embedding vs photo embedding comparability); user override knob (dedup aggressiveness) in effort-level UX.
+
+**Tradeoff against scope.** Moderate (clustering code + tests; embeddings are already paid for). Directly serves the user's "individual videos must reach acceptable quality before the package feature" gate (D-042).
+
+**Linked items.** ADR-0011 Stage 4, A-007 (quality floor calibration), S-2.9.6, D-042.
+
+---
+
+### A-018 — Auto-derived trip cast: unique-face inventory, group-vs-crowd, coverage analysis (2026-06-11)
+
+**Status:** accepted — phase **v1-late / v2** (design N-012)
+
+**Why this matters.** N-008's person library is manual: the user enrolls people by picking face photos. For the dump-and-forget workflow the user described on 2026-06-11, the app should figure out the cast itself: scan the full media set, cluster unique faces, infer who is "the group" (recurs across days/locations) versus background crowd (appears once), then use that inventory during curation — including answering "is everyone included in the final video, or did we leave someone out?"
+
+**What it would look like.** Per N-012: face detection (mediapipe, already a dependency) over analysis renditions → face-embedding clustering → frequency/recurrence scoring (appearances × distinct time-windows × distinct locations) → automatic group/crowd split with a review UI (the user can promote/demote) → cast inventory feeds Stage 5 as curation context and Stage 6 emits a coverage report ("Priya appears in 0 selected clips — add one?"). Optionally seeds N-008's library so manual enrollment becomes a confirmation step.
+
+**Open questions.** Privacy class of face embeddings under ADR-0016 (face_data → N-011 local-only routing when blur-faces is ON); minimum appearances before someone counts as group; child-face handling; collision with the existing manual library (merge semantics).
+
+**Tradeoff against scope.** Significant (clustering + review UI + coverage hooks) — hence v1-late/v2. The mediapipe + embedding groundwork already exists from M5.
+
+**Linked items.** N-008, N-012, ADR-0016, N-011, A-002.
+
+---
+
+### A-019 — AI crowd removal: inpaint non-group people out of photos (2026-06-11)
+
+**Status:** proposed — phase **v2+**
+
+**Why this matters.** Tourist-site media is full of strangers. Once A-018 can tell group from crowd, the natural next step the user named: remove the crowd from selected shots with generative inpainting, producing cleaner artifacts.
+
+**What it would look like.** Per-photo opt-in edit in the refine loop ("remove background people"): segmentation masks for non-cast persons (A-018 supplies identity), generative fill (local SDXL-class model on capable GPUs per ADR-0008, or a remote image-editing API), with before/after preview and per-photo accept/reject. Edited copies live beside originals in the snapshot (N-003 immutability — never overwrite source media).
+
+**Open questions.** Authenticity posture (disclose edits in publish metadata?); quality bar for inpainting at 4K; cost per edit; whether this is local-only by default given ADR-0016 (full-resolution face-bearing crops to a remote editing API is a new privacy surface).
+
+**Tradeoff against scope.** Large and dependency-heavy; clearly post-package-MVP. Park at v2+ and revisit when v2 generative integrations (v2.4) land.
+
+**Linked items.** A-018, N-012, ADR-0008, ADR-0016, N-003.
+
+---
+
+### A-020 — The Trip Package: autonomous multi-artifact planner (2026-06-11)
+
+**Status:** accepted — phase **v2** (seeds in v1.2 multi-output orchestration; design N-013; sequencing gate D-042)
+
+**Why this matters.** The user's stated ultimate feature (2026-06-11, verbatim intent): someone returns from a 10-day group trip, dumps thousands of photos and hundreds of videos, and does NOT want to spend time creating videos — they want the app to spend hours and deliver a complete, shareable package: per-location/event videos, reels/shorts of special moments, one overall trip video, and a montage. "Holistic and piecemeal and manageable and comprehensive and granular at the same time." This is the dump-and-delight promise that makes the app lovable; everything else is plumbing toward it.
+
+**What it would look like.** Per N-013, a planning layer ABOVE the existing single-artifact pipeline:
+1. **Trip segmentation** — cluster the full media set into events/locations/days/themes using capture time + GPS (requires ingest-side EXIF GPS parsing — currently GPS is only stripped for privacy, never read) + content signals (Stage 2/3 outputs).
+2. **Density-driven artifact allocation** — per cluster, score media density × quality × distinctiveness; rich clusters (e.g. a fully-documented Bryce Canyon hike) earn a dedicated video; thin clusters merge with temporal neighbors into combined videos; standout moments queue as reel/short candidates; everything contributes to the overall video + montage.
+3. **Package plan as artifact briefs** — the planner emits N artifact briefs (each = brief + media subset + duration + mode + platform target), executed by the existing Stages 1–7 pipeline per artifact, sharing one analysis pass via the A-011 cache (analysis cost is paid once, not N times).
+4. **Package preview** — one approval surface listing every artifact with previews; user approves all / some; publishes per ADR-0013 connectors.
+
+**Open questions.** Cost envelope per package (N judge calls — Tier-L × artifact count dominates; package-level effort-level UX needed); planner placement (v2.2 multi-agent harness is the natural home; a deterministic-first planner could pilot in v1.2's multi-output orchestration); per-platform variants (16:9 YouTube vs 9:16 reels) as separate artifacts or render variants; partial-package refine semantics.
+
+**Tradeoff against scope.** The biggest feature on the roadmap. Explicitly gated by D-042: not before single-video quality is mastered (A-016/A-017 and the v1 quality milestones are prerequisites, per the user: "unless the individual videos are acceptable quality, the package feature doesn't make sense — it is built on top of this capability").
+
+**Linked items.** N-013, N-005/A-012 (v1.2 multi-output seed), A-011/N-007 (shared analysis), D-042, ADR-0013, ROADMAP v2.
