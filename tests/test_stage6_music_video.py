@@ -61,20 +61,22 @@ def _music(cut_points_ms: list[int], duration_ms: int = 8000) -> StandardMusicSp
 
 
 @pytest.mark.usefixtures("db_initialized")
-async def test_clips_snap_to_cut_grid_intervals() -> None:
+async def test_clip_boundaries_snap_to_cut_points_and_cover_target() -> None:
+    """Three equally-paced clips over an 8s target: every transition must
+    land on a grid cut and the timeline must run the full target."""
     photos = [_photo(f"h-{i}") for i in range(3)]
     arc = _arc(
         [
             SelectedItem(
                 candidate_ref=f"h-{i}",
                 placement_position=i,
-                intended_duration_ms=999,  # Will be overwritten by snap
+                intended_duration_ms=2667,  # ~8s / 3
                 role="r",
             )
             for i in range(3)
         ]
     )
-    music = _music([0, 2000, 5000, 8000])  # Three intervals: 2000, 3000, 3000
+    music = _music([0, 2000, 3000, 5000, 6000, 8000])
     plan = await compile_plan(
         arc_judgment=arc,
         ingest_records=photos,
@@ -83,13 +85,20 @@ async def test_clips_snap_to_cut_grid_intervals() -> None:
         mode="music_video",
         audio=music,
     )
-    durations = [c.intended_duration_ms for c in plan.clips]
-    assert durations == [2000, 3000, 3000]
     assert plan.mode == "music_video"
+    assert len(plan.clips) == 3
+    durations = [c.intended_duration_ms for c in plan.clips]
+    assert sum(durations) == 8000  # covers the target, no silent tail
+    # Interior boundaries (cumulative ends of clips 0..n-2) land on cuts.
+    boundaries = [sum(durations[: i + 1]) for i in range(len(durations) - 1)]
+    assert all(b in {0, 2000, 3000, 5000, 6000, 8000} for b in boundaries)
 
 
 @pytest.mark.usefixtures("db_initialized")
-async def test_more_clips_than_intervals_drops_tail() -> None:
+async def test_all_clips_kept_and_timeline_fills_target() -> None:
+    """Regression: 5 clips × 1s against a sparse 2-cut grid used to keep
+    only 2 clips and end the video at 4s of a 5s job. All clips must
+    survive and the timeline must cover the target."""
     photos = [_photo(f"h-{i}") for i in range(5)]
     arc = _arc(
         [
@@ -102,19 +111,21 @@ async def test_more_clips_than_intervals_drops_tail() -> None:
             for i in range(5)
         ]
     )
-    # Only 2 intervals but 5 clips submitted.
-    music = _music([0, 2000, 4000])
+    music = _music([0, 2000, 4000], duration_ms=8000)
     plan = await compile_plan(
         arc_judgment=arc,
         ingest_records=photos,
         project_id="p-mv-tail",
-        target_duration_seconds=4,
+        target_duration_seconds=5,
         mode="music_video",
         audio=music,
     )
-    # Tail dropped — only the first two clips kept; two intervals = two durations.
-    assert len(plan.clips) == 2
-    assert [c.candidate_ref for c in plan.clips] == ["h-0", "h-1"]
+    assert len(plan.clips) == 5
+    assert [c.candidate_ref for c in plan.clips] == [f"h-{i}" for i in range(5)]
+    total = sum(c.intended_duration_ms for c in plan.clips)
+    assert total == 5000
+    # Every clip respects the 250ms floor.
+    assert all(c.intended_duration_ms >= 250 for c in plan.clips)
 
 
 @pytest.mark.usefixtures("db_initialized")

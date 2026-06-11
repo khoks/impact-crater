@@ -343,31 +343,51 @@ def _snap_clips_to_cut_grid(
     cut_grid: CutGrid,
     target_ms: int,
 ) -> list[RenderClip]:
-    """Map each clip onto a cut-grid interval (music-video mode).
+    """Snap clip boundaries onto the beat grid (music-video mode).
 
-    The grid yields N intervals from N+1 cut points. We assign clips
-    in order; if there are more clips than intervals we drop the tail
-    (Stage 5's selected_items are already ranked by placement_position
-    so the tail is the lowest-priority items). If there are fewer
-    clips than intervals we leave the rest of the timeline silent —
-    the user picked a target duration, not a "fill the song" mode.
+    Stage 5 already paced the clips for the target duration; the grid's
+    job is to land each *transition* on a beat, not to dictate one clip
+    per beat interval. Linear-scale the clip durations so the timeline
+    covers the target, then snap each cumulative clip boundary to the
+    nearest cut point. Every cut lands on a beat and the video still
+    runs ~target_ms.
+
+    (The pre-2026-06-11 behavior assigned one clip per grid interval and
+    dropped the rest of the timeline: a 13-clip 60s plan rendered 25.3s
+    of video and the song stopped mid-crescendo.)
     """
-    cuts = [c for c in cut_grid.cut_points_ms if c <= target_ms]
-    if cuts and cuts[-1] < target_ms:
-        cuts = [*cuts, target_ms]
+    cuts = sorted({c for c in cut_grid.cut_points_ms if 0 <= c <= target_ms})
     if len(cuts) < 2:
         # Degenerate grid — fall back to linear scale.
         return _scale_to_target(clips, target_ms)
 
-    intervals = list(zip(cuts, cuts[1:]))  # [(start_ms, end_ms), ...]
+    scaled = _scale_to_target(clips, target_ms)
+
     out: list[RenderClip] = []
-    for clip, (a, b) in zip(clips, intervals):
-        snapped_ms = max(b - a, 250)
+    prev_ms = 0
+    intended_elapsed = 0
+    for i, clip in enumerate(scaled):
+        intended_elapsed += clip.intended_duration_ms
+        if i == len(scaled) - 1:
+            boundary = max(target_ms, prev_ms + 250)
+        else:
+            boundary = _nearest_cut(cuts, intended_elapsed, floor=prev_ms + 250)
+        snapped_ms = boundary - prev_ms
         if clip.kind == "video_scene":
             scene_max = max(int((clip.end_seconds - clip.start_seconds) * 1000), 250)
             snapped_ms = min(snapped_ms, scene_max)
         out.append(clip.model_copy(update={"intended_duration_ms": snapped_ms}))
+        prev_ms += snapped_ms
     return out
+
+
+def _nearest_cut(cuts: list[int], t: int, *, floor: int) -> int:
+    """The cut point nearest `t` that's at least `floor`; `floor` keeps
+    boundaries monotonic with a 250ms minimum clip duration."""
+    candidates = [c for c in cuts if c >= floor]
+    if not candidates:
+        return max(t, floor)
+    return min(candidates, key=lambda c: abs(c - t))
 
 
 def _scale_to_target(

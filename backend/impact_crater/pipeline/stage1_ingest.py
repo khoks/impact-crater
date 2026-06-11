@@ -31,7 +31,7 @@ try:  # pragma: no cover — env-specific
 except ImportError:  # pragma: no cover
     pass
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 import imagehash
 
@@ -174,6 +174,12 @@ def _ingest_photo(
     file_size: int,
 ) -> MediaRecord:
     img = Image.open(path)
+    # Apply the EXIF orientation tag to the pixels. Phone photos shot in
+    # portrait are stored landscape + Orientation=6/8 — without this,
+    # width/height (and so Stage 6's aspect decision), the pHash, and the
+    # thumbnails fed to the vision LLMs are all sideways. Real failure
+    # 2026-06-11: 3 of 33 Zion photos rendered pillarboxed-sideways.
+    img = ImageOps.exif_transpose(img)
     img = _to_rgb(img)
     width, height = img.size
     phash_hex = str(imagehash.phash(img))

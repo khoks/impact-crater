@@ -117,12 +117,18 @@ async def render_plan(
         # Phase 3 — audio normalize + fade + trim, if music supplied.
         if plan.music is not None:
             audio_path = work_dir / "audio.m4a"
+            # Trim + fade against the ACTUAL timeline, not the requested
+            # target: clip durations land within ±10% of target (or are
+            # capped by video-scene length), and the mux below uses
+            # -shortest. Trimming to target_duration_ms put the fade-out
+            # past the end of the video — the song just stopped cold.
+            timeline_ms = sum(c.intended_duration_ms for c in plan.clips)
             await _normalize_audio(
                 Path(plan.music.audio_path),
                 audio_path,
                 target_lufs=plan.music.target_lufs,
                 true_peak_db=plan.music.true_peak_db,
-                target_duration_ms=plan.target_duration_ms,
+                target_duration_ms=timeline_ms,
                 fade_in_ms=plan.music.fade_in_ms,
                 fade_out_ms=plan.music.fade_out_ms,
                 pool=pool,

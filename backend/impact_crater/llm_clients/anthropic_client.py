@@ -19,7 +19,7 @@ from typing import Any, Literal
 
 import anthropic
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 from tenacity import (
     AsyncRetrying,
     retry_if_exception_type,
@@ -491,6 +491,10 @@ def _fit_image_for_anthropic(image_bytes: bytes) -> bytes:
             pass
 
     img = Image.open(io.BytesIO(image_bytes))
+    # Re-encoding strips EXIF, so bake the orientation into the pixels
+    # first — otherwise portrait phone photos reach the API sideways
+    # with no orientation tag left to correct them.
+    img = ImageOps.exif_transpose(img)
     img.load()
     if img.mode != "RGB":
         img = img.convert("RGB")
