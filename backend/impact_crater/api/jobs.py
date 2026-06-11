@@ -36,8 +36,31 @@ from impact_crater.pipeline.runner import (
 )
 from impact_crater.pipeline.stage4_prefilter import PreFilterOverrides
 from impact_crater.pipeline.stage7_render import RenderError
+from impact_crater.storage.db import connection
 
 router = APIRouter()
+
+
+async def _upsert_project(project_id: str, *, name: str, brief: str) -> None:
+    """Persist user-supplied project metadata at submit time (S-2.9.3).
+
+    Stage 6's `_persist` only auto-creates rows with name=project_id, so
+    without this every project listed as `project-3d1ac44eba32` with an
+    empty brief. Empty inputs never clobber an existing value.
+    """
+    async with connection() as db:
+        await db.execute(
+            """
+            INSERT INTO projects (id, name, brief)
+            VALUES (?, ?, NULLIF(?, ''))
+            ON CONFLICT(id) DO UPDATE SET
+                name = COALESCE(NULLIF(?, ''), projects.name),
+                brief = COALESCE(NULLIF(?, ''), projects.brief),
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (project_id, name or project_id, brief, name, brief),
+        )
+        await db.commit()
 
 
 class MusicSpecPayload(BaseModel):
@@ -207,6 +230,7 @@ async def post_render_job(req: RenderJobRequest) -> RenderJobResponse:
 
     try:
         result = await run_full_pipeline(config, router=llm_router)
+        await _upsert_project(result.project_id, name="", brief=req.brief)
     except QuotaDeniedError as exc:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
@@ -296,6 +320,7 @@ async def post_submit_job(req: SubmitJobRequest) -> SubmitJobResponse:
         section_to_media_nl=req.section_to_media_nl,
         project_name=req.project_name,
     )
+    await _upsert_project(snap.project_id, name=req.project_name, brief=req.brief)
     return SubmitJobResponse(
         job_id=snap.job_id,
         project_id=snap.project_id,
@@ -303,6 +328,22 @@ async def post_submit_job(req: SubmitJobRequest) -> SubmitJobResponse:
         submitted_at=snap.submitted_at,
         websocket_url=f"/api/jobs/ws/{snap.job_id}",
     )
+
+
+_STATE_SORT_ORDER = {"running": 0, "queued": 1, "succeeded": 2, "failed": 3, "cancelled": 4}
+
+
+@router.get("")
+async def list_jobs() -> list[dict[str, Any]]:
+    """All jobs known to this server process (the registry is in-memory,
+    so this is session history, not durable history — that's
+    `GET /api/projects`). Running jobs first, then newest-submitted."""
+    jobs = get_registry().all()
+    # Stable two-pass sort: newest first, then bucket by state so
+    # running/queued float to the top with their recency preserved.
+    jobs.sort(key=lambda s: s.submitted_at, reverse=True)
+    jobs.sort(key=lambda s: _STATE_SORT_ORDER.get(s.state, 9))
+    return [asdict(s) for s in jobs]
 
 
 @router.get("/{job_id}")
