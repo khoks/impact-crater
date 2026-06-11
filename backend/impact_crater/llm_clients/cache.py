@@ -8,7 +8,15 @@ Cache key:
 
 Cache path:
     ~/.impact-crater/cache/{content_hash}/{provider}_{model}_{model_version}/
-        {operation}_{prompt_version}.{json|npy}
+        {operation}_{prompt_version}_{cache_key_prefix}.{json|npy}
+
+The cache_key prefix in the filename matters: two cache keys that differ
+only in params_canonical (e.g. score_image dimension="quality" vs
+dimension="narrative_relevance") must NOT share a payload file. They did
+before 2026-06-11 — every score_image variant for a photo overwrote one
+file, so a "quality" cache hit could return a stale narrative-relevance
+score from an earlier brief (root cause of stage4_empty_candidate_set on
+the 2026-06-11 user job). Migration 002 purges the poisoned entries.
 
 Embeddings (numpy ndarray) → .npy via numpy.save / numpy.load.
 Everything else (str, dict, ArcJudgment) → .json (ArcJudgment serialized
@@ -68,12 +76,18 @@ def _payload_path(
     model_version: str,
     operation: str,
     prompt_version: str,
+    cache_key: str,
     suffix: str,
 ) -> Path:
-    """Resolve the on-disk path for a cache payload."""
+    """Resolve the on-disk path for a cache payload.
+
+    The cache_key prefix makes the filename unique per params_canonical —
+    without it, all score_image dimensions for one photo collide on one
+    file and the last write wins.
+    """
     base = paths.cache_dir() / content_hash / f"{provider}_{model}_{model_version}"
     base.mkdir(parents=True, exist_ok=True)
-    return base / f"{operation}_{prompt_version[:16]}{suffix}"
+    return base / f"{operation}_{prompt_version[:16]}_{cache_key[:12]}{suffix}"
 
 
 # ---- Read --------------------------------------------------------------
@@ -150,6 +164,7 @@ async def put(
         model_version=model_version,
         operation=operation,
         prompt_version=prompt_version,
+        cache_key=key,
         suffix=suffix,
     )
     if isinstance(encoded, bytes):

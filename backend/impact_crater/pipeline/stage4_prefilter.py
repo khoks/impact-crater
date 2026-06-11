@@ -174,12 +174,15 @@ def prefilter(
     # job fails with a clear, cheap, actionable message before any
     # remote LLM call is wasted on an empty arc judgment.
     if input_count > 0 and not chosen:
+        quality_scores = [a.quality_score for a in assets]
         raise Stage4EmptyCandidateSet(
             input_count=input_count,
             quality_threshold=quality_threshold,
             after_quality_count=len(after_quality),
             after_dedup_count=len(after_dedup),
             after_location_count=len(after_location),
+            max_quality_score=max(quality_scores),
+            min_quality_score=min(quality_scores),
         )
 
     return CandidateSet(
@@ -205,21 +208,41 @@ class Stage4EmptyCandidateSet(RuntimeError):
         after_quality_count: int,
         after_dedup_count: int,
         after_location_count: int,
+        max_quality_score: float = 0.0,
+        min_quality_score: float = 0.0,
     ) -> None:
         self.input_count = input_count
         self.quality_threshold = quality_threshold
         self.after_quality_count = after_quality_count
         self.after_dedup_count = after_dedup_count
         self.after_location_count = after_location_count
+        self.max_quality_score = max_quality_score
+        self.min_quality_score = min_quality_score
+        # The quality-score range disambiguates failure modes at a glance:
+        # max=0.00 means scores never joined (Stage 2 failed or key
+        # mismatch); a plausible nonzero range means the photos genuinely
+        # scored below the floor.
         reason = (
             f"stage4_empty_candidate_set input={input_count} "
             f"after_quality_floor({quality_threshold:.2f})={after_quality_count} "
             f"after_dedup={after_dedup_count} "
-            f"after_location={after_location_count}. "
-            "Likely cause: vague brief produced low narrative-relevance scores "
-            "and/or the source folder's photos all score below the quality "
-            "threshold. Try a more specific brief or different media."
+            f"after_location={after_location_count} "
+            f"quality_score_range=[{min_quality_score:.2f}, {max_quality_score:.2f}]. "
         )
+        if max_quality_score <= 0.0:
+            reason += (
+                "Every asset has quality_score=0.0, which means Stage 2 "
+                "scores never attached to these assets — this is an app "
+                "bug or a systemic scoring failure, not a media-quality "
+                "problem. Check the server logs for stage2 errors."
+            )
+        else:
+            reason += (
+                "Likely cause: vague brief produced low narrative-relevance "
+                "scores and/or the source folder's photos all score below "
+                "the quality threshold. Try a more specific brief or "
+                "different media."
+            )
         super().__init__(reason)
 
 

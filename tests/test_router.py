@@ -48,6 +48,13 @@ def routing_config(tmp_path: Path) -> Path:
                 "tier": "S",
                 "max_tokens": 256,
             },
+            "score_image": {
+                "provider": "google",
+                "model": "gemini-2.5-flash",
+                "model_version": "v1",
+                "tier": "S",
+                "max_tokens": 16,
+            },
             "extract_metadata_image": {
                 "provider": "anthropic",
                 "model": "claude-sonnet-4-5",
@@ -81,6 +88,7 @@ def prompts_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "prompts"
     for op, provider, model, body in [
         ("caption_image", "google", "gemini-2.5-flash", "Describe this image: {{ extra or '' }}"),
+        ("score_image", "google", "gemini-2.5-flash", "Score on {{ dimension }}. brief={{ brief or '' }}"),
         (
             "extract_metadata_image",
             "anthropic",
@@ -224,6 +232,81 @@ async def test_caption_different_content_hashes_dont_share_cache(
     assert out_a == "caption A"
     assert out_b == "caption B"
     assert google.caption_image.await_count == 2
+
+
+@pytest.mark.usefixtures("db_initialized")
+async def test_score_image_dimensions_do_not_share_cache(
+    routing_config: Path, prompts_dir: Path
+) -> None:
+    """Regression: quality + narrative_relevance scores for the SAME photo
+    must live in separate cache entries AND separate payload files.
+
+    Before the 2026-06-11 fix, _payload_path() ignored params_canonical, so
+    both dimensions (and every brief's narrative variant) overwrote one
+    file — a "quality" cache hit then returned whichever score was written
+    last, which dropped all 36 assets below the Stage-4 quality floor on a
+    real user job."""
+    google = _mock_client("google")
+    google.score_image = AsyncMock(side_effect=[0.9, 0.2])
+    router = LLMRouter(clients={"google": google}, config_path=routing_config)
+
+    quality_1 = await router.score_image(
+        b"\x00img", content_hash="hash-A", dimension="quality"
+    )
+    narrative_1 = await router.score_image(
+        b"\x00img",
+        content_hash="hash-A",
+        dimension="narrative_relevance",
+        prompt_vars={"brief": "a day at the beach"},
+        cache_extra={"brief_hash": "beach123"},
+    )
+    assert quality_1 == 0.9
+    assert narrative_1 == 0.2
+    assert google.score_image.await_count == 2
+
+    # Re-reads must hit the cache AND return the value for their own
+    # dimension — not the other dimension's last write.
+    quality_2 = await router.score_image(
+        b"\x00img", content_hash="hash-A", dimension="quality"
+    )
+    narrative_2 = await router.score_image(
+        b"\x00img",
+        content_hash="hash-A",
+        dimension="narrative_relevance",
+        prompt_vars={"brief": "a day at the beach"},
+        cache_extra={"brief_hash": "beach123"},
+    )
+    assert quality_2 == 0.9
+    assert narrative_2 == 0.2
+    assert google.score_image.await_count == 2
+
+
+@pytest.mark.usefixtures("db_initialized")
+async def test_score_image_different_briefs_do_not_share_cache(
+    routing_config: Path, prompts_dir: Path
+) -> None:
+    """Same photo + same dimension but a different brief_hash must miss."""
+    google = _mock_client("google")
+    google.score_image = AsyncMock(side_effect=[0.8, 0.3])
+    router = LLMRouter(clients={"google": google}, config_path=routing_config)
+
+    first = await router.score_image(
+        b"\x00img",
+        content_hash="hash-A",
+        dimension="narrative_relevance",
+        prompt_vars={"brief": "beach trip"},
+        cache_extra={"brief_hash": "beach123"},
+    )
+    second = await router.score_image(
+        b"\x00img",
+        content_hash="hash-A",
+        dimension="narrative_relevance",
+        prompt_vars={"brief": "mountain hike"},
+        cache_extra={"brief_hash": "mountain9"},
+    )
+    assert first == 0.8
+    assert second == 0.3
+    assert google.score_image.await_count == 2
 
 
 @pytest.mark.usefixtures("db_initialized")
