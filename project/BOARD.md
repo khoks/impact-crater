@@ -1,6 +1,6 @@
 # Board
 
-> **Last updated:** 2026-06-11 — **E-2.9 reopened for D-014 validation hot-fixes.** First real-media validation run (33 Zion photos + 1 video + mp3, both modes) surfaced 4 blocking bugs, all fixed and verified same-session as **S-2.9.1** (PRs #35–#37; decisions D-040/D-041): LLM-cache payload-path poisoning (the `stage4_empty_candidate_set` failure), music-video timeline truncation (25.3s of a 60s target), audio fade-out never playing, EXIF portrait photos pillarboxed/sideways. Retest green: standard 56.3s with fade + smart-crop; music video 60.0s with 11/12 beat-aligned cuts. **342 backend tests green.** Validation gaps filed: S-2.9.2 dashboard project list (P1), S-2.9.3 brief persistence (P2), S-2.9.4 crossfades (parked v1). D-014's real 1000-photo run remains user-side.
+> **Last updated:** 2026-06-11 (second pass) — **Dashboard gap closed.** After the morning's validation hot-fixes (S-2.9.1, PRs #35–#37, D-040/D-041), the user hit the dashboard stub live ("can't see already submitted and completed jobs"). **S-2.9.2 + S-2.9.3 shipped same-day:** real `GET /api/projects` (DB-backed, snapshots + has_render), `GET /api/jobs` session list, Dashboard rewrite (session-jobs strip, project cards, inline render playback), name/brief upsert at submit, and the `Content-Disposition: inline` fix without which Chrome refuses to play render.mp4 in any `<video>` (also unblocks JobPreview). Verified live in Chrome: 11 projects listed, both Zion renders play inline. **346 backend + 33 frontend tests green.** Remaining under E-2.9: S-2.9.4 crossfades (parked v1) + the user-side D-014 1000-photo validation run.
 > **How to read this:** Hand-maintained mirror of frontmatter `status:` values. The `work-tracker` skill refreshes this file at end-of-session. If you see drift, re-derive from `grep -l "status:" project/{initiatives,epics,stories,tasks}/*.md`.
 
 ---
@@ -14,10 +14,7 @@
 
 ## Up Next (Ready)
 
-| ID | Title | Type | Priority | Phase |
-|---|---|---|---|---|
-| [S-2.9.2](./stories/S-2.9.2-dashboard-project-list-render-history.md) | Dashboard project list + render history (replace M0 stub) | Story | P1 | mvp |
-| [S-2.9.3](./stories/S-2.9.3-persist-project-brief-and-name.md) | Persist brief + name on project rows at job submit | Story | P2 | mvp |
+(empty — S-2.9.4 is parked at v1; D-014 validation is user-side)
 
 ## Backlog (queued)
 
@@ -29,6 +26,8 @@
 
 | ID | Title | Type | Done |
 |---|---|---|---|
+| **[S-2.9.2](./stories/S-2.9.2-dashboard-project-list-render-history.md)** | **Dashboard project list + render history + inline playback (+ Content-Disposition fix)** | Story | 2026-06-11 |
+| **[S-2.9.3](./stories/S-2.9.3-persist-project-brief-and-name.md)** | **Persist brief + name on project rows at job submit** | Story | 2026-06-11 |
 | **[S-2.9.1](./stories/S-2.9.1-validation-hotfixes-2026-06-11.md)** | **Validation hot-fixes 2026-06-11 — cache poisoning (D-040), beat-snap (D-041), audio fade, EXIF; PRs #35–#37** | Story | 2026-06-11 |
 
 ## Previously Done (last sessions)

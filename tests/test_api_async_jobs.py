@@ -16,15 +16,14 @@ from unittest.mock import AsyncMock
 import httpx
 import numpy as np
 import pytest
-from PIL import Image
-
 from impact_crater.app import create_app
-from impact_crater.jobs.registry import StageId, get_registry
+from impact_crater.jobs.registry import StageId
 from impact_crater.llm_clients.base import ArcJudgment, SelectedItem
 from impact_crater.media import ffmpeg as ff
 from impact_crater.pipeline import runner
 from impact_crater.storage import settings as settings_store
 from impact_crater.storage.migrations import run_pending_migrations
+from PIL import Image
 
 pytestmark = pytest.mark.skipif(
     not ff.has_ffmpeg(), reason="ffmpeg binary not installed"
@@ -221,6 +220,76 @@ async def test_full_async_flow_succeeds(
     assert snap["snapshot_id"]
     assert snap["render_path"]
     assert Path(snap["render_path"]).is_file()
+
+
+async def test_submit_persists_project_name_and_brief(
+    client_and_paths: tuple[httpx.AsyncClient, list[Path], Path],
+) -> None:
+    """S-2.9.3: the submit endpoint upserts name + brief onto the projects
+    row so the dashboard list shows real labels instead of project-ids."""
+    from impact_crater.storage.db import connection
+
+    client, photos, audio = client_and_paths
+    r = await client.post(
+        "/api/jobs/submit",
+        json={
+            "media_paths": [str(p) for p in photos],
+            "brief": "warm tones into cool tones",
+            "target_duration": 2,
+            "audio_path": str(audio),
+            "project_name": "Color study",
+        },
+    )
+    assert r.status_code == 202
+    project_id = r.json()["project_id"]
+
+    async with connection() as db:
+        cursor = await db.execute(
+            "SELECT name, brief FROM projects WHERE id = ?", (project_id,)
+        )
+        row = await cursor.fetchone()
+    assert row is not None
+    assert row["name"] == "Color study"
+    assert row["brief"] == "warm tones into cool tones"
+
+    # GET /api/projects surfaces the same row.
+    listed = (await client.get("/api/projects")).json()
+    match = next(p for p in listed if p["id"] == project_id)
+    assert match["name"] == "Color study"
+    assert match["brief"] == "warm tones into cool tones"
+
+
+async def test_jobs_list_endpoint_returns_session_jobs(
+    client_and_paths: tuple[httpx.AsyncClient, list[Path], Path],
+) -> None:
+    """S-2.9.2: GET /api/jobs lists every job in this server's registry."""
+    client, photos, audio = client_and_paths
+    r = await client.post(
+        "/api/jobs/submit",
+        json={
+            "media_paths": [str(p) for p in photos],
+            "brief": "list me",
+            "target_duration": 2,
+            "audio_path": str(audio),
+            "project_name": "Listed job",
+        },
+    )
+    assert r.status_code == 202
+    job_id = r.json()["job_id"]
+
+    listed = (await client.get("/api/jobs")).json()
+    assert isinstance(listed, list)
+    match = next(j for j in listed if j["job_id"] == job_id)
+    assert match["project_name"] == "Listed job"
+    assert match["brief"] == "list me"
+    assert match["state"] in ("queued", "running", "succeeded")
+
+    # Let the background job finish so it doesn't leak into other tests.
+    for _ in range(120):
+        snap = (await client.get(f"/api/jobs/{job_id}")).json()
+        if snap["state"] in ("succeeded", "failed", "cancelled"):
+            break
+        await asyncio.sleep(0.25)
 
 
 async def test_registry_records_stage_progress(

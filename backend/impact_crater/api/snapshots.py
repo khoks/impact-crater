@@ -33,12 +33,21 @@ router = APIRouter()
 
 @router.get("/{snapshot_id}/render.mp4")
 async def get_render(snapshot_id: str) -> FileResponse:
-    """Serve the rendered MP4 for `snapshot_id`."""
+    """Serve the rendered MP4 for `snapshot_id`.
+
+    `content_disposition_type="inline"` matters: the `filename=` parameter
+    alone makes FileResponse emit `Content-Disposition: attachment`, and
+    Chrome refuses to play attachment responses inside a <video> element —
+    the player sits at readyState 0 forever (dashboard + JobPreview both
+    stream this URL). Inline keeps the filename for save-as while letting
+    the media stack render it.
+    """
     path = await _resolve_render_path(snapshot_id)
     return FileResponse(
         path,
         media_type="video/mp4",
         filename=f"{snapshot_id}.mp4",
+        content_disposition_type="inline",
     )
 
 
