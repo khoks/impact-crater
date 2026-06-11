@@ -1,6 +1,6 @@
 # Board
 
-> **Last updated:** 2026-06-11 (second pass) — **Dashboard gap closed.** After the morning's validation hot-fixes (S-2.9.1, PRs #35–#37, D-040/D-041), the user hit the dashboard stub live ("can't see already submitted and completed jobs"). **S-2.9.2 + S-2.9.3 shipped same-day:** real `GET /api/projects` (DB-backed, snapshots + has_render), `GET /api/jobs` session list, Dashboard rewrite (session-jobs strip, project cards, inline render playback), name/brief upsert at submit, and the `Content-Disposition: inline` fix without which Chrome refuses to play render.mp4 in any `<video>` (also unblocks JobPreview). Verified live in Chrome: 11 projects listed, both Zion renders play inline. **346 backend + 33 frontend tests green.** Remaining under E-2.9: S-2.9.4 crossfades (parked v1) + the user-side D-014 1000-photo validation run.
+> **Last updated:** 2026-06-11 (second pass) — **Dashboard gap closed.** After the morning's validation hot-fixes (S-2.9.1, PRs #35–#37, D-040/D-041), the user hit the dashboard stub live ("can't see already submitted and completed jobs"). **S-2.9.2 + S-2.9.3 shipped same-day:** real `GET /api/projects` (DB-backed, snapshots + has_render), `GET /api/jobs` session list, Dashboard rewrite (session-jobs strip, project cards, inline render playback), name/brief upsert at submit, and the `Content-Disposition: inline` fix without which Chrome refuses to play render.mp4 in any `<video>` (also unblocks JobPreview). Verified live in Chrome: 11 projects listed, both Zion renders play inline. **346 backend + 33 frontend tests green.** Remaining under E-2.9: S-2.9.4 crossfades (parked v1) + the user-side D-014 1000-photo validation run. **Third pass: 2026-06-11 feature grooming** — A-016..A-020 + N-012/N-013 + D-042 (Trip Package north star, gated on single-video quality); S-2.9.5/S-2.9.6 filed as the first v1 quality stories.
 > **How to read this:** Hand-maintained mirror of frontmatter `status:` values. The `work-tracker` skill refreshes this file at end-of-session. If you see drift, re-derive from `grep -l "status:" project/{initiatives,epics,stories,tasks}/*.md`.
 
 ---
@@ -20,7 +20,11 @@
 
 | ID | Title | Type | Priority | Phase |
 |---|---|---|---|---|
+| [S-2.9.5](./stories/S-2.9.5-cheap-first-analysis-hardening.md) | Cheap-first analysis hardening — thumbs to LLMs + time-bounded scene sampling | Story | P2 | v1 |
+| [S-2.9.6](./stories/S-2.9.6-semantic-near-duplicate-suppression.md) | Semantic near-duplicate suppression — best-of-burst in Stage 4 | Story | P2 | v1 |
 | [S-2.9.4](./stories/S-2.9.4-crossfade-transitions-slow-tempo.md) | Crossfade transitions on slow-tempo music (ADR-0011/0012) | Story | P3 | v1 |
+
+> 2026-06-11 grooming: the **Trip Package** north star (A-020/N-013, v2) + auto trip cast (A-018/N-012) + crowd removal (A-019) are groomed in the vision docs; per D-042 the package is gated on single-video quality mastery — S-2.9.5/S-2.9.6 are the first two stories of that gate. Project items for v2 features are created when v2 opens (per D-039 precedent).
 
 ## Recently Done (this session)
 
