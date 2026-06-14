@@ -135,6 +135,8 @@ Each item names the `phase`, `verdict`, the specific `content_hash` / `decision_
 
 **Acting on feedback is open-ended — think bigger than a threshold tweak.** Resolving a feedback item can legitimately mean any of: tuning an existing threshold or weight (e.g. Stage 4 dedup/quality), editing a prompt, adding a **new heuristic rule or custom instruction**, building a **new AI module / pipeline step** (e.g. a dedicated re-ranker, a new scoring dimension, a verification pass), tuning or swapping an existing model/backend, or adding/reordering steps in job execution. Pick the smallest change that genuinely fixes the class of problem the feedback points at — and when it's a new module/step/heuristic, create the matching `project/` work item (and an ADR if it changes architecture) before building. Then mark the item `addressed`.
 
+**Workplan priority overrides (A-024).** The in-app workplan tracker lets the user re-prioritise work items; those edits are stored as `workplan_overrides` rows (NOT written to the `project/` markdown, which the work-tracker skill owns). When running work-tracker — or when the user asks — reconcile them: `GET /api/workplan/overrides` (or read the `workplan_overrides` table) lists `{item_id, priority, note}`; apply each to the matching item's frontmatter `priority:` via the normal work-tracker PR flow, then the override has been honoured.
+
 ---
 
 ## The MVP gate

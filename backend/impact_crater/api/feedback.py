@@ -59,6 +59,19 @@ class FeedbackItem(BaseModel):
     verdict: str
     comment: str | None
     status: str
+    priority: str
+    has_screenshot: bool
+
+
+class FeedbackDetail(FeedbackItem):
+    context: dict[str, Any] | None
+    screenshot_url: str | None
+    diagnostics_url: str | None  # full snapshot diagnostics, if a snapshot exists
+
+
+class FeedbackPatch(BaseModel):
+    status: Literal["new", "triaged", "addressed", "dismissed"] | None = None
+    priority: Literal["P0", "P1", "P2", "P3"] | None = None
 
 
 @router.post("", response_model=FeedbackResponse, status_code=status.HTTP_201_CREATED)
@@ -131,12 +144,35 @@ async def post_feedback(req: FeedbackRequest) -> FeedbackResponse:
     return FeedbackResponse(id=int(new_id or 0), created_at=created_at, status="new")
 
 
+def _to_item(r: Any) -> FeedbackItem:
+    return FeedbackItem(
+        id=r["id"],
+        created_at=r["created_at"],
+        job_id=r["job_id"],
+        project_id=r["project_id"],
+        snapshot_id=r["snapshot_id"],
+        phase=r["phase"],
+        decision_ref=r["decision_ref"],
+        content_hash=r["content_hash"],
+        verdict=r["verdict"],
+        comment=r["comment"],
+        status=r["status"],
+        priority=r["priority"],
+        has_screenshot=bool(r["screenshot_path"]),
+    )
+
+
+# Newest-first, but surface the highest-priority open items first so the
+# tracker page leads with what matters.
+_PRIORITY_RANK = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
+
+
 @router.get("", response_model=list[FeedbackItem])
 async def list_feedback(
     status_filter: str | None = None, snapshot_id: str | None = None
 ) -> list[FeedbackItem]:
-    """List feedback, newest first. Filter by `status_filter` (e.g. 'new')
-    or `snapshot_id`. This is what a Claude session reads to pick up work."""
+    """List feedback. Filter by `status_filter` (e.g. 'new') or `snapshot_id`.
+    This is what the tracker page renders and a Claude session reads."""
     clauses: list[str] = []
     params: list[Any] = []
     if status_filter:
@@ -149,27 +185,81 @@ async def list_feedback(
     async with connection() as db:
         cursor = await db.execute(
             "SELECT id, created_at, job_id, project_id, snapshot_id, phase, "
-            "decision_ref, content_hash, verdict, comment, status "
+            "decision_ref, content_hash, verdict, comment, status, priority, "
+            "screenshot_path "
             f"FROM feedback{where} ORDER BY created_at DESC, id DESC",
             params,
         )
         rows = await cursor.fetchall()
-    return [
-        FeedbackItem(
-            id=r["id"],
-            created_at=r["created_at"],
-            job_id=r["job_id"],
-            project_id=r["project_id"],
-            snapshot_id=r["snapshot_id"],
-            phase=r["phase"],
-            decision_ref=r["decision_ref"],
-            content_hash=r["content_hash"],
-            verdict=r["verdict"],
-            comment=r["comment"],
-            status=r["status"],
+    items = [_to_item(r) for r in rows]
+    items.sort(key=lambda it: _PRIORITY_RANK.get(it.priority, 9))
+    return items
+
+
+@router.get("/{feedback_id}", response_model=FeedbackDetail)
+async def get_feedback(feedback_id: int) -> FeedbackDetail:
+    """Full detail for one feedback item: the decision context the UI showed,
+    the screenshot URL, and a link to the snapshot's full diagnostics."""
+    async with connection() as db:
+        r = await (
+            await db.execute(
+                "SELECT id, created_at, job_id, project_id, snapshot_id, phase, "
+                "decision_ref, content_hash, verdict, comment, status, priority, "
+                "screenshot_path, context_json FROM feedback WHERE id = ?",
+                (feedback_id,),
+            )
+        ).fetchone()
+    if r is None:
+        raise HTTPException(status_code=404, detail=f"feedback {feedback_id} not found")
+    context = None
+    if r["context_json"]:
+        try:
+            context = json.loads(r["context_json"])
+        except (json.JSONDecodeError, TypeError):
+            context = None
+    base = _to_item(r)
+    return FeedbackDetail(
+        **base.model_dump(),
+        context=context,
+        screenshot_url=(
+            f"/api/feedback/{feedback_id}/screenshot.png" if r["screenshot_path"] else None
+        ),
+        diagnostics_url=(
+            f"/api/snapshots/{r['snapshot_id']}/diagnostics" if r["snapshot_id"] else None
+        ),
+    )
+
+
+@router.patch("/{feedback_id}", response_model=FeedbackItem)
+async def patch_feedback(feedback_id: int, patch: FeedbackPatch) -> FeedbackItem:
+    """Update an item's status and/or priority from the tracker page."""
+    sets: list[str] = []
+    params: list[Any] = []
+    if patch.status is not None:
+        sets.append("status = ?")
+        params.append(patch.status)
+    if patch.priority is not None:
+        sets.append("priority = ?")
+        params.append(patch.priority)
+    if not sets:
+        raise HTTPException(status_code=400, detail="nothing to update")
+    params.append(feedback_id)
+    async with connection() as db:
+        cur = await db.execute(
+            f"UPDATE feedback SET {', '.join(sets)} WHERE id = ?", params
         )
-        for r in rows
-    ]
+        await db.commit()
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail=f"feedback {feedback_id} not found")
+        r = await (
+            await db.execute(
+                "SELECT id, created_at, job_id, project_id, snapshot_id, phase, "
+                "decision_ref, content_hash, verdict, comment, status, priority, "
+                "screenshot_path FROM feedback WHERE id = ?",
+                (feedback_id,),
+            )
+        ).fetchone()
+    return _to_item(r)
 
 
 @router.get("/{feedback_id}/screenshot.png")

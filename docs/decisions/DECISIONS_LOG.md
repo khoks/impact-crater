@@ -1089,3 +1089,15 @@ E-1.4 round 1 needs to ratify or trim this expanded scope before sequencing. Cut
 - **Alternatives considered:** Persisting partial diagnostics to disk + polling (rejected — no snapshot_id exists for Stages 4/5, and the WS already carries job progress); server-side screenshotting (impossible — only the browser has the rendered page); a heavier capture lib or native screen-capture API (rejected — html-to-image is small, code-split, and needs no permission prompt).
 - **Consequences:** New frontend dependency `html-to-image` (code-split, lazy-imported); `DiagnosticsView` export; live diagnostics on the in-progress page; per-feedback screenshots on disk + a new GET endpoint; migration 005. 390 backend + 35 frontend tests green.
 - **Linked ADRs / items:** A-023, D-045, N-015, ADR-0005 (WS), ADR-0006 (storage).
+
+---
+
+### D-047 — In-app developer trackers: feedback tracker (DB-native) + workplan tracker (markdown-read, override-edited)
+
+- **Status:** accepted
+- **Date:** 2026-06-14
+- **Context:** The user asked for two in-app developer pages: a full-detail feedback/enhancement tracker and a workplan tracker over the project/ MVP/v1/v2 hierarchy, both showing status and an editable priority.
+- **Decision:** (1) Feedback tracker is DB-native: added an editable `priority` column (migration 006), `GET /api/feedback/{id}` detail (parsed context + screenshot URL + snapshot diagnostics link), `PATCH /api/feedback/{id}` (status + priority). (2) Workplan tracker READS the canonical `project/` markdown frontmatter (`GET /api/workplan`, repo-root-relative, env-overridable, empty when project/ absent in a packaged install) — it never writes the markdown (work-tracker skill is the only writer, via PRs). Priority edits go to a `workplan_overrides` table; the page shows the effective priority (override ∨ markdown) and a later work-tracker pass reconciles overrides into the markdown (surfaced at `GET /api/workplan/overrides`). Workplan status stays read-only in the app. (3) Both pages link from the dashboard nav.
+- **Alternatives considered:** Writing workplan status/priority straight to the markdown from the API (rejected — bypasses the work-tracker PR flow + ownership, creates uncommitted working-tree edits); mirroring the whole workplan into the DB as a second source of truth (rejected — markdown stays canonical per CLAUDE.md); read-only workplan with no priority editing (rejected — the user explicitly wants to change priority).
+- **Consequences:** New `api/workplan.py`, feedback API detail/patch, migration 006, frontend `/feedback` + `/workplan` routes + dashboard nav. Priority overrides become a small reconciliation task for work-tracker (documented in CLAUDE.md). 402 backend + 38 frontend tests green.
+- **Linked ADRs / items:** A-024, A-023, D-045, D-046, ADR-0002 (work hierarchy), ADR-0006 (storage).
