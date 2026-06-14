@@ -68,6 +68,8 @@
 |---|---|---|---|
 | [I-1](./initiatives/I-1-project-foundation.md) | Project foundation | **done** (2026-05-03) | scaffolding |
 | [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | **in-progress** (E-2.9 reopened 2026-06-11 for D-014 validation; M0..M8 code done) | mvp |
-| (I-3 v1) | v1 — Local-first + live job + multi-platform + style + polish | (created when v1 opens) | v1 |
-| (I-4 v2) | v2 — Mobile + multi-agent + conversational + generated music | (created when v2 opens) | v2 |
-| (I-5 v3) | v3 — Hosted multi-tenant SaaS | (created when v3 opens) | v3 |
+| [I-3](./initiatives/I-3-v1-local-first-live-job-multi-platform-style-polish.md) | v1 — Local-first + live job + multi-platform + style + polish | **backlog** (epics E-3.1..E-3.9 backfilled 2026-06-14) | v1 |
+| [I-4](./initiatives/I-4-v2-mobile-multi-agent-conversational-generated-music-trip-pa.md) | v2 — Mobile + multi-agent + conversational + generated music + Trip Package | **backlog** (epics E-4.1..E-4.5 backfilled 2026-06-14; **E-4.5 = the Trip Package north star, A-020/N-013, gated by D-042**) | v2 |
+| [I-5](./initiatives/I-5-v3-hosted-multi-tenant-saas.md) | v3 — Hosted multi-tenant SaaS | **backlog** (epics E-5.1..E-5.3 backfilled 2026-06-14) | v3 |
+
+> **2026-06-14 roadmap backfill (A-024 follow-up):** the full v1/v2/v3 plan from `docs/roadmap/ROADMAP.md` + `GROOMED_FEATURES.md` was materialized into `project/` (I-3/I-4/I-5 + 17 epics + ~34 stories) so the in-app **workplan tracker** shows the whole plan, not just current+next phase. Also backfilled stories for delivered-but-unstoried features: **S-2.9.10** (A-021 chronology), **S-2.9.11** (A-022 metadata), **S-2.9.12** (A-018 auto trip cast). Future-phase items are `todo`/`backlog`; statuses are coarse and get refined when each phase opens.
