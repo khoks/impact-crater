@@ -20,6 +20,7 @@
 
 | ID | Title | Type | Priority | Phase |
 |---|---|---|---|---|
+| [S-2.9.7](./stories/S-2.9.7-ai-crowd-removal.md) | AI crowd removal — inpaint non-group people (remote default / local optional, D-044) | Story | P3 | v2 |
 | [S-2.9.4](./stories/S-2.9.4-crossfade-transitions-slow-tempo.md) | Crossfade transitions on slow-tempo music (ADR-0011/0012) | Story | P3 | v1 |
 
 > **2026-06-11 prep-phase overhaul (D-043):** the preparation phase was rebuilt before the heavier features. **Delivered:** A-021 media chronology (EXIF/filename/mtime reconciliation + GPS read; the judge now orders forward-in-time), A-022 rich-metadata enrichment (shot type, per-person expression, safety, specialness, obstructions), A-016 cheap-first analysis (~47× smaller payloads), A-017 best-of-burst semantic dedup.
