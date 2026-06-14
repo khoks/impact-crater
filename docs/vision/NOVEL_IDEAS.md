@@ -15,6 +15,8 @@ This file is the project's record of **novel mechanisms, non-obvious combination
 
 The skill's job is to flag candidates and preserve the chronology. **The skill does not assess legal patentability** — that is a follow-up the user does, possibly with counsel.
 
+**Framing note — every invention here serves one user-facing promise.** Impact Crater is a dead-simple 1-click media-to-video creator: the user dumps a pile of photos and videos, describes in their own words what video(s) they want and where to post them, clicks Submit, and is done — the AI prepares, plans, thinks, curates, synthesizes, and (only after a single preview-and-approve gate) publishes. Every mechanism filed below is **internal implementation detail in service of that one promise**. The orchestrator / pipeline / stage / routing / tool vocabulary used in these entries is engineering language for what the AI does automatically behind the single Submit action; it is **invisible to the user**, who never operates, configures, or sequences any of it.
+
 ---
 
 ## Detection heuristic — when to file an `N-NNN`
@@ -65,7 +67,7 @@ Number monotonically (`N-001`, `N-002`, …). Never renumber. Never delete an en
 
 **Background.** Most photo / video curation systems score and select per-image (or per-frame) using a quality signal, then either deduplicate or rank. Highlight-detection literature in research adds learned per-clip importance scores. Neither dimension reasons about the *narrative shape* of the candidate set as a whole.
 
-**The invention.** As the final stage of the hybrid curation pipeline (D-009), after deterministic pre-filter (perceptual-hash → quality floor → scene segmentation) and after rich per-photo / per-scene metadata extraction, run a dedicated **narrative-arc judgment** call. The input is the full candidate set with metadata; the output is an ordered subsequence chosen and ordered to satisfy a narrative shape (e.g. setup → escalation → climax → denouement; or for a music-video sub-mode per D-010, music-section-aligned beats).
+**The invention.** Behind the user's single Submit, as the final stage of the hybrid curation pipeline (D-009), after deterministic pre-filter (perceptual-hash → quality floor → scene segmentation) and after rich per-photo / per-scene metadata extraction, run a dedicated **narrative-arc judgment** call. The input is the full candidate set with metadata; the output is an ordered subsequence chosen and ordered to satisfy a narrative shape (e.g. setup → escalation → climax → denouement; or for a music-video sub-mode per D-010, music-section-aligned beats).
 
 The narrative judge is implemented as a multimodal-LLM call with structured input (the candidate metadata table) and structured output (an ordered subsequence with per-pick rationale). It operates over the *whole candidate set* rather than scoring items independently — so it can refuse a high-quality photo because it duplicates the narrative role already filled by another, or accept a lower-quality photo because it is the only candidate that establishes a needed beat.
 
@@ -87,7 +89,7 @@ The narrative judge is implemented as a multimodal-LLM call with structured inpu
 
 **Background.** Existing local-vs-remote LLM routing systems route at the *call* boundary: a whole inference call is either local or remote, decided by a policy looking at provider availability, cost, latency, or quota. Cascade routing (cheap-model-first, escalate to large-model on uncertainty) exists in research but still routes whole calls.
 
-**The invention.** Route at the **sub-operation** boundary inside a single curation pass. The orchestrator (D-017) decomposes a curation job into typed sub-operations: *embed*, *caption*, *scene-segment*, *quality-score*, *metadata-extract*, *narrative-judge*, *render-prep*. Each sub-operation has a declared compute profile (latency-bound vs. throughput-bound; semantic richness required; sensitivity to model quality). The router maps each sub-operation to a target — local model class, specific remote provider, or a sub-cascade — using a per-operation policy.
+**The invention.** Behind the user's single Submit, route at the **sub-operation** boundary inside a single curation pass. The orchestrator (D-017) decomposes a curation job into typed sub-operations: *embed*, *caption*, *scene-segment*, *quality-score*, *metadata-extract*, *narrative-judge*, *render-prep*. Each sub-operation has a declared compute profile (latency-bound vs. throughput-bound; semantic richness required; sensitivity to model quality). The router maps each sub-operation to a target — local model class, specific remote provider, or a sub-cascade — using a per-operation policy.
 
 Concretely: `embed` and `quality-score` may run on a local 7B model; `metadata-extract` may run on a remote VLM (Claude / GPT-4o / Gemini); `narrative-judge` (N-001) may run on the largest remote model the user's quota supports. The same job spans multiple providers and multiple modalities of model in one logical pass.
 
@@ -155,7 +157,7 @@ The fingerprint is then applied to the **curation stage** (D-009) — not just t
 
 **The invention.** A "live job" is a long-lived job set up *before* an event begins. It declares one or more outputs (per-location reels, an overall YouTube Story Video, collages per mini-event), each targeting a platform with a publish gate (D-020). The job opens an ingest source (smartphone camera roll watcher, OneDrive folder, iCloud / Google Photos shared bucket) and listens for new media. As media arrives, the curation pipeline runs incrementally — updating the candidate set, refreshing per-output narrative arcs, queuing per-output render passes. The job can publish *during* the event when a per-output trigger fires (e.g., "render and publish a daily reel every evening", "publish the collage when a new location is detected").
 
-The job is conversationally configured at creation. The orchestrator (D-017) negotiates the multi-output declaration with the user in natural language ("How many days? What outputs do you want? Which platforms?") and persists the resulting plan as part of the project state (N-003).
+The user simply describes the event and the artifacts they want in their own words at creation; the AI (D-017) interprets that own-words brief — inferring the multi-output declaration (how many days, which outputs, which platforms) and asking a clarifying question only when the brief is genuinely ambiguous — and persists the resulting plan as part of the project state (N-003). The user is not configuring a tool; they are describing what they want and the AI works out the plan.
 
 **Why we think it is novel.** Strong novelty candidate — the inventor is not aware of a consumer-app product that does *all* of: continuous-ingest from cloud / camera-roll sources, multi-purpose (multiple outputs from one source set), multi-platform (per-output platform targeting), *during-event* publish gates, and conversationally configured at the start of a long event.
 
@@ -268,6 +270,8 @@ None of these match how a thoughtful human collaborator would handle "more lands
 - The current state of the pipeline (`ArcJudgment`, `RenderPlan`, `SecondGuessResult` history, the user's brief, target_duration, mode, music spec).
 - The full Stage-3 rich metadata for the entire input set (not just the candidate set — for "more landscape" the orchestrator may want items the pre-filter previously dropped).
 - A toolkit of pipeline tools: `re_run_stage_5_with_addendum`, `re_extract_metadata_for`, `re_run_pre_filter_with_overrides`, `request_user_input`, `explain_why_not_possible`.
+
+The user never sees, names, or invokes any of these tools: they describe the refinement they want in plain words ("more landscape, less faces") and the AI picks the strategy and the tool calls itself. The tool names here are internal engineering vocabulary, not a control surface the user operates.
 
 The orchestrator's thinking step decides between five strategies:
 

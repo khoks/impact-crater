@@ -16,13 +16,21 @@
 
 ## 1. What Impact Crater is
 
-**Impact Crater is an AI-driven photo and video curator.** You give it a pile
-of raw media — often thousands of photos and videos from a trip, event, or
-shoot — and a sentence describing what you want ("a one-minute video of our
-Zion hike, building to the canyon overlook, scored to this song"). It analyzes
-the media with vision AI, picks the best moments, sequences them into a
-narrative, fits them to music, renders a finished video, shows it to you, and —
-only after you approve — publishes it to your connected social accounts.
+**Impact Crater turns a pile of your photos and videos into finished,
+ready-to-share videos in one click.** You dump in a folder of raw media — often
+thousands of photos and videos from a trip, event, or shoot — describe in your
+own words what video(s) you want and which platform(s) to post to ("a one-minute
+video of our Zion hike, building to the canyon overlook, scored to this song,
+for YouTube"), click submit, and you're done. The AI does the rest — prepare,
+plan, create, and (once you approve a preview) publish to your connected social
+accounts. Under the hood it is a careful media curator, picking the best moments
+and sequencing them into a narrative fitted to music — but to you it's one
+action.
+
+It also gets faster, cheaper, and more personal the more you use it: it learns
+from your feedback, caches its analysis so it never re-examines the same photo
+twice, adapts to your hardware and budget, and keeps a library of the people in
+your trips — all in service of that single click, never as knobs you have to set.
 
 It is **self-hosted first**: it runs as a local application on your own
 machine, and it chooses between AI models running *on your hardware* and
@@ -33,10 +41,9 @@ run as a hosted service without a rewrite.
 
 ### The core promise
 
-> Drop in a folder of media, describe what you want in plain language, walk
-> away, and come back to a finished, ready-to-share video — with full
-> visibility into every decision the system made, and a hard rule that nothing
-> is published until you say so.
+> Drop in a folder of media, describe what you want in plain language, click
+> submit, and come back to a finished, ready-to-share video — with a hard rule
+> that nothing is published until you say so.
 
 ---
 
@@ -96,11 +103,13 @@ videos from their own media without spending hours in an editor.
 
 ---
 
-## 5. How it works — the end-to-end pipeline
+## 5. How it works — what the AI does behind your single click
 
-A job moves through a sequence of phases. The first phases **prepare** (extract
-everything knowable from the media); the middle phases **plan** (decide what the
-video should be); the last phases **produce and publish**.
+Everything below happens automatically behind your single click — you never
+operate any of it; here is what the AI does for you. A job moves through a
+sequence of phases. The first phases **prepare** (extract everything knowable
+from the media); the middle phases **plan** (decide what the video should be);
+the last phases **produce and publish**.
 
 ```mermaid
 flowchart TD
@@ -221,8 +230,8 @@ flowchart TD
   because the cache is keyed on the original file, not the bytes sent to the model.
 - **Model tiering.** Work is routed to the cheapest model that can do it well:
   a small fast model for captions/scores/embeddings, a mid model for rich
-  metadata and orchestration, and a large high-reasoning model used *once per
-  job* for the narrative decision.
+  metadata and internal coordination, and a large high-reasoning model used
+  *once per job* for the narrative decision.
 - **Content-addressed caching.** Every analysis result is cached by a key
   combining the file's content hash, the model, the model version, and the
   exact operation — so the same photo is never analyzed twice across jobs, and a
@@ -249,7 +258,7 @@ flowchart TD
 ## 7. Architecture
 
 Impact Crater runs as a **single local application**: one web-server process
-that hosts the user interface, the orchestration logic, the AI-model router,
+that hosts the user interface, the internal job-execution engine, the AI-model router,
 and the project store, and that spawns worker processes for heavy lifting
 (media decoding, rendering). It is installed and launched as a desktop-class
 local app.
@@ -261,7 +270,7 @@ flowchart TB
     end
 
     subgraph App[Local application process]
-        ORCH[Orchestration & job engine]
+        ORCH[Internal job engine]
         ROUTER[AI model router<br/>cloud / on-device, by tier & privacy]
         PIPE[Curation pipeline<br/>ingest → analyze → plan → render]
         STORE[Project & media store]
@@ -356,7 +365,7 @@ flowchart TD
     LOCALOK -->|No| DEGRADE[Hold / safe fallback]
     PRIV -->|No| TIER{Which capability<br/>tier?}
     TIER -->|Bulk: caption/score| SMALL[Small fast model]
-    TIER -->|Rich metadata / orchestration| MED[Mid model]
+    TIER -->|Rich metadata / coordination| MED[Mid model]
     TIER -->|Narrative decision| LARGE[Large reasoning model]
     SMALL --> HW{Local model fits<br/>hardware & budget?}
     MED --> HW
@@ -382,7 +391,7 @@ flowchart LR
 
 - **Three capability tiers.** A small, fast model handles the high-volume work
   (captions, quick scores, embeddings); a mid model handles rich metadata and
-  the orchestration reasoning; a large, high-reasoning model is reserved for the
+  internal planning & coordination reasoning; a large, high-reasoning model is reserved for the
   single most important decision — composing the narrative — used about once per
   job to keep cost down.
 - **Cloud and on-device, interchangeable.** Every model sits behind one common
@@ -498,8 +507,9 @@ re-architecture.
 - **Story Video** — a single themed, music-backed video; the product's core output.
 - **Standard vs music-video mode** — music under a narrative cut, vs cuts
   synchronized to the song's beat.
-- **Pipeline / phases** — the ordered steps a job goes through, from ingesting
-  media to publishing.
+- **Pipeline / phases** — the internal ordered steps the AI runs automatically
+  behind your single click, from ingesting media to publishing; you watch them
+  happen rather than operate them.
 - **Trip cast** — the set of unique people the system finds in your media, split
   into the group the trip is about versus incidental crowd.
 - **Snapshot** — an immutable saved version of a render, including its plan.

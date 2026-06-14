@@ -1,8 +1,12 @@
 # GROOMED_FEATURES.md — Impact Crater feature catalog
 
+Impact Crater is a dead-simple 1-click media-to-video creator: the user dumps a pile of photos and videos, describes in their own words the video(s) they want and where to post them, clicks submit, and is done — the AI prepares, plans, curates, synthesizes, and (after one preview-and-approve gate) publishes. Everything catalogued below is the **internal feature catalog** that delivers that single experience; the user never operates these features individually.
+
 > **Status: round 1 grooming closed (E-1.2, 2026-04-26); round-2 redirect 2026-04-28 (D-022) — refine-loop entry point moved from job-creation toggle to post-render offer; cross-cut 2026-05-02 (D-031) — A-013 section-to-media NL mapping reclassified v1 → MVP via E-1.3 round-2 architecture grooming.** Phase-tagged feature catalog populated. **MVP critical artifact = Story Video** (single themed video with background music, published to YouTube). E-1.4 (roadmap) may revise remaining phase tags. Round-1 + round-2 of E-1.3 (architecture grooming) have settled the tech stack; round 3 still pending.
 
 This document is the groomed, phase-tagged view of every feature the product should ship over time. It is the bridge between the user's raw brain dump (`RAW_VISION.md`) and what actually gets built. Every feature here is tagged with a target phase: `mvp`, `mvp-lite`, `v1`, `v2`, or `v3`.
+
+**Subordinate qualities in service of one-click.** Several catalogued capabilities — it **learns** from feedback, **tracks** jobs, runs **efficiently**, is hardware/quota-**adaptive**, **caches** analysis across jobs, keeps a **person library / trip cast**, and will one day deliver the **Trip Package** — are real and valuable, but strictly subordinate to the headline. They exist to make the single dump → describe → submit → done loop faster, cheaper, and more personal; they are never the product's identity.
 
 Cross-references:
 - `D-NNN` → [`docs/decisions/DECISIONS_LOG.md`](../decisions/DECISIONS_LOG.md)
@@ -14,9 +18,9 @@ Cross-references:
 
 ## MVP critical path
 
-**The single thinnest end-to-end slice the product must deliver.** Locked under D-006 (artifact), D-007 (platform), D-014 (success criterion), D-015 (name).
-
 > *User drops up to 1000 photos and 50 videos from a single trip / build / event, describes in a paragraph what kind of YouTube video they want and what kind of music, picks a target duration, and gets a publish-ready **Story Video** to their connected YouTube Studio account within 2–5 hours.*
+
+**The single thinnest end-to-end slice the product must deliver** — one dump, one description, one submit, done. Locked under D-006 (artifact), D-007 (platform), D-014 (success criterion), D-015 (name).
 
 | Step | Artifact / behavior | Locked by |
 |---|---|---|
@@ -24,7 +28,7 @@ Cross-references:
 | 2 | User describes the Story Video they want; supplies music; picks duration; picks mode (standard / music-video); picks effort level | D-006, D-010, D-013, D-018 |
 | 3 | App computes max-permissible level + cost preview; user confirms | D-013, A-015 |
 | 4 | Job runs async (user free to leave) | D-011, A-005 |
-| 5 | Pipeline: deterministic pre-filter → rich metadata extraction → narrative-arc judgment → render with music sync | D-009, N-001, A-013 |
+| 5 | Internal pipeline (the user never operates it): deterministic pre-filter → rich metadata extraction → narrative-arc judgment → render with music sync — all automatic behind the single submit | D-009, N-001, A-013 |
 | 6 | Preview-and-approve UI shows the rendered Story Video, with **two clear actions: Approve (primary) and Refine (secondary)** | D-020 (publish-approval-always-on half), D-022 |
 | 7 | (Optional) refine pass — user clicks "Refine this result" alongside Approve at the post-render moment; produces a new render and the same offer again | D-011, D-022 |
 | 8 | User approves; app publishes to connected YouTube Studio account | D-007, D-020, A-003 |
@@ -96,7 +100,9 @@ Cross-references:
 | Multi-platform publish (Instagram, Facebook, X) | v1 | One per-platform connector at a time | D-007 |
 | Per-platform formatting (aspect ratio, duration) | v1 | Co-arrives with multi-platform | D-007 |
 
-### 6. LLM routing & agent harness
+### 6. Internal model routing & execution
+
+These are internal mechanisms that make the single click faster and cheaper — they never surface as a control plane the user operates. The user just describes the outputs they want; the AI decides how to route and execute.
 
 | Feature | Phase | One-line | Linked |
 |---|---|---|---|
@@ -106,6 +112,8 @@ Cross-references:
 | Operation-aware LLM router | v1 | Per-sub-operation routing; gates local-first v1 | D-016, N-002 |
 | Local-first routing default | v1 | Config flip + N-002 router | D-016 |
 | Multi-agent harness (planner + media-analyst + editor + publisher) | v2 | Co-arrives with conversational refinement at scale | D-017 |
+
+> The single-orchestrator and multi-agent-harness rows describe **internal implementation detail**, not anything the user configures. However the AI is wired internally, the user still just describes the outputs they want in natural language and approves the result.
 
 ### 7. Privacy, security, accessibility
 
