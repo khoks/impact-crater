@@ -119,6 +119,22 @@ If you change the tech stack, swap a library, change a security or sandboxing mo
 
 ---
 
+## Picking up user feedback (A-023)
+
+The app has an in-product feedback loop: on the preview page, "Inspect & give feedback" opens per-phase diagnostics (Stage 4 keep/drop decisions with reasons, the Stage 5 narrative selection, the Stage 6 clips, the trip cast), and the user can mark any decision **correct / incorrect / should-be-different** with a note. Feedback is stored in the `feedback` table and mirrored to `~/.impact-crater/feedback.jsonl`.
+
+When the user asks you to "pick up the submitted feedback" / "work on my feedback", run:
+
+```bash
+python scripts/feedback.py list           # pending items (status=new)
+python scripts/feedback.py show <id>      # full decision context for one item
+python scripts/feedback.py mark <id> addressed   # after you've acted on it
+```
+
+Each item names the `phase`, `verdict`, the specific `content_hash` / `decision_ref`, the user's `comment`, and a `context` snapshot of the decision the UI showed. Use it to drive concrete pipeline improvements (tune Stage 4 thresholds, adjust prompts, fix a mis-selection), then mark the item `addressed`.
+
+---
+
 ## The MVP gate
 
 The MVP scope (which artifact types, which platforms, which model routing rules) is **not yet chosen**. It will be locked in [`docs/roadmap/MVP.md`](./docs/roadmap/MVP.md) during the roadmap-grooming session. Once locked, anything outside that scope:

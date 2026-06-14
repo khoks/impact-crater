@@ -20,8 +20,10 @@ from fastapi.staticfiles import StaticFiles
 from impact_crater import __version__
 from impact_crater.api import (
     effort,
+    feedback,
     folder,
     jobs,
+    media,
     persons,
     profile,
     projects,
@@ -68,6 +70,8 @@ def create_app() -> FastAPI:
     app.include_router(folder.router, prefix="/api/folder", tags=["folder"])
     app.include_router(effort.router, prefix="/api", tags=["effort"])
     app.include_router(snapshots.router, prefix="/api/snapshots", tags=["snapshots"])
+    app.include_router(media.router, prefix="/api/media", tags=["media"])
+    app.include_router(feedback.router, prefix="/api/feedback", tags=["feedback"])
     app.include_router(persons.router, prefix="/api/persons", tags=["persons"])
     app.include_router(publish.router, prefix="/api", tags=["publish"])
     app.include_router(profile.router, prefix="/api/profile", tags=["profile"])

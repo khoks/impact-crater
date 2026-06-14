@@ -75,6 +75,22 @@ async def get_plan(snapshot_id: str) -> JSONResponse:
     return JSONResponse(json.loads(candidate.read_text(encoding="utf-8")))
 
 
+@router.get("/{snapshot_id}/diagnostics")
+async def get_diagnostics(snapshot_id: str) -> JSONResponse:
+    """Per-phase decision diagnostics for the feedback loop (A-023)."""
+    snap_dir = await _resolve_snapshot_dir(snapshot_id)
+    candidate = snap_dir / "diagnostics.json"
+    if not candidate.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                "diagnostics.json not found — this snapshot predates the "
+                "feedback-loop feature; re-run the job to generate it."
+            ),
+        )
+    return JSONResponse(json.loads(candidate.read_text(encoding="utf-8")))
+
+
 # ---- Internal ----------------------------------------------------------
 
 
