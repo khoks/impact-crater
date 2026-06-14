@@ -28,6 +28,7 @@ Tech stack, MVP scope, agent harness shape, vision-model choices, sandbox approa
 
 ## Where to find things
 
+- **Consolidated product & architecture overview (external-facing):** [`docs/OVERVIEW.md`](./docs/OVERVIEW.md). A single plain-language document describing the whole application — features, phases, techniques, outputs, architecture diagrams, flows, roadmap — written for a general/outside audience with **no internal IDs or codenames**. It is a *maintained mirror*, not working notes: **whenever the product's features, architecture, flows, or core design materially change, update `docs/OVERVIEW.md` to match** (and keep it free of tracker IDs / ADR numbers / milestone shorthand). The fragmented internal docs below remain the working source for active development.
 - **The user's verbatim original vision:** [`docs/vision/RAW_VISION.md`](./docs/vision/RAW_VISION.md). Source-of-truth for *intent*. Never edit; addenda go below the rule.
 - **Groomed feature catalog (MVP/v1/v2/v3-tagged):** [`docs/vision/GROOMED_FEATURES.md`](./docs/vision/GROOMED_FEATURES.md). Stub today; populated in the vision-grooming session.
 - **Gaps the user didn't mention but the product needs:** [`docs/vision/RECOMMENDED_ADDITIONS.md`](./docs/vision/RECOMMENDED_ADDITIONS.md).
