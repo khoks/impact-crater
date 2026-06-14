@@ -73,6 +73,12 @@ export default function Dashboard() {
       <header className="flex items-center justify-between">
         <h1 className="text-3xl font-semibold text-slate-900">Impact Crater</h1>
         <nav className="flex items-center gap-4 text-sm font-medium text-slate-600">
+          <Link to="/workplan" className="hover:text-slate-900">
+            Workplan
+          </Link>
+          <Link to="/feedback" className="hover:text-slate-900">
+            Feedback
+          </Link>
           <Link to="/people" className="hover:text-slate-900">
             People
           </Link>

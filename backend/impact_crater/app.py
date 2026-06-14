@@ -31,6 +31,7 @@ from impact_crater.api import (
     settings,
     setup,
     snapshots,
+    workplan,
     ws,
 )
 
@@ -72,6 +73,7 @@ def create_app() -> FastAPI:
     app.include_router(snapshots.router, prefix="/api/snapshots", tags=["snapshots"])
     app.include_router(media.router, prefix="/api/media", tags=["media"])
     app.include_router(feedback.router, prefix="/api/feedback", tags=["feedback"])
+    app.include_router(workplan.router, prefix="/api/workplan", tags=["workplan"])
     app.include_router(persons.router, prefix="/api/persons", tags=["persons"])
     app.include_router(publish.router, prefix="/api", tags=["publish"])
     app.include_router(profile.router, prefix="/api/profile", tags=["profile"])

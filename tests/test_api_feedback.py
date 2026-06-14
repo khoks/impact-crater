@@ -112,6 +112,48 @@ async def test_feedback_filters_by_status_and_snapshot(client: httpx.AsyncClient
     assert len(new_only) == 3
 
 
+async def test_feedback_detail_and_patch(client: httpx.AsyncClient) -> None:
+    r = await client.post(
+        "/api/feedback",
+        json={
+            "phase": "stage_4_prefilter",
+            "verdict": "incorrect",
+            "snapshot_id": "snap-x",
+            "decision_ref": "drop:semantic_duplicate",
+            "content_hash": "abc",
+            "comment": "keep this one",
+            "context": {"reason": "semantic_duplicate", "thumb_url": "/api/media/abc/thumb.jpg"},
+        },
+    )
+    fid = r.json()["id"]
+    assert r.json()  # created
+
+    # Detail returns parsed context + diagnostics link + default priority.
+    detail = (await client.get(f"/api/feedback/{fid}")).json()
+    assert detail["context"]["reason"] == "semantic_duplicate"
+    assert detail["diagnostics_url"] == "/api/snapshots/snap-x/diagnostics"
+    assert detail["screenshot_url"] is None
+    assert detail["priority"] == "P2"  # default
+    assert detail["has_screenshot"] is False
+
+    # Patch status + priority.
+    patched = (
+        await client.patch(f"/api/feedback/{fid}", json={"status": "addressed", "priority": "P0"})
+    ).json()
+    assert patched["status"] == "addressed"
+    assert patched["priority"] == "P0"
+
+    # List reflects it + sorts P0 first.
+    listed = (await client.get("/api/feedback")).json()
+    assert listed[0]["id"] == fid
+    assert listed[0]["priority"] == "P0"
+
+
+async def test_feedback_patch_404(client: httpx.AsyncClient) -> None:
+    r = await client.patch("/api/feedback/99999", json={"status": "triaged"})
+    assert r.status_code == 404
+
+
 async def test_feedback_rejects_bad_verdict(client: httpx.AsyncClient) -> None:
     r = await client.post(
         "/api/feedback",

@@ -4,12 +4,14 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-
 import { fetchSetupStatus } from "./api/setup";
 import Dashboard from "./routes/Dashboard";
 import EffortAndCost from "./routes/EffortAndCost";
+import FeedbackTracker from "./routes/FeedbackTracker";
 import JobInProgress from "./routes/JobInProgress";
 import JobPreview from "./routes/JobPreview";
 import NewProject from "./routes/NewProject";
 import PersonLibrary from "./routes/PersonLibrary";
 import Settings from "./routes/Settings";
 import Setup from "./routes/Setup";
+import WorkplanTracker from "./routes/WorkplanTracker";
 import { useSetupStore } from "./stores/setupStore";
 
 export default function App() {
@@ -64,6 +66,8 @@ export default function App() {
       <Route path="/jobs/:job_id/preview" element={<JobPreview />} />
       <Route path="/settings" element={<Settings />} />
       <Route path="/people" element={<PersonLibrary />} />
+      <Route path="/feedback" element={<FeedbackTracker />} />
+      <Route path="/workplan" element={<WorkplanTracker />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );
