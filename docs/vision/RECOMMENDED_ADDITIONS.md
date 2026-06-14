@@ -425,3 +425,19 @@ Each addition gets a heading with an `A-NNN` ID (monotonically incrementing, nev
 **Tradeoff against scope.** Moderate — built entirely on artifacts the pipeline already produces (no new LLM calls). High leverage: it's the mechanism by which the user's taste (the stated quality bar) gets encoded into the app over time.
 
 **Linked items.** N-015, D-045, A-017/A-018 (whose decisions are the most feedback-rich), D-042 (single-video-quality gate this directly serves).
+
+---
+
+### A-024 — Developer tracker pages: feedback/enhancement tracker + workplan tracker (2026-06-14)
+
+**Status:** **delivered 2026-06-14** (D-047)
+
+**Why this matters.** The developer (the user) needs to visualize, in the app, both (a) every piece of in-app feedback with its full context, and (b) the whole MVP→v1→v2→v3 workplan maintained in `project/`. Without in-app views these live only in the DB / markdown and require shell access to inspect.
+
+**What it would look like (delivered).** Two routes: `/feedback` lists every feedback item (priority-sorted, status-filterable) and expands to full detail — job/project/snapshot, phase + decision_ref, the decision context (media thumbnail + reason + scores), the whole phase's decision strip pulled from the snapshot diagnostics (the flagged shot highlighted), and the page screenshot — with editable status + priority. `/workplan` renders the Initiative→Epic→Story→Task hierarchy grouped/badged by status + phase with status/phase rollups and editable priority. Status on the workplan is read-only (the markdown is canonical, work-tracker-owned); priority edits are stored as `workplan_overrides` and reconciled into the markdown on the next work-tracker pass.
+
+**Open questions / follow-ons.** Writing status changes from the app (currently read-only for workplan); deep-linking a feedback item to the live job page; bulk triage; a combined "what should I work on next" view that merges high-priority feedback + high-priority workplan items.
+
+**Tradeoff against scope.** Moderate — feedback is already DB-native; the workplan view is a read-only markdown parser + an override table. No change to the canonical tracking model.
+
+**Linked items.** A-023, D-045, D-046, D-047.

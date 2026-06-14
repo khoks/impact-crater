@@ -30,6 +30,7 @@
 
 | ID | Title | Type | Done |
 |---|---|---|---|
+| **[S-2.9.9](./stories/S-2.9.9-developer-tracker-pages.md)** | **Developer tracker pages — feedback tracker + workplan tracker (editable priority) [A-024/D-047]** | Story | 2026-06-14 |
 | **[S-2.9.8](./stories/S-2.9.8-in-app-feedback-loop.md)** | **In-app feedback loop — per-phase diagnostics + decision-level feedback; +live-during-execution + page screenshots [A-023/N-015/D-045/D-046]** | Story | 2026-06-14 |
 | **A-018 / N-012** | **Auto trip cast — face inventory + group/crowd + coverage (analysis half) [D-044]** | Feature | 2026-06-11 |
 | **[S-2.9.5](./stories/S-2.9.5-cheap-first-analysis-hardening.md)** | **Cheap-first analysis (1024px renditions + scene subdivision) [D-043]** | Story | 2026-06-11 |
