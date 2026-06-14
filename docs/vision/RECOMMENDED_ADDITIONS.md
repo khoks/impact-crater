@@ -377,3 +377,35 @@ Each addition gets a heading with an `A-NNN` ID (monotonically incrementing, nev
 **Tradeoff against scope.** The biggest feature on the roadmap. Explicitly gated by D-042: not before single-video quality is mastered (A-016/A-017 and the v1 quality milestones are prerequisites, per the user: "unless the individual videos are acceptable quality, the package feature doesn't make sense — it is built on top of this capability").
 
 **Linked items.** N-013, N-005/A-012 (v1.2 multi-output seed), A-011/N-007 (shared analysis), D-042, ADR-0013, ROADMAP v2.
+
+---
+
+### A-021 — Media chronology: capture-time + GPS extraction and timeline-aware planning (2026-06-11)
+
+**Status:** accepted — phase **mvp-hardening (delivered 2026-06-11)**
+
+**Why this matters.** The 2026-06-11 audit found the app extracted ZERO capture metadata: no EXIF DateTimeOriginal, no filename-timestamp parsing (the files were literally named `PXL_20260405_223121903.jpg` and the time was discarded), no file mtime. EXIF was only ever *read to be stripped* for privacy — including GPS, which was thrown away rather than used. The narrative judge ordered clips purely on LLM-invented `placement_position` with zero time grounding, and `time_of_day` was a pixel guess. Without real chronology a "story" video can run events backwards, and trip segmentation / burst-window dedup / group-recurrence (A-017, A-018, A-020) are all impossible.
+
+**What it would look like (delivered).** A `media/timeline.py` that reconciles capture time across EXIF DateTimeOriginal > filename patterns (Pixel, IMG_/VID_, WhatsApp, Signal, screenshots, dashed) > file mtime, tagging each with `source` + `confidence` (N-014). EXIF GPS is decoded to decimal degrees. Stage 1 persists `capture_timestamp / capture_source / capture_confidence / gps_lat / gps_lon` (migration 003). The capture time flows to Stage 4 and into the Stage 5 judge prompt, which now defaults to a forward-in-time flow unless the brief calls for otherwise. Verified on real Zion media: EXIF datetime + GPS (37.21, -112.94) extracted correctly.
+
+**Open questions.** Video container creation_time (needs ffprobe — currently videos fall back to filename/mtime); timezone normalization across devices; surfacing capture confidence in the UI; reverse-geocoding GPS to place names for the brief.
+
+**Tradeoff against scope.** Small and foundational — pure-Python, reuses the already-present piexif dependency. Unblocks A-017 time-windows, A-018 recurrence, A-020 trip segmentation.
+
+**Linked items.** N-014, A-017, A-018, A-020, D-043, migration 003.
+
+---
+
+### A-022 — Rich-metadata schema enrichment: shot grammar, per-person expression, safety, specialness, obstructions (2026-06-11)
+
+**Status:** accepted — phase **mvp-hardening (delivered 2026-06-11)**
+
+**Why this matters.** The 2026-06-11 audit scored the metadata schema 6/15 of the user's desired fields fully present. Missing entirely: per-person facial expressions, description of non-main people, content-safety level, intrinsic specialness, cinematographic shot type, obstruction/non-value-crowd detection. The planner can't land an emotional peak on a big smile, vary framing, drop a blocked shot, or keep explicit frames out of a shareable artifact if it never extracted those signals.
+
+**What it would look like (delivered).** RichMetadataPhoto gains: `shot_type` (extreme_wide…macro), `main_subjects` (list of {descriptor, expression, prominence} — the people the shot is ABOUT, with their facial expressions), `other_people`, `scenery_description`, `background_description`, `camera_quality_notes` (textual rationale for the quality number), `specialness_score` (brief-independent memorability), `safety_level` (safe/mild/explicit), and `obstruction_level` + `obstruction_notes`. The extraction prompt asks for each; coercion-tolerant before-validators keep malformed LLM output from killing jobs; the summary the judge sees surfaces shot type + subject expressions + specialness + obstructions; Stage 4 drops `explicit` frames at a new safety floor.
+
+**Open questions.** Calibrating `specialness_score` against real usage; whether `safety_level=mild` should be a user-tunable gate; per-person expression accuracy at 1024px analysis resolution; using obstruction_level as a soft penalty in the combined score (currently informational to the judge).
+
+**Tradeoff against scope.** Moderate (additive schema + prompt; every field defaulted so old caches still validate). High leverage for single-video quality (D-042 gate).
+
+**Linked items.** A-021, A-018 (main_subjects feed the cast), D-043.

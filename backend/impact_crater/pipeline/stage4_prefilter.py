@@ -59,6 +59,11 @@ class PreFilterOverrides:
     weight_quality: float | None = None     # default α=0.3
     weight_narrative: float | None = None   # default β=0.5
     weight_diversity: float | None = None   # default γ=0.2
+    # A-017 best-of-burst semantic dedup. Cosine ≥ threshold within the
+    # time window collapses retakes to their best member. None → defaults;
+    # set threshold to 1.1 (impossible) to disable.
+    semantic_dedup_threshold: float | None = None      # default 0.93
+    semantic_dedup_window_seconds: int | None = None   # default 120
 
 
 # ---- Defaults ----------------------------------------------------------
@@ -69,6 +74,12 @@ _DEFAULT_DEDUP_FACTOR = 3
 _DEFAULT_LOCATION_CLUSTER_CAP = 10
 _DEFAULT_PHASH_HAMMING = 5
 _DEFAULT_WEIGHTS = (0.3, 0.5, 0.2)  # (quality, narrative, diversity)
+# A-017 best-of-burst: cosine ≥ this collapses retakes. Within the time
+# window we trust a moderate threshold; without timestamps we demand a
+# higher one (near-identical visuals) so different scenery never merges.
+_DEFAULT_SEMANTIC_DEDUP_THRESHOLD = 0.93
+_DEFAULT_SEMANTIC_DEDUP_WINDOW_S = 120
+_SEMANTIC_DEDUP_NO_TIME_THRESHOLD = 0.97
 
 
 # ---- Public API --------------------------------------------------------
@@ -95,6 +106,16 @@ def prefilter(
         else _DEFAULT_QUALITY_THRESHOLD
     )
     dedup_factor = overrides.dedup_factor if overrides.dedup_factor is not None else _DEFAULT_DEDUP_FACTOR
+    semantic_threshold = (
+        overrides.semantic_dedup_threshold
+        if overrides.semantic_dedup_threshold is not None
+        else _DEFAULT_SEMANTIC_DEDUP_THRESHOLD
+    )
+    semantic_window_s = (
+        overrides.semantic_dedup_window_seconds
+        if overrides.semantic_dedup_window_seconds is not None
+        else _DEFAULT_SEMANTIC_DEDUP_WINDOW_S
+    )
 
     # Build per-asset records: one per photo, one per video scene.
     assets = _join_assets(media, stage2, stage3)
@@ -104,17 +125,29 @@ def prefilter(
 
     filter_log: list[dict[str, Any]] = []
 
-    # Step 1 — quality floor.
-    after_quality = _apply_quality_floor(assets, quality_threshold, filter_log)
+    # Step 0 — safety floor (A-022). Drop explicit frames before anything
+    # else so they can never reach a shareable artifact. "mild" survives;
+    # only "explicit" is removed.
+    after_safety = _apply_safety_floor(assets, filter_log)
 
-    # Step 2 — dedup clusters via pHash.
+    # Step 1 — quality floor.
+    after_quality = _apply_quality_floor(after_safety, quality_threshold, filter_log)
+
+    # Step 2 — dedup clusters via pHash (near-identical pixels).
     dedup_clusters = _phash_clusters(after_quality)
     after_dedup = _apply_dedup(after_quality, dedup_clusters, dedup_factor, filter_log)
 
+    # Step 2b — semantic best-of-burst dedup (A-017): collapse retakes of
+    # the same moment (same pose/scene from a slightly different angle)
+    # that pHash misses, using the embedding + the capture timeline.
+    after_semantic = _apply_semantic_dedup(
+        after_dedup, weights, semantic_threshold, semantic_window_s, filter_log
+    )
+
     # Step 3 — location/time clusters.
-    location_clusters = _location_clusters(after_dedup)
+    location_clusters = _location_clusters(after_semantic)
     after_location = _cap_location_clusters(
-        after_dedup, location_clusters, _DEFAULT_LOCATION_CLUSTER_CAP, filter_log
+        after_semantic, location_clusters, _DEFAULT_LOCATION_CLUSTER_CAP, filter_log
     )
 
     # Step 4 — rank by combined score; assign placeholder diversity score
@@ -299,6 +332,14 @@ class _Asset:
     time_of_day: str | None
     raw_metadata: dict[str, Any] | None = None
     metadata_summary: str | None = None
+    # A-021 chronology + A-022 enrichment used by the filter + the judge.
+    capture_timestamp: str | None = None
+    capture_source: str | None = None
+    safety_level: str = "safe"
+    specialness_score: float = 0.5
+    obstruction_level: float = 0.0
+    embedding: Any = None  # numpy ndarray for semantic dedup (A-017)
+    burst_best_of: int = 1  # how many retakes this asset represents
 
     @property
     def key(self) -> str:
@@ -346,28 +387,79 @@ def _make_asset(
         time_of_day=metadata_dict.get("time_of_day") if metadata_dict else None,
         raw_metadata=metadata_dict,
         metadata_summary=_summarize_metadata(metadata_dict) if metadata_dict else None,
+        capture_timestamp=rec.capture_timestamp,
+        capture_source=rec.capture_source,
+        safety_level=str(metadata_dict.get("safety_level", "safe")) if metadata_dict else "safe",
+        specialness_score=float(metadata_dict.get("specialness_score", 0.5)) if metadata_dict else 0.5,
+        obstruction_level=float(metadata_dict.get("obstruction_level", 0.0)) if metadata_dict else 0.0,
+        embedding=getattr(s2, "embedding", None) if s2 else None,
     )
 
 
 def _summarize_metadata(md: dict[str, Any]) -> str:
-    """Compact text summary of the rich metadata for the Stage 5 prompt."""
+    """Compact text summary of the rich metadata for the Stage 5 prompt.
+
+    Surfaces the A-022 enrichment fields (shot type, main-subject
+    expressions, specialness, obstructions) so the narrative judge can
+    vary framing, find emotional peaks, and avoid blocked shots.
+    """
     parts: list[str] = []
+    if st := md.get("shot_type"):
+        if st != "ambiguous":
+            parts.append(f"shot={st}")
     if td := md.get("time_of_day"):
         parts.append(f"time={td}")
     if mood := md.get("mood"):
         parts.append(f"mood={mood}")
+    subjects = md.get("main_subjects") or []
+    if subjects:
+        faces = "; ".join(
+            f"{s.get('descriptor', '')}:{s.get('expression', '')}".strip(":")
+            for s in subjects[:3]
+            if s.get("descriptor") or s.get("expression")
+        )
+        if faces:
+            parts.append(f"subjects=[{faces}]")
+    if other := md.get("other_people"):
+        parts.append(f"others={other}")
     if light := md.get("lighting"):
         parts.append(f"lighting={light}")
+    if scenery := md.get("scenery_description"):
+        parts.append(f"scenery={scenery}")
     if loc := md.get("location", {}).get("description"):
         parts.append(f"loc={loc}")
-    if (people := md.get("people", {}).get("count")) is not None:
-        parts.append(f"people={people}")
+    spec = md.get("specialness_score")
+    if isinstance(spec, (int, float)) and spec >= 0.7:
+        parts.append(f"special={spec:.2f}")
+    obs = md.get("obstruction_level")
+    if isinstance(obs, (int, float)) and obs >= 0.3:
+        note = md.get("obstruction_notes") or "obstructed"
+        parts.append(f"obstruction={obs:.2f}({note})")
     if tags := md.get("generic_tags"):
         parts.append(f"tags={','.join(tags[:4])}")
     return " | ".join(parts)
 
 
 # ---- Filter steps -----------------------------------------------------
+
+
+def _apply_safety_floor(
+    assets: list[_Asset], filter_log: list[dict[str, Any]]
+) -> list[_Asset]:
+    out = []
+    for a in assets:
+        if a.safety_level == "explicit":
+            filter_log.append(
+                {
+                    "key": a.key,
+                    "decision": "drop",
+                    "reason": "safety_explicit",
+                    "safety_level": a.safety_level,
+                }
+            )
+        else:
+            out.append(a)
+    return out
 
 
 def _apply_quality_floor(
@@ -447,6 +539,103 @@ def _apply_dedup(
     return [a for a in assets if a.key in keep]
 
 
+def _apply_semantic_dedup(
+    assets: list[_Asset],
+    weights: tuple[float, float, float],
+    threshold: float,
+    window_seconds: int,
+    filter_log: list[dict[str, Any]],
+) -> list[_Asset]:
+    """Collapse retakes-of-the-same-moment to their best member (A-017).
+
+    Greedy single-pass clustering: an asset joins the first existing
+    cluster whose representative is both visually similar (cosine ≥
+    threshold) and close in capture time (≤ window). Assets without an
+    embedding are never clustered (pHash already handled exact dupes).
+    When BOTH assets carry timestamps the moderate threshold applies;
+    when a timestamp is missing we demand near-identical visuals so two
+    different scenes from across a trip never merge.
+    """
+    import numpy as np
+
+    clusters: list[list[_Asset]] = []
+    reps: list[np.ndarray] = []
+    for a in assets:
+        vec = _unit_vector(a.embedding)
+        if vec is None:
+            clusters.append([a])
+            reps.append(None)  # type: ignore[arg-type]
+            continue
+        placed = False
+        for ci, rep in enumerate(reps):
+            if rep is None:
+                continue
+            head = clusters[ci][0]
+            cos = float(np.dot(vec, rep))
+            both_timed = a.capture_timestamp and head.capture_timestamp
+            eff_threshold = threshold if both_timed else max(threshold, _SEMANTIC_DEDUP_NO_TIME_THRESHOLD)
+            if cos < eff_threshold:
+                continue
+            if both_timed and not _within_window(a, head, window_seconds):
+                continue
+            clusters[ci].append(a)
+            placed = True
+            break
+        if not placed:
+            clusters.append([a])
+            reps.append(vec)
+
+    kept: list[_Asset] = []
+    for cluster in clusters:
+        if len(cluster) == 1:
+            kept.append(cluster[0])
+            continue
+        ranked = sorted(
+            cluster,
+            key=lambda a: -_combined_score(a, weights, 1),
+        )
+        best = ranked[0]
+        best.burst_best_of = len(cluster)
+        kept.append(best)
+        for loser in ranked[1:]:
+            filter_log.append(
+                {
+                    "key": loser.key,
+                    "decision": "drop",
+                    "reason": "semantic_duplicate",
+                    "kept_key": best.key,
+                    "cluster_size": len(cluster),
+                }
+            )
+    return kept
+
+
+def _unit_vector(embedding: Any) -> Any:
+    """L2-normalize an embedding to a unit vector, or None if unusable."""
+    if embedding is None:
+        return None
+    import numpy as np
+
+    vec = np.asarray(embedding, dtype=np.float32).ravel()
+    if vec.size == 0:
+        return None
+    norm = float(np.linalg.norm(vec))
+    if norm == 0.0:
+        return None
+    return vec / norm
+
+
+def _within_window(a: _Asset, b: _Asset, window_seconds: int) -> bool:
+    from datetime import datetime
+
+    try:
+        ta = datetime.fromisoformat(a.capture_timestamp)  # type: ignore[arg-type]
+        tb = datetime.fromisoformat(b.capture_timestamp)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return True  # can't compare → don't let time block the merge
+    return abs((ta - tb).total_seconds()) <= window_seconds
+
+
 def _location_clusters(assets: list[_Asset]) -> dict[str, list[_Asset]]:
     """Group by (time_of_day, location_description) — coarse stand-in
     for true GPS clustering until M5 brings full EXIF parsing in."""
@@ -513,13 +702,20 @@ def _combined_score(
 
 
 def _to_candidate_ref(asset: _Asset) -> CandidateRef:
+    summary = asset.metadata_summary
+    if asset.burst_best_of > 1:
+        # Tell the judge this frame stands in for N retakes of one moment.
+        tag = f"burst_best_of={asset.burst_best_of}"
+        summary = f"{summary} | {tag}" if summary else tag
     return CandidateRef(
         content_hash=asset.content_hash,
         scene_index=asset.scene_index,
         caption=asset.caption or None,
-        metadata_summary=asset.metadata_summary,
+        metadata_summary=summary,
         quality_score=asset.quality_score,
         narrative_relevance=asset.narrative_relevance_score,
+        capture_timestamp=asset.capture_timestamp,
+        capture_source=asset.capture_source,
     )
 
 

@@ -23,7 +23,7 @@ import hashlib
 import logging
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from impact_crater.llm_clients.router import LLMRouter
 from impact_crater.pipeline.stage1_ingest import MediaRecord
@@ -56,11 +56,21 @@ async def run_stage2(
     pool = pool or default_pool()
     brief_hash = _short_hash(brief)
     work_items = list(_enumerate_assets(media))
+    # A-016 telemetry: how much smaller is the analysis payload than the
+    # originals? Renditions are sent to the VLM instead of source bytes.
+    analysis_bytes = sum(
+        p.stat().st_size for p in (Path(a.path) for a in work_items) if p.is_file()
+    )
+    source_bytes = sum(int(m.file_size or 0) for m in media)
     log.info(
-        "stage2_start asset_count=%d media_count=%d brief_hash=%s",
+        "stage2_start asset_count=%d media_count=%d brief_hash=%s "
+        "analysis_payload_bytes=%d source_bytes=%d payload_ratio=%.3f",
         len(work_items),
         len(media),
         brief_hash,
+        analysis_bytes,
+        source_bytes,
+        (analysis_bytes / source_bytes) if source_bytes else 1.0,
     )
 
     def _on_error(idx: int, item: Any, exc: BaseException) -> None:
@@ -99,7 +109,7 @@ async def run_stage2(
 
 async def _run_for_asset(
     router: LLMRouter,
-    asset: "_Asset",
+    asset: _Asset,
     brief: str,
     brief_hash: str,
 ) -> Stage2AssetOutputs:
@@ -135,7 +145,12 @@ async def _run_for_asset(
         if isinstance(value, BaseException):
             log.error("stage2 %s failed for %s: %s", label, asset.cache_hash, value)
             raise value
-    caption, quality, narrative, embedding = results  # type: ignore[misc]
+    # The loop above raised on any BaseException, so each result is its
+    # success type — cast so the type checker agrees.
+    caption = cast(str, results[0])
+    quality = cast(float, results[1])
+    narrative = cast(float, results[2])
+    embedding = cast(Any, results[3])
 
     return Stage2AssetOutputs(
         content_hash=asset.content_hash,
@@ -144,6 +159,7 @@ async def _run_for_asset(
         quality_score=float(quality),
         narrative_relevance_score=float(narrative),
         embedding_dim=int(embedding.shape[0]) if embedding.ndim == 1 else 0,
+        embedding=embedding if embedding.ndim == 1 else None,
     )
 
 
@@ -153,7 +169,7 @@ async def _run_for_asset(
 class _Asset:
     """One scoring unit: a photo (whole file) or a single video scene."""
 
-    __slots__ = ("content_hash", "scene_index", "path", "cache_hash")
+    __slots__ = ("cache_hash", "content_hash", "path", "scene_index")
 
     def __init__(
         self,
@@ -181,7 +197,11 @@ def _enumerate_assets(media: list[MediaRecord]) -> Iterable[_Asset]:
             yield _Asset(
                 content_hash=rec.content_hash,
                 scene_index=None,
-                path=Path(rec.source_path),
+                # A-016: analyze the 1024px rendition, not the 9-12 MB
+                # original. The cache keys on content_hash (the source
+                # file), so the uploaded bytes changing doesn't invalidate
+                # anything — it just sends ~10x less data per call.
+                path=Path(rec.thumb_1024_path or rec.source_path),
                 cache_hash=rec.content_hash,
             )
         elif rec.media_type == "video" and rec.scenes:

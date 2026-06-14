@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from impact_crater.pipeline.stage1_ingest import MediaRecord
 from impact_crater.pipeline.stage4_prefilter import (
     PreFilterOverrides,
@@ -16,7 +15,6 @@ from impact_crater.pipeline.types import (
     Stage2AssetOutputs,
     Stage3AssetOutputs,
 )
-
 
 # ---- Envelope math ----------------------------------------------------
 
@@ -111,6 +109,104 @@ def _records(count: int) -> tuple[
             )
         )
     return media, stage2, stage3
+
+
+def _spread_phash(i: int) -> str:
+    """Perceptual hash with Hamming distance > 5 between any two indices,
+    so the pHash pass leaves them as singletons and the SEMANTIC pass is
+    what gets exercised."""
+    bits = sum(((i + 1) << (k * 8)) & (0xFF << (k * 8)) for k in range(8))
+    return f"{bits & 0xFFFFFFFFFFFFFFFF:016x}"
+
+
+def test_semantic_dedup_keeps_best_of_burst() -> None:
+    """Three retakes (same embedding, same ~moment, but pHash-distinct
+    angles) collapse to the single best-quality member; distinct shots
+    survive (A-017)."""
+    import numpy as np
+
+    base = np.ones((8,), dtype=np.float32)
+    distinct = np.array([1, 0, 0, 0, 0, 0, 0, 0], dtype=np.float32)
+    media: list[MediaRecord] = []
+    stage2: list[Stage2AssetOutputs] = []
+    stage3: list[Stage3AssetOutputs] = []
+    # 3 retakes of one moment + 1 genuinely different shot.
+    specs = [
+        ("burst0", base, 0.6, "2026-04-05T16:31:21"),
+        ("burst1", base, 0.9, "2026-04-05T16:31:24"),  # best quality
+        ("burst2", base, 0.5, "2026-04-05T16:31:27"),
+        ("other", distinct, 0.8, "2026-04-05T18:00:00"),
+    ]
+    for i, (ch, emb, q, ts) in enumerate(specs):
+        phash = _spread_phash(i)
+        media.append(
+            MediaRecord(
+                content_hash=ch, source_path=f"/tmp/{ch}.jpg", media_type="photo",
+                file_size=1, quick_stats={"phash": phash, "dhash": phash},
+                capture_timestamp=ts, capture_source="exif",
+            )
+        )
+        stage2.append(
+            Stage2AssetOutputs(
+                content_hash=ch, caption=ch, quality_score=q,
+                narrative_relevance_score=0.6, embedding_dim=8, embedding=emb,
+            )
+        )
+        stage3.append(
+            Stage3AssetOutputs(
+                content_hash=ch,
+                metadata=RichMetadataPhoto(time_of_day="midday", location={"description": "trail"}),
+            )
+        )
+    cs = prefilter(
+        media=media, stage2=stage2, stage3=stage3, target_duration_seconds=10,
+        overrides=PreFilterOverrides(quality_threshold=0.0, target_size=10),
+    )
+    kept = {it.content_hash for it in cs.items}
+    # The burst collapses to its best member only; the distinct shot stays.
+    assert "burst1" in kept
+    assert "other" in kept
+    assert "burst0" not in kept and "burst2" not in kept
+    drops = [e for e in cs.filter_log if e.get("reason") == "semantic_duplicate"]
+    assert {d["key"] for d in drops} == {"burst0", "burst2"}
+    best = next(it for it in cs.items if it.content_hash == "burst1")
+    assert "burst_best_of=3" in (best.metadata_summary or "")
+
+
+def test_semantic_dedup_respects_time_window() -> None:
+    """Same embedding but captured far apart (recurring scenery on different
+    days) must NOT be merged when timestamps are present."""
+    import numpy as np
+
+    emb = np.ones((8,), dtype=np.float32)
+    media: list[MediaRecord] = []
+    stage2: list[Stage2AssetOutputs] = []
+    stage3: list[Stage3AssetOutputs] = []
+    for i, ts in enumerate(["2026-04-05T09:00:00", "2026-04-07T09:00:00"]):
+        ch = f"day{i}"
+        phash = _spread_phash(i)
+        media.append(
+            MediaRecord(
+                content_hash=ch, source_path=f"/tmp/{ch}.jpg", media_type="photo",
+                file_size=1, quick_stats={"phash": phash, "dhash": phash},
+                capture_timestamp=ts, capture_source="exif",
+            )
+        )
+        stage2.append(
+            Stage2AssetOutputs(content_hash=ch, caption=ch, quality_score=0.7,
+                              narrative_relevance_score=0.6, embedding_dim=8, embedding=emb)
+        )
+        stage3.append(
+            Stage3AssetOutputs(content_hash=ch,
+                              metadata=RichMetadataPhoto(time_of_day="morning",
+                                                         location={"description": f"spot{i}"}))
+        )
+    cs = prefilter(
+        media=media, stage2=stage2, stage3=stage3, target_duration_seconds=10,
+        overrides=PreFilterOverrides(quality_threshold=0.0, target_size=10),
+    )
+    # 2 days apart → both survive (window is 120s).
+    assert {it.content_hash for it in cs.items} == {"day0", "day1"}
 
 
 def test_prefilter_drops_low_quality_items() -> None:

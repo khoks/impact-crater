@@ -14,7 +14,6 @@ validator.
 from __future__ import annotations
 
 import pytest
-
 from impact_crater.pipeline.types import RichMetadataPhoto
 
 
@@ -38,6 +37,64 @@ def test_already_a_list_passes_through() -> None:
     raw = {"generic_tags": ["a", "b", "c"]}
     p = RichMetadataPhoto.model_validate(raw)
     assert p.generic_tags == ["a", "b", "c"]
+
+
+# ---- A-022 enrichment fields -------------------------------------------
+
+
+def test_new_fields_default_when_absent() -> None:
+    """Old cached metadata (pre-A-022) must still validate — every new
+    field has a default so re-reading a stale cache never breaks."""
+    p = RichMetadataPhoto.model_validate({"time_of_day": "midday"})
+    assert p.shot_type == "ambiguous"
+    assert p.main_subjects == []
+    assert p.other_people == ""
+    assert p.specialness_score == 0.5
+    assert p.safety_level == "safe"
+    assert p.obstruction_level == 0.0
+
+
+def test_main_subjects_structured() -> None:
+    raw = {
+        "main_subjects": [
+            {"descriptor": "woman, white cap, center", "expression": "broad smile", "prominence": 0.9},
+            {"descriptor": "child left", "expression": "laughing", "prominence": 0.5},
+        ]
+    }
+    p = RichMetadataPhoto.model_validate(raw)
+    assert len(p.main_subjects) == 2
+    assert p.main_subjects[0].expression == "broad smile"
+    assert p.main_subjects[0].prominence == 0.9
+
+
+def test_main_subjects_list_of_strings_coerced() -> None:
+    """VLM sometimes returns bare strings instead of objects."""
+    p = RichMetadataPhoto.model_validate({"main_subjects": ["adult man center", "woman right"]})
+    assert [m.descriptor for m in p.main_subjects] == ["adult man center", "woman right"]
+    assert all(m.expression == "" for m in p.main_subjects)
+
+
+def test_main_subjects_stringified_json_coerced() -> None:
+    p = RichMetadataPhoto.model_validate(
+        {"main_subjects": '[{"descriptor": "hiker", "expression": "tired"}]'}
+    )
+    assert p.main_subjects[0].descriptor == "hiker"
+    assert p.main_subjects[0].expression == "tired"
+
+
+def test_main_subjects_single_string_becomes_one_subject() -> None:
+    p = RichMetadataPhoto.model_validate({"main_subjects": "lone climber on ridge"})
+    assert len(p.main_subjects) == 1
+    assert p.main_subjects[0].descriptor == "lone climber on ridge"
+
+
+def test_shot_type_and_safety_validate() -> None:
+    p = RichMetadataPhoto.model_validate(
+        {"shot_type": "establishing", "safety_level": "safe", "obstruction_level": 0.3}
+    )
+    assert p.shot_type == "establishing"
+    assert p.safety_level == "safe"
+    assert p.obstruction_level == 0.3
 
 
 def test_empty_string_becomes_empty_list() -> None:

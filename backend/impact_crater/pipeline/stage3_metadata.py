@@ -99,7 +99,7 @@ async def run_stage3(
 
 async def _extract(
     router: LLMRouter,
-    asset: "_Asset",
+    asset: _Asset,
     *,
     brief: str,
     schema_photo: dict,
@@ -183,7 +183,7 @@ def _validate(
 
 
 class _Asset:
-    __slots__ = ("content_hash", "scene_index", "path", "cache_hash")
+    __slots__ = ("cache_hash", "content_hash", "path", "scene_index")
 
     def __init__(
         self,
@@ -205,7 +205,10 @@ def _enumerate_assets(media: list[MediaRecord]) -> Iterable[_Asset]:
             yield _Asset(
                 content_hash=rec.content_hash,
                 scene_index=None,
-                path=Path(rec.source_path),
+                # A-016: analyze the 1024px rendition, not the full-size
+                # original. Cache keys on content_hash so this is a pure
+                # bandwidth/latency win, not a cache invalidation.
+                path=Path(rec.thumb_1024_path or rec.source_path),
                 cache_hash=rec.content_hash,
             )
         elif rec.media_type == "video" and rec.scenes:

@@ -36,6 +36,10 @@ class CandidateRef:
     metadata_summary: str | None = None
     quality_score: float | None = None
     narrative_relevance: float | None = None
+    # Capture chronology (A-021) — the judge uses this to default to a
+    # forward-in-time flow unless the brief calls for a different structure.
+    capture_timestamp: str | None = None  # ISO 8601, or None if unknown
+    capture_source: str | None = None  # exif / filename / file_mtime / none
 
 
 @dataclass

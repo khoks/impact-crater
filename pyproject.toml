@@ -124,6 +124,7 @@ module = [
     "pillow_heif.*",
     "librosa.*",
     "soundfile.*",
+    "piexif.*",
 ]
 ignore_missing_imports = true
 

@@ -8,12 +8,40 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from PIL import Image
-
 from impact_crater import paths as paths_mod
 from impact_crater.pipeline import stage1_ingest
 from impact_crater.storage.db import connection
 from impact_crater.storage.migrations import run_pending_migrations
+from PIL import Image
+
+# ---- A-016 scene subdivision (pure function) ---------------------------
+
+
+def test_short_scenes_pass_through_unchanged() -> None:
+    bounds = [(0.0, 5.0), (5.0, 9.0)]
+    out = stage1_ingest._subdivide_long_scenes(bounds, max_len=12.0, target_len=8.0)
+    assert out == bounds
+
+
+def test_long_scene_is_subdivided() -> None:
+    # A single 60s take → ~8 sub-scenes of ~7.5s, contiguous, covering [0,60].
+    out = stage1_ingest._subdivide_long_scenes([(0.0, 60.0)], max_len=12.0, target_len=8.0)
+    assert len(out) == 8
+    assert out[0][0] == 0.0
+    assert out[-1][1] == 60.0
+    # Contiguous, non-overlapping.
+    from itertools import pairwise
+
+    for (a1, b1), (a2, _b2) in pairwise(out):
+        assert b1 == pytest.approx(a2)
+        assert b1 > a1
+
+
+def test_scene_just_over_threshold_splits_in_two() -> None:
+    out = stage1_ingest._subdivide_long_scenes([(10.0, 23.0)], max_len=12.0, target_len=8.0)
+    assert len(out) == 2
+    assert out[0][0] == 10.0
+    assert out[-1][1] == 23.0
 
 
 # ---- Fixtures ----------------------------------------------------------
@@ -160,6 +188,34 @@ async def test_ingest_writes_source_sidecar(synthetic_jpeg: Path) -> None:
     assert payload["media_type"] == "photo"
     assert payload["quick_stats"]["width"] == 320
     assert payload["quick_stats"]["height"] == 240
+
+
+@pytest.mark.usefixtures("db_initialized")
+async def test_ingest_backfills_capture_columns_on_existing_row(
+    synthetic_jpeg: Path,
+) -> None:
+    """A row ingested before chronology existed (NULL capture columns) must
+    be backfilled on re-ingest — INSERT OR IGNORE would have left it NULL."""
+    records = await stage1_ingest.ingest_media("proj-bf", [synthetic_jpeg])
+    ch = records[0].content_hash
+    # Simulate a pre-chronology row: wipe the capture columns.
+    async with connection() as db:
+        await db.execute(
+            "UPDATE media SET capture_timestamp=NULL, capture_source=NULL, "
+            "capture_confidence=0 WHERE content_hash=?",
+            (ch,),
+        )
+        await db.commit()
+    # Re-ingest → upsert backfills.
+    await stage1_ingest.ingest_media("proj-bf", [synthetic_jpeg])
+    async with connection() as db:
+        cur = await db.execute(
+            "SELECT capture_timestamp, capture_source FROM media WHERE content_hash=?",
+            (ch,),
+        )
+        row = await cur.fetchone()
+    assert row["capture_source"] is not None  # filename/mtime always yields something
+    assert row["capture_timestamp"] is not None
 
 
 @pytest.mark.usefixtures("db_initialized")

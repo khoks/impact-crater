@@ -20,16 +20,17 @@
 
 | ID | Title | Type | Priority | Phase |
 |---|---|---|---|---|
-| [S-2.9.5](./stories/S-2.9.5-cheap-first-analysis-hardening.md) | Cheap-first analysis hardening — thumbs to LLMs + time-bounded scene sampling | Story | P2 | v1 |
-| [S-2.9.6](./stories/S-2.9.6-semantic-near-duplicate-suppression.md) | Semantic near-duplicate suppression — best-of-burst in Stage 4 | Story | P2 | v1 |
 | [S-2.9.4](./stories/S-2.9.4-crossfade-transitions-slow-tempo.md) | Crossfade transitions on slow-tempo music (ADR-0011/0012) | Story | P3 | v1 |
 
-> 2026-06-11 grooming: the **Trip Package** north star (A-020/N-013, v2) + auto trip cast (A-018/N-012) + crowd removal (A-019) are groomed in the vision docs; per D-042 the package is gated on single-video quality mastery — S-2.9.5/S-2.9.6 are the first two stories of that gate. Project items for v2 features are created when v2 opens (per D-039 precedent).
+> **2026-06-11 prep-phase overhaul (D-043):** the preparation phase was rebuilt before the heavier features. **Delivered:** A-021 media chronology (EXIF/filename/mtime reconciliation + GPS read; the judge now orders forward-in-time), A-022 rich-metadata enrichment (shot type, per-person expression, safety, specialness, obstructions), A-016 cheap-first analysis (~47× smaller payloads), A-017 best-of-burst semantic dedup. **Awaiting user decision:** A-018 auto trip cast / main-people ID (face-embedding dependency choice) + A-019 crowd removal (generative backend + privacy). Trip Package (A-020/N-013, v2) stays gated on single-video quality (D-042).
 
 ## Recently Done (this session)
 
 | ID | Title | Type | Done |
 |---|---|---|---|
+| **[S-2.9.5](./stories/S-2.9.5-cheap-first-analysis-hardening.md)** | **Cheap-first analysis (1024px renditions + scene subdivision) [D-043]** | Story | 2026-06-11 |
+| **[S-2.9.6](./stories/S-2.9.6-semantic-near-duplicate-suppression.md)** | **Best-of-burst semantic dedup (time-windowed) [D-043]** | Story | 2026-06-11 |
+| **A-021 / A-022** | **Media chronology + GPS + rich-metadata enrichment (prep-phase overhaul, D-043)** | Feature | 2026-06-11 |
 | **[S-2.9.2](./stories/S-2.9.2-dashboard-project-list-render-history.md)** | **Dashboard project list + render history + inline playback (+ Content-Disposition fix)** | Story | 2026-06-11 |
 | **[S-2.9.3](./stories/S-2.9.3-persist-project-brief-and-name.md)** | **Persist brief + name on project rows at job submit** | Story | 2026-06-11 |
 | **[S-2.9.1](./stories/S-2.9.1-validation-hotfixes-2026-06-11.md)** | **Validation hot-fixes 2026-06-11 — cache poisoning (D-040), beat-snap (D-041), audio fade, EXIF; PRs #35–#37** | Story | 2026-06-11 |
