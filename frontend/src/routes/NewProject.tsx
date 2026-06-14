@@ -236,8 +236,8 @@ export default function NewProject() {
               placeholder="Intro should be slow scenic shots. Chorus is the summit attempt — the climbing footage. Bridge should be the rest stop with the kids playing. Outro is the sunset shots from the way back."
             />
             <p className="mt-1 text-xs text-slate-500">
-              Free-text — the narrative judge reads this verbatim alongside
-              the music's section structure.
+              Free-text — the AI reads this as guidance alongside the song's
+              section structure.
             </p>
           </Field>
         )}
@@ -256,7 +256,7 @@ export default function NewProject() {
           disabled={!canSubmit}
           className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
         >
-          Continue → effort & cost
+          Continue → cost preview
         </button>
       </div>
     </main>

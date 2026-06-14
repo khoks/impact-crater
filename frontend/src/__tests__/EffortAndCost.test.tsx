@@ -208,9 +208,9 @@ describe("EffortAndCost", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Start Job/i })).not.toBeDisabled();
+      expect(screen.getByRole("button", { name: /Create my video/i })).not.toBeDisabled();
     });
-    await user.click(screen.getByRole("button", { name: /Start Job/i }));
+    await user.click(screen.getByRole("button", { name: /Create my video/i }));
     await waitFor(() => {
       expect(screen.getByText("JOB_ROUTE")).toBeInTheDocument();
     });
@@ -269,6 +269,6 @@ describe("EffortAndCost", () => {
     await waitFor(() => {
       expect(screen.getByText(/Spend cap isn't configured/)).toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: /Start Job/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Create my video/i })).toBeDisabled();
   });
 });

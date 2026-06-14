@@ -88,17 +88,21 @@ export default function Dashboard() {
         </nav>
       </header>
 
-      <section className="mt-8">
+      <section className="mt-8 rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-6">
+        <h2 className="text-xl font-semibold text-slate-900">
+          Turn your photos and videos into a video worth sharing — in one click.
+        </h2>
+        <p className="mt-2 max-w-2xl text-sm text-slate-600">
+          Drop in your media, describe the video you want in your own words and
+          where you'll post it, and hit Create. The AI does the rest — and shows
+          you a preview before anything is published.
+        </p>
         <Link
           to="/projects/new"
-          className="inline-block rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+          className="mt-4 inline-block rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
         >
-          New Project
+          Create a video
         </Link>
-        <p className="mt-2 text-xs text-slate-400">
-          Drop a folder of photos + an audio file; pick an effort level; get a
-          Story Video preview.
-        </p>
       </section>
 
       {loaded && !hasAnything && (
