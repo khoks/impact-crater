@@ -8,11 +8,14 @@ query the table) and act on the improvements.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
+from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from impact_crater import paths
@@ -33,6 +36,9 @@ class FeedbackRequest(BaseModel):
     content_hash: str | None = Field(default=None, max_length=64)
     comment: str | None = Field(default=None, max_length=4000)
     context: dict[str, Any] | None = None
+    # A page screenshot captured at submit time (data URL: "data:image/png;base64,...").
+    # Best-effort — saved to disk if present; never required.
+    screenshot_data_url: str | None = Field(default=None, max_length=20_000_000)
 
 
 class FeedbackResponse(BaseModel):
@@ -88,6 +94,16 @@ async def post_feedback(req: FeedbackRequest) -> FeedbackResponse:
         ).fetchone()
 
     created_at = row["created_at"] if row else ""
+
+    # Save the page screenshot (best-effort) and record its path.
+    screenshot_path = _save_screenshot(int(new_id or 0), req.screenshot_data_url)
+    if screenshot_path:
+        async with connection() as db:
+            await db.execute(
+                "UPDATE feedback SET screenshot_path = ? WHERE id = ?",
+                (screenshot_path, new_id),
+            )
+            await db.commit()
     _append_jsonl(
         {
             "id": new_id,
@@ -101,6 +117,7 @@ async def post_feedback(req: FeedbackRequest) -> FeedbackResponse:
             "content_hash": req.content_hash,
             "comment": req.comment,
             "context": req.context,
+            "screenshot_path": screenshot_path,
         }
     )
     log.info(
@@ -153,6 +170,48 @@ async def list_feedback(
         )
         for r in rows
     ]
+
+
+@router.get("/{feedback_id}/screenshot.png")
+async def get_feedback_screenshot(feedback_id: int) -> FileResponse:
+    """Serve the page screenshot captured with a feedback item, if any."""
+    async with connection() as db:
+        row = await (
+            await db.execute(
+                "SELECT screenshot_path FROM feedback WHERE id = ?", (feedback_id,)
+            )
+        ).fetchone()
+    if row is None or not row["screenshot_path"]:
+        raise HTTPException(status_code=404, detail="no screenshot for this feedback")
+    p = Path(row["screenshot_path"])
+    if not p.is_absolute():
+        p = paths.home() / row["screenshot_path"]  # stored relative to the home dir
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail="screenshot file missing")
+    return FileResponse(p, media_type="image/png", content_disposition_type="inline")
+
+
+def _save_screenshot(feedback_id: int, data_url: str | None) -> str | None:
+    """Decode a base64 PNG data URL and save it; return the path relative to
+    the home dir (so it's portable), or None. Best-effort."""
+    if not data_url or feedback_id <= 0:
+        return None
+    try:
+        if "," in data_url:
+            _, b64 = data_url.split(",", 1)
+        else:
+            b64 = data_url
+        raw = base64.b64decode(b64)
+        if not raw:
+            return None
+        rel = f"feedback_screenshots/{feedback_id}.png"
+        dest = paths.home() / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(raw)
+        return rel
+    except Exception as exc:
+        log.warning("feedback_screenshot_save_failed id=%s error=%r", feedback_id, str(exc)[:200])
+        return None
 
 
 def _append_jsonl(payload: dict[str, Any]) -> None:

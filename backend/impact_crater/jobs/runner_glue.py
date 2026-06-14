@@ -64,6 +64,9 @@ class _RegistryReporter:
             return
         await self._registry.update_stage(self._job_id, sid, state="failed", detail=detail)
 
+    async def phase_diagnostics(self, phase_doc: dict[str, Any]) -> None:
+        await self._registry.emit_diagnostics(self._job_id, phase_doc)
+
 
 def _make_router_sink(registry: JobRegistry, job_id: str):
     async def _sink(payload: dict[str, Any]) -> None:

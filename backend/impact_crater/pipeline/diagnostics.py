@@ -31,6 +31,10 @@ def _thumb_url(content_hash: str) -> str:
     return f"/api/media/{content_hash}/thumb.jpg"
 
 
+# Stable phase order for both the persisted doc and the live stream.
+PHASE_ORDER = ["stage_4_prefilter", "cast", "stage_5_judge", "stage_6_plan"]
+
+
 def build_diagnostics(
     *,
     project_id: str,
@@ -42,18 +46,15 @@ def build_diagnostics(
     media: list[Any],
 ) -> dict[str, Any]:
     """Assemble the per-phase diagnostics document for one render."""
-    item_by_key: dict[str, Any] = {}
-    for it in candidate_set.items:
-        key = it.content_hash + (f"#{it.scene_index}" if it.scene_index is not None else "")
-        item_by_key[key] = it
-
     phases: list[dict[str, Any]] = [
-        _stage4_phase(candidate_set, item_by_key),
-        _stage5_phase(arc_judgment),
-        _stage6_phase(plan),
+        phase_stage4(candidate_set),
+        phase_stage5(arc_judgment),
+        phase_stage6(plan),
     ]
     if cast is not None:
-        phases.append(_cast_phase(cast))
+        phases.append(phase_cast(cast))
+    # Order consistently with the live stream.
+    phases.sort(key=lambda p: PHASE_ORDER.index(p["phase"]) if p["phase"] in PHASE_ORDER else 99)
 
     return {
         "schema_version": 1,
@@ -61,6 +62,26 @@ def build_diagnostics(
         "snapshot_id": snapshot_id,
         "phases": phases,
     }
+
+
+def phase_stage4(candidate_set: Any) -> dict[str, Any]:
+    item_by_key: dict[str, Any] = {}
+    for it in candidate_set.items:
+        key = it.content_hash + (f"#{it.scene_index}" if it.scene_index is not None else "")
+        item_by_key[key] = it
+    return _stage4_phase(candidate_set, item_by_key)
+
+
+def phase_stage5(arc_judgment: Any) -> dict[str, Any]:
+    return _stage5_phase(arc_judgment)
+
+
+def phase_stage6(plan: Any) -> dict[str, Any]:
+    return _stage6_phase(plan)
+
+
+def phase_cast(cast: Any) -> dict[str, Any]:
+    return _cast_phase(cast)
 
 
 def _stage4_phase(candidate_set: Any, item_by_key: dict[str, Any]) -> dict[str, Any]:

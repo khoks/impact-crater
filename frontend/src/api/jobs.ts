@@ -114,6 +114,14 @@ export type JobProgressEvent =
       job_id: string;
       timestamp: string;
       payload: { message: string };
+    }
+  | {
+      type: "diagnostics";
+      job_id: string;
+      timestamp: string;
+      // payload.doc is a DiagnosticPhase (see api/diagnostics.ts); typed
+      // loosely here to avoid a circular import.
+      payload: { phase: string; doc: Record<string, unknown> };
     };
 
 

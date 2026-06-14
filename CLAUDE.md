@@ -131,7 +131,9 @@ python scripts/feedback.py show <id>      # full decision context for one item
 python scripts/feedback.py mark <id> addressed   # after you've acted on it
 ```
 
-Each item names the `phase`, `verdict`, the specific `content_hash` / `decision_ref`, the user's `comment`, and a `context` snapshot of the decision the UI showed. Use it to drive concrete pipeline improvements (tune Stage 4 thresholds, adjust prompts, fix a mis-selection), then mark the item `addressed`.
+Each item names the `phase`, `verdict`, the specific `content_hash` / `decision_ref`, the user's `comment`, a `context` snapshot of the decision the UI showed, and a `screenshot_path` (a PNG of the whole page at submit time, under `~/.impact-crater/feedback_screenshots/`, viewable at `GET /api/feedback/{id}/screenshot.png` — `Read` the file to see exactly what the user saw).
+
+**Acting on feedback is open-ended — think bigger than a threshold tweak.** Resolving a feedback item can legitimately mean any of: tuning an existing threshold or weight (e.g. Stage 4 dedup/quality), editing a prompt, adding a **new heuristic rule or custom instruction**, building a **new AI module / pipeline step** (e.g. a dedicated re-ranker, a new scoring dimension, a verification pass), tuning or swapping an existing model/backend, or adding/reordering steps in job execution. Pick the smallest change that genuinely fixes the class of problem the feedback points at — and when it's a new module/step/heuristic, create the matching `project/` work item (and an ADR if it changes architecture) before building. Then mark the item `addressed`.
 
 ---
 

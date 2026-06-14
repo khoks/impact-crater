@@ -18,6 +18,8 @@ import {
   type JobSnapshot,
   type StageProgress,
 } from "../api/jobs";
+import { DiagnosticsView } from "../components/DiagnosticsPanel";
+import type { DiagnosticPhase } from "../api/diagnostics";
 
 const STAGE_LABELS: Record<string, string> = {
   stage_1_ingest: "Ingest",
@@ -71,6 +73,8 @@ export default function JobInProgress() {
   const [briefOpen, setBriefOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  // Live per-phase diagnostics streamed as each phase completes (A-023).
+  const [livePhases, setLivePhases] = useState<Record<string, DiagnosticPhase>>({});
   const wsRef = useRef<WebSocket | null>(null);
 
   // Tick the wall clock every second so elapsed-time / "updated Xs ago"
@@ -106,9 +110,19 @@ export default function JobInProgress() {
       } catch {
         return;
       }
+      if (event.type === "diagnostics") {
+        const doc = event.payload.doc as unknown as DiagnosticPhase;
+        if (doc?.phase) {
+          setLivePhases((prev) => ({ ...prev, [doc.phase]: doc }));
+        }
+        setLastUpdate(Date.now());
+        return;
+      }
       setSnapshot((prev) => applyEvent(prev, event));
       setLastUpdate(Date.now());
       if (event.type === "state" && event.payload.state === "succeeded") {
+        // Live diagnostics streamed during the run; the preview page shows
+        // the same decisions (persisted) + feedback, so navigate straight there.
         navigate(`/jobs/${job_id}/preview`, { replace: true });
       }
     };
@@ -334,9 +348,37 @@ export default function JobInProgress() {
           </div>
         </aside>
       </section>
+
+      {Object.keys(livePhases).length > 0 && (
+        <section className="mt-6 rounded border border-slate-200 bg-slate-50 p-4">
+          <h2 className="text-sm font-semibold text-slate-700">
+            Decisions so far
+          </h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Each phase's decisions appear here as it finishes — open one to see
+            what was kept/dropped and why, and click “Feedback” on anything that
+            looks wrong. Your input is saved for Claude to act on later.
+          </p>
+          <DiagnosticsView
+            phases={LIVE_PHASE_ORDER.flatMap((p) =>
+              livePhases[p] ? [livePhases[p]] : []
+            )}
+            jobId={job_id}
+            projectId={snapshot.project_id}
+            snapshotId={snapshot.snapshot_id ?? undefined}
+          />
+        </section>
+      )}
     </main>
   );
 }
+
+const LIVE_PHASE_ORDER = [
+  "stage_4_prefilter",
+  "cast",
+  "stage_5_judge",
+  "stage_6_plan",
+];
 
 // -- Stage row -----------------------------------------------------------
 
@@ -508,6 +550,7 @@ function applyEvent(prev: JobSnapshot | null, event: JobProgressEvent): JobSnaps
       };
     case "render":
     case "log":
+    case "diagnostics":
       return prev;
   }
 }

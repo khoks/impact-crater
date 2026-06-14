@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  capturePageScreenshot,
   fetchDiagnostics,
   submitFeedback,
   type DiagnosticDecision,
@@ -23,6 +24,7 @@ interface FeedbackTarget {
   decision: DiagnosticDecision;
 }
 
+// Fetch-mode wrapper: loads a completed snapshot's diagnostics (Preview page).
 export default function DiagnosticsPanel({
   snapshotId,
   jobId,
@@ -35,9 +37,6 @@ export default function DiagnosticsPanel({
   const [diag, setDiag] = useState<Diagnostics | null>(null);
   const [missing, setMissing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [openPhases, setOpenPhases] = useState<Set<string>>(new Set());
-  const [target, setTarget] = useState<FeedbackTarget | null>(null);
-  const [givenCount, setGivenCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,15 +54,6 @@ export default function DiagnosticsPanel({
     };
   }, [snapshotId]);
 
-  function togglePhase(phase: string) {
-    setOpenPhases((prev) => {
-      const next = new Set(prev);
-      if (next.has(phase)) next.delete(phase);
-      else next.add(phase);
-      return next;
-    });
-  }
-
   if (missing) {
     return (
       <p className="mt-2 text-xs text-slate-500">
@@ -80,6 +70,50 @@ export default function DiagnosticsPanel({
   }
 
   return (
+    <DiagnosticsView
+      phases={diag.phases}
+      snapshotId={snapshotId}
+      jobId={jobId}
+      projectId={projectId}
+    />
+  );
+}
+
+// Pure renderer — used both by the fetch wrapper (Preview) and by the live
+// in-progress view (JobInProgress), which feeds phases in as they stream.
+export function DiagnosticsView({
+  phases,
+  snapshotId,
+  jobId,
+  projectId,
+}: {
+  phases: DiagnosticPhase[];
+  snapshotId?: string;
+  jobId?: string;
+  projectId?: string;
+}) {
+  const [openPhases, setOpenPhases] = useState<Set<string>>(new Set());
+  const [target, setTarget] = useState<FeedbackTarget | null>(null);
+  const [givenCount, setGivenCount] = useState(0);
+
+  function togglePhase(phase: string) {
+    setOpenPhases((prev) => {
+      const next = new Set(prev);
+      if (next.has(phase)) next.delete(phase);
+      else next.add(phase);
+      return next;
+    });
+  }
+
+  if (phases.length === 0) {
+    return (
+      <p className="mt-2 text-xs text-slate-500">
+        Waiting for the first phase to finish…
+      </p>
+    );
+  }
+
+  return (
     <div className="mt-3 space-y-3">
       {givenCount > 0 && (
         <p className="rounded bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
@@ -87,7 +121,7 @@ export default function DiagnosticsPanel({
           Claude to “pick up the submitted feedback” in a future session.
         </p>
       )}
-      {diag.phases.map((phase) => (
+      {phases.map((phase) => (
         <PhaseSection
           key={phase.phase}
           phase={phase}
@@ -224,7 +258,7 @@ function FeedbackModal({
   onSaved,
 }: {
   target: FeedbackTarget;
-  snapshotId: string;
+  snapshotId?: string;
   jobId?: string;
   projectId?: string;
   onClose: () => void;
@@ -240,6 +274,10 @@ function FeedbackModal({
     setSaving(true);
     setError(null);
     try {
+      // Capture the whole page (best-effort) so the saved feedback records
+      // exactly what the user was looking at. The modal itself is excluded
+      // from the capture (tagged data-ic-skip-capture).
+      const screenshot = await capturePageScreenshot();
       await submitFeedback({
         phase,
         verdict,
@@ -250,6 +288,7 @@ function FeedbackModal({
         decision_ref: decisionRef(decision),
         comment: comment.trim() || undefined,
         context: decision as unknown as Record<string, unknown>,
+        screenshot_data_url: screenshot,
       });
       onSaved();
     } catch (e) {
@@ -261,6 +300,7 @@ function FeedbackModal({
 
   return (
     <div
+      data-ic-skip-capture="true"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onClick={onClose}
       role="dialog"
