@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
+import DiagnosticsPanel from "../components/DiagnosticsPanel";
 import { getJob, postRefine, type JobSnapshot, type RefineResponse } from "../api/jobs";
 import {
   ALL_PLATFORMS,
@@ -41,6 +42,9 @@ export default function JobPreview() {
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [publishResult, setPublishResult] = useState<PublishResponse | null>(null);
+
+  // Diagnostics + feedback (A-023).
+  const [diagOpen, setDiagOpen] = useState(false);
 
   useEffect(() => {
     if (!job_id) return;
@@ -171,6 +175,13 @@ export default function JobPreview() {
       <div className="mt-8 flex items-center justify-end gap-3">
         <button
           type="button"
+          onClick={() => setDiagOpen((v) => !v)}
+          className="mr-auto rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          {diagOpen ? "Hide diagnostics" : "Inspect & give feedback"}
+        </button>
+        <button
+          type="button"
           onClick={() => {
             setRefineOpen((v) => !v);
             setRefineResult(null);
@@ -195,6 +206,25 @@ export default function JobPreview() {
       <p className="mt-2 text-right text-xs text-slate-400">
         Approve uploads this MP4 to your connected YouTube account.
       </p>
+
+      {diagOpen && (
+        <section className="mt-6 rounded border border-slate-200 bg-slate-50 p-4">
+          <h2 className="text-sm font-semibold text-slate-700">
+            Per-phase decisions
+          </h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Open any phase to see exactly what was decided — what media was
+            kept or dropped and why, how the arc was ordered, the final clips.
+            Click “Feedback” on anything that looks wrong; your input is saved
+            for Claude to act on later.
+          </p>
+          <DiagnosticsPanel
+            snapshotId={snapshot.snapshot_id}
+            jobId={job_id}
+            projectId={snapshot.project_id}
+          />
+        </section>
+      )}
 
       {refineOpen && (
         <section className="mt-6 rounded border border-slate-200 bg-white p-4">

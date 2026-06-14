@@ -514,6 +514,17 @@ async def run_full_pipeline(
     if headless.cast is not None:
         _write_coverage(headless.project_id, plan.snapshot_id, headless.cast, plan)
 
+    # A-023 per-phase diagnostics for the in-app feedback loop.
+    _write_diagnostics(
+        headless.project_id,
+        plan.snapshot_id,
+        candidate_set=headless.candidate_set,
+        arc_judgment=headless.arc_judgment,
+        plan=plan,
+        cast=headless.cast,
+        media=headless.media,
+    )
+
     await reporter.stage_completed(
         "stage_6_plan", detail=f"{len(plan.clips)} clips"
     )
@@ -614,6 +625,35 @@ def _write_coverage(project_id: str, snapshot_id: str, cast: Any, plan: Any) -> 
             )
     except Exception as exc:  # noqa: BLE001 — coverage is best-effort
         log.warning("coverage_failed project_id=%s error=%r", project_id, str(exc)[:200])
+
+
+def _write_diagnostics(
+    project_id: str,
+    snapshot_id: str,
+    *,
+    candidate_set: Any,
+    arc_judgment: Any,
+    plan: Any,
+    cast: Any,
+    media: list[Any],
+) -> None:
+    """Persist the per-phase diagnostics document (A-023) next to the plan."""
+    from impact_crater.pipeline import diagnostics as diag
+
+    try:
+        doc = diag.build_diagnostics(
+            project_id=project_id,
+            snapshot_id=snapshot_id,
+            candidate_set=candidate_set,
+            arc_judgment=arc_judgment,
+            plan=plan,
+            cast=cast,
+            media=media,
+        )
+        snap_dir = stage6_plan.snapshot_dir(project_id, snapshot_id)
+        (snap_dir / "diagnostics.json").write_text(json.dumps(doc, indent=2), encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001 — diagnostics are best-effort
+        log.warning("diagnostics_failed project_id=%s error=%r", project_id, str(exc)[:200])
 
 
 def _estimate_cost_per_provider(media_count: int) -> dict[str, float]:

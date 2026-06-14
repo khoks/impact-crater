@@ -409,3 +409,19 @@ Each addition gets a heading with an `A-NNN` ID (monotonically incrementing, nev
 **Tradeoff against scope.** Moderate (additive schema + prompt; every field defaulted so old caches still validate). High leverage for single-video quality (D-042 gate).
 
 **Linked items.** A-021, A-018 (main_subjects feed the cast), D-043.
+
+---
+
+### A-023 — In-app feedback loop: per-phase diagnostics + decision-level feedback capture (2026-06-14)
+
+**Status:** **delivered 2026-06-14** (D-045)
+
+**Why this matters.** The user wants to keep improving the app's video-creation quality with low-friction inputs tied to specific decisions — not vague "make it better" asks. The pipeline already makes thousands of inspectable decisions (Stage 4 keep/drop with reasons, Stage 5 narrative selection + roles, Stage 6 clips, the trip cast), but they were invisible: the user could only see the final video, so feedback could only be coarse. Making each decision visible and feedback-able, and persisting that feedback where a Claude session can pick it up, turns the whole product into a steerable, continuously-improving system.
+
+**What it would look like (delivered).** The pipeline persists a `diagnostics.json` per snapshot (every phase's decisions with media thumbnails). The preview page's "Inspect & give feedback" opens per-phase panels; clicking any decision opens a popup to mark it correct / incorrect / should-be-different with a note. Feedback is stored in a `feedback` table + mirrored to `~/.impact-crater/feedback.jsonl`; `scripts/feedback.py list|show|mark` (documented in CLAUDE.md) lets a Claude session pick it up and act on it, then mark items addressed.
+
+**Open questions / follow-ons.** Live per-phase popups DURING execution (currently post-completion, which covers the need); feedback-driven auto-tuning (aggregate many "this was wrongly dropped" into a threshold change automatically); a feedback inbox UI in-app; linking an addressed item back to the commit that fixed it.
+
+**Tradeoff against scope.** Moderate — built entirely on artifacts the pipeline already produces (no new LLM calls). High leverage: it's the mechanism by which the user's taste (the stated quality bar) gets encoded into the app over time.
+
+**Linked items.** N-015, D-045, A-017/A-018 (whose decisions are the most feedback-rich), D-042 (single-video-quality gate this directly serves).

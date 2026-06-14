@@ -407,3 +407,14 @@ The mechanism complements (does not replace) N-002's cost-optimizing operation-a
 - **What's novel:** Treating capture time as a *reconciled, confidence-tagged* signal rather than a single trusted field, specifically so a downstream planner can decide when to follow chronology and when to override it. The user's own insight — that filenames and timestamps "can be misleading sometimes" — is encoded as first-class confidence rather than ignored. Photo-management tools read one source (usually EXIF) and treat it as ground truth; the reconciliation-with-confidence-for-planning combination is the non-obvious part.
 - **Prior art known:** ExifTool / Photos apps read EXIF DateTimeOriginal; many tools fall back to mtime. Confidence-tagged multi-source reconciliation feeding a curation planner: unknown.
 - **Linked items:** A-021, A-017 (time-windowed dedup), A-018 (recurrence breadth), A-020 (trip segmentation), D-043.
+
+---
+
+### N-015 — Decision-level feedback loop with out-of-band Claude pickup (2026-06-14)
+
+- **Date conceived:** 2026-06-14 (user session — "a feedback mechanism via which the app keeps getting enhanced when I give you inputs")
+- **Public commit risk:** this PR publishes the idea on a public repo; user accepts public-by-default posture (CLAUDE.md). Flagged per protocol.
+- **Mechanism:** Every deterministic + LLM decision the curation pipeline makes is persisted as an inspectable per-phase diagnostics document tied to the exact media it concerns. The user reviews these in-app and attaches a structured verdict (correct / incorrect / should-differ) + note to any single decision. That feedback is stored both in a queryable table and an append-only JSONL, and a CLI surfaces it to a *separate AI coding agent* (Claude Code) which reads the feedback, makes the corresponding code/prompt/threshold change, and marks the item addressed — closing a loop from "user disagrees with this specific automated decision" to "the system's behavior changed", without the user writing a bug report.
+- **What's novel:** The bridge between an end-user product's decision-level feedback and an AI software-engineering agent's backlog. Most apps collect feedback for humans to trIage; here the feedback is shaped (phase + decision_ref + media + context snapshot) specifically so an autonomous coding agent can act on it directly, and the loop is explicitly designed around that handoff (the JSONL + `scripts/feedback.py` + the CLAUDE.md pickup protocol). It makes the user's individual taste the training signal for the app's curation behavior, applied through code changes rather than model weights.
+- **Prior art known:** RLHF / thumbs-up-down feedback (aggregate, model-weight-directed); analytics event capture; bug-report tools. Decision-level product feedback routed to an AI coding agent as actionable engineering tasks: unknown.
+- **Linked items:** A-023, D-045, N-010 (cross-project profile — a complementary learning loop), D-042.
