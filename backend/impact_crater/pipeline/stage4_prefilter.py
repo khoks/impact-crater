@@ -92,8 +92,14 @@ def prefilter(
     stage3: list[Stage3AssetOutputs],
     target_duration_seconds: int,
     overrides: PreFilterOverrides | None = None,
+    cast: Any = None,
 ) -> CandidateSet:
-    """Run the deterministic Stage 4 pre-filter."""
+    """Run the deterministic Stage 4 pre-filter.
+
+    `cast` (optional A-018 CastInventory): when present, each asset's
+    metadata summary is annotated with the group members visible in it so
+    the Stage 5 judge can curate cast-aware ("don't leave anyone out").
+    """
     overrides = overrides or PreFilterOverrides()
     weights = (
         overrides.weight_quality if overrides.weight_quality is not None else _DEFAULT_WEIGHTS[0],
@@ -119,6 +125,8 @@ def prefilter(
 
     # Build per-asset records: one per photo, one per video scene.
     assets = _join_assets(media, stage2, stage3)
+    if cast is not None:
+        _annotate_cast(assets, cast)
     input_count = len(assets)
     floor, ceiling = compute_envelope(input_count, target_duration_seconds)
     target_size = _resolve_target_size(input_count, floor, ceiling, overrides.target_size)
@@ -394,6 +402,20 @@ def _make_asset(
         obstruction_level=float(metadata_dict.get("obstruction_level", 0.0)) if metadata_dict else 0.0,
         embedding=getattr(s2, "embedding", None) if s2 else None,
     )
+
+
+def _annotate_cast(assets: list[_Asset], cast: Any) -> None:
+    """Append `cast=[P1,P2]` (group members present) to each asset's
+    metadata summary so the Stage 5 judge curates cast-aware (A-018)."""
+    by_hash = getattr(cast, "group_persons_by_hash", None)
+    if not by_hash:
+        return
+    for a in assets:
+        pids = by_hash.get(a.content_hash)
+        if not pids:
+            continue
+        tag = f"cast={','.join(pids)}"
+        a.metadata_summary = f"{a.metadata_summary} | {tag}" if a.metadata_summary else tag
 
 
 def _summarize_metadata(md: dict[str, Any]) -> str:

@@ -22,12 +22,14 @@
 |---|---|---|---|---|
 | [S-2.9.4](./stories/S-2.9.4-crossfade-transitions-slow-tempo.md) | Crossfade transitions on slow-tempo music (ADR-0011/0012) | Story | P3 | v1 |
 
-> **2026-06-11 prep-phase overhaul (D-043):** the preparation phase was rebuilt before the heavier features. **Delivered:** A-021 media chronology (EXIF/filename/mtime reconciliation + GPS read; the judge now orders forward-in-time), A-022 rich-metadata enrichment (shot type, per-person expression, safety, specialness, obstructions), A-016 cheap-first analysis (~47× smaller payloads), A-017 best-of-burst semantic dedup. **Awaiting user decision:** A-018 auto trip cast / main-people ID (face-embedding dependency choice) + A-019 crowd removal (generative backend + privacy). Trip Package (A-020/N-013, v2) stays gated on single-video quality (D-042).
+> **2026-06-11 prep-phase overhaul (D-043):** the preparation phase was rebuilt before the heavier features. **Delivered:** A-021 media chronology (EXIF/filename/mtime reconciliation + GPS read; the judge now orders forward-in-time), A-022 rich-metadata enrichment (shot type, per-person expression, safety, specialness, obstructions), A-016 cheap-first analysis (~47× smaller payloads), A-017 best-of-burst semantic dedup.
+> **2026-06-11 auto trip cast (D-044):** A-018 analysis half delivered — detect→embed→cluster→group/crowd-by-recurrence-breadth→coverage report, pluggable backends (gemini cloud default / insightface optional local); also fixed face detection (mediapipe 0.10.35 dropped `mp.solutions`, which had silently disabled privacy-blur too). **Next:** A-019 crowd removal (remote-API default / local-generative optional per D-044) builds on the cast. Trip Package (A-020/N-013, v2) stays gated on single-video quality (D-042).
 
 ## Recently Done (this session)
 
 | ID | Title | Type | Done |
 |---|---|---|---|
+| **A-018 / N-012** | **Auto trip cast — face inventory + group/crowd + coverage (analysis half) [D-044]** | Feature | 2026-06-11 |
 | **[S-2.9.5](./stories/S-2.9.5-cheap-first-analysis-hardening.md)** | **Cheap-first analysis (1024px renditions + scene subdivision) [D-043]** | Story | 2026-06-11 |
 | **[S-2.9.6](./stories/S-2.9.6-semantic-near-duplicate-suppression.md)** | **Best-of-burst semantic dedup (time-windowed) [D-043]** | Story | 2026-06-11 |
 | **A-021 / A-022** | **Media chronology + GPS + rich-metadata enrichment (prep-phase overhaul, D-043)** | Feature | 2026-06-11 |

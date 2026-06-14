@@ -59,7 +59,7 @@ Cross-references:
 | Rich-metadata enrichment (shot type, per-person expression, safety, specialness, obstructions) | **delivered 2026-06-11** | The planner can land emotional peaks, vary framing, drop blocked/explicit shots | A-022, D-043 |
 | Cheap-first analysis hardening (thumbs to LLMs + time-bounded scene sampling) | **delivered 2026-06-11** | 1024px renditions feed every LLM call; long scenes subdivided | A-016, S-2.9.5, D-043 |
 | Semantic near-duplicate suppression (best-of-burst) | **delivered 2026-06-11** | Embedding-similarity clustering, time-windowed, keeps the best retake | A-017, S-2.9.6, D-043 |
-| Auto-derived trip cast + coverage-aware curation | v1-late / v2 | Unique-face inventory, group-vs-crowd inference, "is everyone included?" | A-018, N-012 |
+| Auto-derived trip cast + coverage-aware curation | **delivered 2026-06-11 (analysis half)** | Unique-face inventory, group-vs-crowd by recurrence breadth, coverage report; gemini default / insightface optional (D-044) | A-018, N-012, D-044 |
 
 ### 3. Story Video generation
 

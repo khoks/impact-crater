@@ -36,9 +36,22 @@ from impact_crater.pipeline.runner import (
 )
 from impact_crater.pipeline.stage4_prefilter import PreFilterOverrides
 from impact_crater.pipeline.stage7_render import RenderError
+from impact_crater.storage import settings as settings_store
 from impact_crater.storage.db import connection
 
 router = APIRouter()
+
+
+async def _resolve_cast_settings() -> tuple[bool, str | None]:
+    """Read the A-018 cast-analysis posture from settings (enabled by
+    default; gemini cloud backend by default)."""
+    enabled_raw = await settings_store.get_value(
+        settings_store.KEY_CAST_ANALYSIS_ENABLED, default="true"
+    )
+    backend = await settings_store.get_value(
+        settings_store.KEY_CAST_BACKEND, default="gemini"
+    )
+    return (str(enabled_raw).strip().lower() != "false", backend)
 
 
 async def _upsert_project(project_id: str, *, name: str, brief: str) -> None:
@@ -309,6 +322,7 @@ async def post_submit_job(req: SubmitJobRequest) -> SubmitJobResponse:
             detail=str(exc),
         ) from exc
 
+    enable_cast, cast_backend = await _resolve_cast_settings()
     snap = submit_full_pipeline_job(
         media_paths=[Path(p) for p in req.media_paths],
         brief=req.brief,
@@ -319,6 +333,8 @@ async def post_submit_job(req: SubmitJobRequest) -> SubmitJobResponse:
         mode=req.mode,
         section_to_media_nl=req.section_to_media_nl,
         project_name=req.project_name,
+        enable_cast=enable_cast,
+        cast_backend=cast_backend,
     )
     await _upsert_project(snap.project_id, name=req.project_name, brief=req.brief)
     return SubmitJobResponse(

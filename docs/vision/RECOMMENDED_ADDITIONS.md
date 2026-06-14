@@ -330,7 +330,7 @@ Each addition gets a heading with an `A-NNN` ID (monotonically incrementing, nev
 
 ### A-018 — Auto-derived trip cast: unique-face inventory, group-vs-crowd, coverage analysis (2026-06-11)
 
-**Status:** accepted — phase **v1-late / v2** (design N-012)
+**Status:** **analysis half delivered 2026-06-11** (D-044) — detect→embed→cluster→group/crowd→coverage with pluggable backends (gemini default / insightface optional); coverage-repair UI + person naming + the v1.8 LLM-driven refinements remain. (design N-012)
 
 **Why this matters.** N-008's person library is manual: the user enrolls people by picking face photos. For the dump-and-forget workflow the user described on 2026-06-11, the app should figure out the cast itself: scan the full media set, cluster unique faces, infer who is "the group" (recurs across days/locations) versus background crowd (appears once), then use that inventory during curation — including answering "is everyone included in the final video, or did we leave someone out?"
 
