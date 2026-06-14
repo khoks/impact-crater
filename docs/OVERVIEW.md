@@ -1,5 +1,7 @@
 # Impact Crater — Product & Architecture Overview
 
+![Impact Crater — from raw media to masterpiece: drop media and describe your vision, the AI analyzes quality and narrative flow, hardware-adaptive processing balances power and cost, a human-in-the-loop approval gate, and refine results in plain language](From_Raw_Media_to_Masterpiece.png)
+
 > **What this document is.** A single, self-contained explanation of the whole
 > application: what it does, what it produces, how it works end to end, the
 > techniques behind it, its architecture and key flows, and where it is headed.
