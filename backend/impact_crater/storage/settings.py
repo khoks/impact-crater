@@ -21,6 +21,10 @@ KEY_GOOGLE_API_KEY = "google_api_key"                # encrypted
 KEY_TOTAL_CAP_USD = "spend_cap_total_usd"            # plain numeric string
 KEY_ANTHROPIC_CAP_USD = "spend_cap_anthropic_usd"    # plain numeric string (or "")
 KEY_GOOGLE_CAP_USD = "spend_cap_google_usd"          # plain numeric string (or "")
+# A-018 auto trip cast. enabled = "true"|"false"; backend = "gemini" (cloud
+# default) | "insightface" (optional local upgrade for capable machines).
+KEY_CAST_ANALYSIS_ENABLED = "cast_analysis_enabled"  # "true" | "false"
+KEY_CAST_BACKEND = "cast_backend"                    # "gemini" | "insightface"
 
 
 async def set_value(key: str, value: str, *, encrypted: bool = False) -> None:

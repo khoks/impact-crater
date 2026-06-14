@@ -33,6 +33,7 @@ from impact_crater.media.music import (
     generate_cut_grid,
 )
 from impact_crater.pipeline import (
+    cast_builder,
     stage1_ingest,
     stage2_bulk_ops,
     stage3_metadata,
@@ -88,6 +89,7 @@ class HeadlessJobResult:
     correlation_id: str
     media: list[Any] = field(default_factory=list)  # MediaRecord; typed Any to avoid forward-ref dance
     quota_snapshot: dict[str, Any] = field(default_factory=dict)
+    cast: Any = None  # A-018 CastInventory (or None when disabled)
 
 
 @dataclass
@@ -99,6 +101,10 @@ class HeadlessJobConfig:
     music_spec: MusicSpec | None = None
     project_id: str | None = None  # auto-generated if not supplied
     overrides: PreFilterOverrides | None = None
+    # A-018 auto trip cast. Enabled by default; backend resolved from
+    # settings (gemini cloud default / insightface optional local).
+    enable_cast: bool = True
+    cast_backend: str | None = None
 
 
 class QuotaDeniedError(RuntimeError):
@@ -222,6 +228,27 @@ async def run_headless_pipeline(
             "stage_3_metadata", detail=f"{len(stage3)} extracted"
         )
 
+        # Stage 3.5 — auto trip cast (A-018). Fail-soft: any error or a
+        # missing face model yields an empty inventory and the pipeline
+        # proceeds unchanged.
+        cast_inventory = None
+        if config.enable_cast:
+            try:
+                cast_inventory = await cast_builder.build_cast(
+                    media=media,
+                    stage3=stage3,
+                    router=router,
+                    backend=config.cast_backend,
+                )
+                _persist_cast(project_id, cast_inventory)
+            except Exception as exc:  # noqa: BLE001 — cast is best-effort
+                log.warning(
+                    "cast_analysis_failed project_id=%s error=%r — proceeding without cast",
+                    project_id,
+                    str(exc)[:200],
+                )
+                cast_inventory = None
+
         # Stage 4
         await reporter.stage_started("stage_4_prefilter")
         candidate_set = stage4_prefilter.prefilter(
@@ -230,6 +257,7 @@ async def run_headless_pipeline(
             stage3=stage3,
             target_duration_seconds=config.target_duration_seconds,
             overrides=config.overrides,
+            cast=cast_inventory,
         )
         await reporter.stage_completed(
             "stage_4_prefilter",
@@ -268,6 +296,7 @@ async def run_headless_pipeline(
             correlation_id=correlation_id,
             media=media,
             quota_snapshot=quota_snapshot,
+            cast=cast_inventory,
         )
     except Exception as exc:
         telemetry.emit(
@@ -297,6 +326,8 @@ class FullJobConfig:
     section_to_media_nl: str | None = None  # M4: optional NL spec
     project_id: str | None = None
     overrides: PreFilterOverrides | None = None
+    enable_cast: bool = True
+    cast_backend: str | None = None
 
 
 @dataclass
@@ -382,6 +413,8 @@ async def run_full_pipeline(
         music_spec=music_spec_for_judge,
         project_id=config.project_id,
         overrides=config.overrides,
+        enable_cast=config.enable_cast,
+        cast_backend=config.cast_backend,
     )
     headless = await run_headless_pipeline(
         headless_config,
@@ -477,6 +510,10 @@ async def run_full_pipeline(
                 sg_result.overall_confidence,
             )
 
+    # A-018 coverage report: are all group members represented in the cut?
+    if headless.cast is not None:
+        _write_coverage(headless.project_id, plan.snapshot_id, headless.cast, plan)
+
     await reporter.stage_completed(
         "stage_6_plan", detail=f"{len(plan.clips)} clips"
     )
@@ -532,6 +569,51 @@ async def run_full_pipeline(
 
 
 # ---- Helpers ----------------------------------------------------------
+
+
+def _persist_cast(project_id: str, cast: Any) -> None:
+    """Write the cast inventory to `{project}/cast.json` (A-018) — the
+    reusable 'standard set of unique faces' the user asked for."""
+    from dataclasses import asdict
+
+    from impact_crater import paths
+
+    try:
+        proj_dir = paths.projects_dir() / project_id
+        proj_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "persons": [asdict(p) for p in cast.persons],
+            "group_persons_by_hash": cast.group_persons_by_hash,
+        }
+        (proj_dir / "cast.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001 — persistence is best-effort
+        log.warning("cast_persist_failed project_id=%s error=%r", project_id, str(exc)[:200])
+
+
+def _write_coverage(project_id: str, snapshot_id: str, cast: Any, plan: Any) -> None:
+    """Compute + persist the group-coverage report for this render (A-018):
+    which group members are present in / missing from the selected clips."""
+    from dataclasses import asdict
+
+    from impact_crater.media.cast import compute_coverage
+
+    try:
+        selected = {c.candidate_ref.split("#")[0] for c in plan.clips}
+        report = compute_coverage(cast, selected)
+        snap_dir = stage6_plan.snapshot_dir(project_id, snapshot_id)
+        (snap_dir / "coverage.json").write_text(
+            json.dumps(asdict(report), indent=2), encoding="utf-8"
+        )
+        if report.missing_person_ids:
+            log.info(
+                "coverage_gap project_id=%s snapshot_id=%s group_size=%d missing=%s",
+                project_id,
+                snapshot_id,
+                report.group_size,
+                report.missing_person_ids,
+            )
+    except Exception as exc:  # noqa: BLE001 — coverage is best-effort
+        log.warning("coverage_failed project_id=%s error=%r", project_id, str(exc)[:200])
 
 
 def _estimate_cost_per_provider(media_count: int) -> dict[str, float]:

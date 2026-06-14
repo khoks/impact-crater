@@ -90,6 +90,8 @@ def submit_full_pipeline_job(
     mode: str = "standard",
     section_to_media_nl: str | None = None,
     project_name: str = "",
+    enable_cast: bool = True,
+    cast_backend: str | None = None,
 ) -> JobSnapshot:
     """Register a new job + spawn the background task. Returns immediately."""
     registry = get_registry()
@@ -116,6 +118,8 @@ def submit_full_pipeline_job(
         mode=mode,  # type: ignore[arg-type]
         section_to_media_nl=section_to_media_nl,
         project_id=final_project_id,
+        enable_cast=enable_cast,
+        cast_backend=cast_backend,
     )
     reporter = _RegistryReporter(registry, job_id)
     router.set_progress_sink(_make_router_sink(registry, job_id))
