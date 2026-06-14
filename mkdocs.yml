@@ -1,0 +1,53 @@
+site_name: Impact Crater
+site_description: An AI-driven photo & video curator — turn a pile of media plus a one-line brief into a ready-to-share, music-scored video.
+site_url: https://khoks.github.io/impact-crater/
+repo_url: https://github.com/khoks/impact-crater
+repo_name: khoks/impact-crater
+
+# Built by the GitHub Pages workflow, which assembles `site-src/` from the
+# external-facing docs only (docs/OVERVIEW.md → index.md) — the internal
+# architecture/decision/vision docs are NOT published.
+docs_dir: site-src
+site_dir: site
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep orange
+      accent: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep orange
+      accent: deep orange
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.top
+    - navigation.tracking
+    - toc.integrate
+    - content.code.copy
+    - search.highlight
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/khoks/impact-crater

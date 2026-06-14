@@ -1,3 +1,7 @@
+# --- Docs site build (GitHub Pages, MkDocs) ---
+/site/
+/site-src/
+
 # --- OS ---
 .DS_Store
 Thumbs.db
