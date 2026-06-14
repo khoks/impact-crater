@@ -17,10 +17,27 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 TimeOfDay = Literal[
     "morning", "midday", "golden_hour", "dusk", "night", "indoor", "ambiguous"
 ]
+
+# Cinematographic shot scale (A-022) — lets the planner vary framing and
+# pick establishing shots for openers, close-ups for emotional peaks.
+ShotType = Literal[
+    "extreme_wide",
+    "wide",
+    "establishing",
+    "medium",
+    "close_up",
+    "extreme_close_up",
+    "aerial",
+    "macro",
+    "ambiguous",
+]
+
+# Content-safety gate (A-022) — keeps explicit frames out of shareable
+# artifacts without the user having to pre-screen the dump.
+SafetyLevel = Literal["safe", "mild", "explicit"]
 
 
 def _coerce_str_list(value: Any) -> Any:
@@ -140,6 +157,52 @@ class RecognizedPerson(BaseModel):
     bbox_in_photo: tuple[float, float, float, float] | None = None  # (x, y, w, h)
 
 
+def _coerce_main_subjects(value: Any) -> Any:
+    """Before-validator for `main_subjects` (A-022).
+
+    The VLM is asked for a list of {descriptor, expression, prominence}
+    objects, but occasionally emits a bare list of strings or a stringified
+    JSON array. Recover both shapes; a plain string becomes one subject's
+    descriptor so nothing is lost.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return []
+        try:
+            parsed = json.loads(s)
+            value = parsed
+        except (json.JSONDecodeError, ValueError):
+            return [{"descriptor": s}]
+    if isinstance(value, dict):
+        return [value]
+    if isinstance(value, list):
+        out: list[Any] = []
+        for item in value:
+            if isinstance(item, str):
+                out.append({"descriptor": item})
+            elif isinstance(item, (dict, BaseModel)):
+                out.append(item)
+        return out
+    return value
+
+
+class MainSubject(BaseModel):
+    """One prominent person in the shot (A-022).
+
+    Separates the people the shot is ABOUT (main subjects, with their
+    facial expressions) from incidental background people. Feeds both
+    curation (pick the warm-smile peak) and, later, the auto trip cast.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+    descriptor: str = ""  # "adult woman, white cap, center"
+    expression: str = ""  # "broad smile", "contemplative", "laughing"
+    prominence: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
 class RichMetadataPhoto(BaseModel):
     """The D-009 per-photo rich-metadata schema."""
 
@@ -160,6 +223,31 @@ class RichMetadataPhoto(BaseModel):
     task_context_tags: list[str] = Field(default_factory=list)
     recognized_persons: list[RecognizedPerson] = Field(default_factory=list)
 
+    # ---- A-022 enrichment: shot grammar, people, safety, specialness ----
+    # Cinematographic shot scale — drives framing variety in the timeline.
+    shot_type: ShotType = "ambiguous"
+    # The people the shot is ABOUT, each with their facial expression,
+    # separated from incidental background people.
+    main_subjects: list[MainSubject] = Field(default_factory=list)
+    # Aggregate one-liner for non-main people ("crowd of hikers behind").
+    other_people: str = ""
+    # Visual scenery / environment detail beyond the location one-liner.
+    scenery_description: str = ""
+    # What sits behind the subjects (depth, architecture, landscape).
+    background_description: str = ""
+    # Textual rationale for the quality score (why it's high or low):
+    # "tack sharp, well exposed" vs "motion blur on subject, blown sky".
+    camera_quality_notes: str = ""
+    # Intrinsic memorability / visual uniqueness, INDEPENDENT of the brief
+    # (narrative_relevance is the brief-dependent counterpart in Stage 2).
+    specialness_score: float = Field(default=0.5, ge=0.0, le=1.0)
+    # Content-safety gate — keeps explicit frames out of shareable output.
+    safety_level: SafetyLevel = "safe"
+    # How much the shot is blocked by obstructions / non-value crowd
+    # (0 = clean, 1 = subject mostly occluded). Pairs with the notes.
+    obstruction_level: float = Field(default=0.0, ge=0.0, le=1.0)
+    obstruction_notes: str = ""
+
     # Stringified-list tolerance: Anthropic tool_use sometimes returns a
     # CSV-quoted string (`'a", "b", "c"]'`) instead of a JSON array for
     # these fields. Real-world failure mode caught by Times Square smoke
@@ -178,6 +266,7 @@ class RichMetadataPhoto(BaseModel):
     # to an empty observation. See _coerce_people_obs / _coerce_location_obs.
     _coerce_people = field_validator("people", mode="before")(_coerce_people_obs)
     _coerce_location = field_validator("location", mode="before")(_coerce_location_obs)
+    _coerce_main_subjects = field_validator("main_subjects", mode="before")(_coerce_main_subjects)
 
 
 class RichMetadataVideoScene(RichMetadataPhoto):
@@ -195,13 +284,17 @@ class Stage2AssetOutputs(BaseModel):
     can pass Stage2 results around cheaply.
     """
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", arbitrary_types_allowed=True)
     content_hash: str
     scene_index: int | None = None
     caption: str = ""
     quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
     narrative_relevance_score: float = Field(default=0.0, ge=0.0, le=1.0)
     embedding_dim: int = 0  # populated when the embedding is computed
+    # The actual embedding vector (numpy ndarray), carried in-memory for
+    # Stage 4 semantic dedup (A-017). Excluded from serialization — it was
+    # computed every job and discarded before; now Stage 4 consumes it.
+    embedding: Any = Field(default=None, exclude=True, repr=False)
 
 
 class Stage3AssetOutputs(BaseModel):

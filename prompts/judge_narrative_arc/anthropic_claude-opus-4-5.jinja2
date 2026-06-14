@@ -33,7 +33,9 @@ section. Honor the user's section_to_media spec where the candidate set
 allows; flag in `arc_reasoning` where it doesn't.
 {% endif %}
 
-You are given a pre-filtered candidate set of {{ candidates|length }} items. Each candidate is a photo or video scene with its content_hash, optional scene_index, caption, summarized metadata, quality score (0–1), and a per-candidate narrative-relevance hint (0–1, computed deterministically by Stage 4 — treat as a hint, not gospel).
+You are given a pre-filtered candidate set of {{ candidates|length }} items. Each candidate is a photo or video scene with its content_hash, optional scene_index, caption, summarized metadata, quality score (0–1), a per-candidate narrative-relevance hint (0–1, computed deterministically by Stage 4 — treat as a hint, not gospel), and (where known) its real capture time.
+
+Chronology: most candidates carry a `captured` timestamp extracted from the photo's EXIF / filename. A trip or event Story Video usually reads best flowing FORWARD in time. Default to a broadly chronological order; you may deviate for a strong opener, a thematic callback, or to honor the brief — but when you depart from chronology, say so briefly in `arc_reasoning`. Treat `captured=?` (unknown time) items as freely placeable. The `subjects=[...]` field gives each main person's facial expression — use it to land emotional peaks (big smiles, laughter) at the right beat; the `shot=` field gives the cinematographic scale — favor a wide/establishing shot for the opener and vary framing so consecutive clips aren't all the same scale.
 
 Candidates. The `ref` line for each is the **only** valid value for that
 candidate's `selected_items.candidate_ref` field — copy the whole string
@@ -41,6 +43,7 @@ including any `#scene_index` suffix verbatim. **Do NOT output an integer
 or short index — your output must contain the full hex content_hash.**
 {% for c in candidates %}
 ref={{ c.content_hash }}{% if c.scene_index is not none %}#{{ c.scene_index }}{% endif %}
+    captured: {{ c.capture_timestamp if c.capture_timestamp else "?" }}
     caption: {{ c.caption or "(no caption)" }}
     metadata_summary: {{ c.metadata_summary or "(no metadata)" }}
     quality_score: {{ "%.2f"|format(c.quality_score) if c.quality_score is not none else "n/a" }}

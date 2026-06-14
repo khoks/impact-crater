@@ -19,6 +19,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -31,11 +32,11 @@ try:  # pragma: no cover — env-specific
 except ImportError:  # pragma: no cover
     pass
 
+import imagehash
 from PIL import Image, ImageOps
 
-import imagehash
-
 from impact_crater import paths
+from impact_crater.media import timeline
 from impact_crater.storage.db import connection
 from impact_crater.workers import WorkerPool, default_pool
 
@@ -66,6 +67,13 @@ class MediaRecord:
     thumb_256_path: str | None = None
     thumb_1024_path: str | None = None
     scenes: list[SceneRecord] | None = None  # videos only
+    # Chronology (A-021): capture time reconciled across EXIF / filename /
+    # mtime, plus its source + confidence so the planner can weigh it.
+    capture_timestamp: str | None = None  # ISO 8601
+    capture_source: str | None = None  # "exif" / "filename" / "file_mtime" / "none"
+    capture_confidence: float = 0.0
+    gps_lat: float | None = None
+    gps_lon: float | None = None
 
 
 _PHOTO_EXTS = {
@@ -96,6 +104,13 @@ _VIDEO_EXTS = {
 _DEFAULT_SCENE_CAP = 50
 # Per ADR-0010 — 3 representative frames per scene (start, middle, end).
 _FRAMES_PER_SCENE = 3
+# A-016 time-bounded sampling: a single long take (e.g. a 60s pan) would
+# otherwise be ONE scene summarized by 3 frames — badly under-sampled.
+# Subdivide any detected scene longer than _MAX_SCENE_SECONDS into
+# sub-scenes of ~_TARGET_SUBSCENE_SECONDS so each stretch gets its own
+# metadata and becomes its own candidate.
+_MAX_SCENE_SECONDS = 12.0
+_TARGET_SUBSCENE_SECONDS = 8.0
 
 
 # ---- Public API --------------------------------------------------------
@@ -198,6 +213,8 @@ def _ingest_photo(
         "phash": phash_hex,
         "dhash": dhash_hex,
     }
+    ct = timeline.extract_capture_time(path, is_photo=True)
+    gps = timeline.extract_gps(path, is_photo=True)
     return MediaRecord(
         content_hash=content_hash,
         source_path=str(path),
@@ -206,6 +223,11 @@ def _ingest_photo(
         quick_stats=quick_stats,
         thumb_256_path=str(thumb_256),
         thumb_1024_path=str(thumb_1024),
+        capture_timestamp=ct.iso,
+        capture_source=ct.source,
+        capture_confidence=ct.confidence,
+        gps_lat=gps.lat if gps else None,
+        gps_lon=gps.lon if gps else None,
     )
 
 
@@ -279,6 +301,7 @@ def _ingest_video(
         "frame_count": frame_count,
         "scene_count": len(scenes),
     }
+    ct = timeline.extract_capture_time(path, is_photo=False)
     return MediaRecord(
         content_hash=content_hash,
         source_path=str(path),
@@ -286,6 +309,9 @@ def _ingest_video(
         file_size=file_size,
         quick_stats=quick_stats,
         scenes=scenes,
+        capture_timestamp=ct.iso,
+        capture_source=ct.source,
+        capture_confidence=ct.confidence,
     )
 
 
@@ -301,7 +327,7 @@ def _detect_scenes(
     cuts (typical for a synthetic test video).
     """
     import cv2
-    from scenedetect import detect, ContentDetector
+    from scenedetect import ContentDetector, detect
 
     try:
         scene_list = detect(str(path), ContentDetector())
@@ -318,12 +344,16 @@ def _detect_scenes(
         # Single-scene fallback: cover the whole video.
         scene_list = [_pseudo_scene(0.0, duration, fps, frame_count)]
 
-    if len(scene_list) > scene_cap:
-        scene_list = scene_list[:scene_cap]
+    # Convert to (start_s, end_s) bounds, then subdivide long takes so a
+    # single 60s scene isn't summarized by 3 frames (A-016).
+    bounds = [_scene_bounds(sc) for sc in scene_list]
+    bounds = _subdivide_long_scenes(bounds)
+
+    if len(bounds) > scene_cap:
+        bounds = bounds[:scene_cap]
 
     out: list[SceneRecord] = []
-    for i, sc in enumerate(scene_list):
-        start_s, end_s = _scene_bounds(sc)
+    for i, (start_s, end_s) in enumerate(bounds):
         frames = _extract_frames(cap, fps, start_s, end_s, scene_dir, i)
         out.append(
             SceneRecord(
@@ -334,6 +364,29 @@ def _detect_scenes(
             )
         )
     cap.release()
+    return out
+
+
+def _subdivide_long_scenes(
+    bounds: list[tuple[float, float]],
+    *,
+    max_len: float = _MAX_SCENE_SECONDS,
+    target_len: float = _TARGET_SUBSCENE_SECONDS,
+) -> list[tuple[float, float]]:
+    """Split any (start, end) longer than `max_len` into near-equal
+    sub-intervals of ~`target_len` so long takes are sampled densely."""
+    out: list[tuple[float, float]] = []
+    for start_s, end_s in bounds:
+        dur = end_s - start_s
+        if dur <= max_len:
+            out.append((start_s, end_s))
+            continue
+        parts = max(2, math.ceil(dur / target_len))
+        step = dur / parts
+        for k in range(parts):
+            a = start_s + k * step
+            b = end_s if k == parts - 1 else start_s + (k + 1) * step
+            out.append((a, b))
     return out
 
 
@@ -436,6 +489,11 @@ async def _persist(project_id: str, record: MediaRecord) -> None:
         "quick_stats": record.quick_stats,
         "thumb_256_path": record.thumb_256_path,
         "thumb_1024_path": record.thumb_1024_path,
+        "capture_timestamp": record.capture_timestamp,
+        "capture_source": record.capture_source,
+        "capture_confidence": record.capture_confidence,
+        "gps_lat": record.gps_lat,
+        "gps_lon": record.gps_lon,
         "scenes": [
             {
                 "index": s.index,
@@ -449,11 +507,22 @@ async def _persist(project_id: str, record: MediaRecord) -> None:
     sidecar_path.write_text(json.dumps(sidecar_payload, indent=2), encoding="utf-8")
 
     async with connection() as db:
+        # Upsert (not INSERT OR IGNORE): a media row may already exist from
+        # a pre-chronology ingest with NULL capture columns. Backfill them
+        # on re-ingest via COALESCE so the persisted timeline catches up
+        # without ever clobbering a known value with NULL.
         await db.execute(
             """
-            INSERT OR IGNORE INTO media
-                (content_hash, source_path, media_type, file_size, quick_stats_json)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO media
+                (content_hash, source_path, media_type, file_size, quick_stats_json,
+                 capture_timestamp, capture_source, capture_confidence, gps_lat, gps_lon)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(content_hash) DO UPDATE SET
+                capture_timestamp  = COALESCE(excluded.capture_timestamp, media.capture_timestamp),
+                capture_source     = COALESCE(excluded.capture_source, media.capture_source),
+                capture_confidence = MAX(excluded.capture_confidence, media.capture_confidence),
+                gps_lat            = COALESCE(excluded.gps_lat, media.gps_lat),
+                gps_lon            = COALESCE(excluded.gps_lon, media.gps_lon)
             """,
             (
                 record.content_hash,
@@ -461,6 +530,11 @@ async def _persist(project_id: str, record: MediaRecord) -> None:
                 record.media_type,
                 record.file_size,
                 json.dumps(record.quick_stats),
+                record.capture_timestamp,
+                record.capture_source,
+                record.capture_confidence,
+                record.gps_lat,
+                record.gps_lon,
             ),
         )
         # Even when the media row already exists, we may need to add a

@@ -67,7 +67,7 @@ def strip_exif(image_bytes: bytes, *, mode: ExifMode) -> bytes:
     if mode == "off":
         return image_bytes
     try:
-        import piexif  # type: ignore[import-not-found]
+        import piexif
     except ImportError:  # pragma: no cover
         log.warning("piexif unavailable; returning original bytes")
         return image_bytes

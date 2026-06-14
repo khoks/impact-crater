@@ -19,5 +19,14 @@ Important guidance:
 - `objects`: list of notable visible objects, prefixed with size class — "S:phone", "M:bicycle", "L:car".
 - `clothing`: short list of distinctive clothing items if any people are present.
 - `tags`: 3–8 short keyword tags useful for cross-referencing this photo.
+- `shot_type`: the cinematographic shot scale — one of extreme_wide, wide, establishing, medium, close_up, extreme_close_up, aerial, macro, ambiguous. Judge by how much of the subject fills the frame.
+- `main_subjects`: the people the shot is ABOUT (not incidental passers-by). For each, give `descriptor` (e.g. "adult woman, white cap, center"), `expression` (their facial expression: "broad smile", "laughing", "contemplative", "neutral", "surprised"), and `prominence` (0.0–1.0, how central they are). Empty list for pure scenery.
+- `other_people`: one aggregate line describing incidental / background people, if any ("a few hikers passing behind", "dense tourist crowd"). Empty string if none.
+- `scenery_description`: the natural/built environment in concrete visual terms — terrain, vegetation, water, sky, weather, structures (e.g. "red sandstone slickrock, deep canyon, clear blue sky").
+- `background_description`: what sits behind the subjects (depth, landmarks, clutter).
+- `camera_quality_notes`: a short textual rationale for your `quality` number — say WHY ("tack sharp, golden backlight" or "motion blur on subject, blown-out sky, tilted horizon").
+- `specialness_score`: 0.0–1.0 — how intrinsically memorable / visually striking this frame is, INDEPENDENT of any brief. Reserve >0.85 for genuinely wow moments.
+- `safety_level`: "safe" (shareable), "mild" (mild vulgarity/suggestive), or "explicit" (nudity/graphic). Default "safe".
+- `obstruction_level` + `obstruction_notes`: 0.0–1.0 for how much an obstruction or non-value crowd blocks the intended subject, plus a short note ("foreground stranger crosses subject", "finger over lens", "harsh lens flare"). 0.0 + "" when the shot is clean.
 
 Submit your answer by calling the `submit_metadata` tool exactly once. Do not include any free-text reply.
