@@ -1077,3 +1077,15 @@ E-1.4 round 1 needs to ratify or trim this expanded scope before sequencing. Cut
 - **Alternatives considered:** Live per-phase popups streamed over WS during execution (deferred — same data, much more complex, no extra value for the review-and-improve goal); a free-text "rate this video" box (rejected — too coarse to drive concrete pipeline changes); auto-tuning thresholds directly from feedback (deferred — needs volume + guardrails; the human-in-the-loop Claude pickup is the safe first step).
 - **Consequences:** New `pipeline/diagnostics.py`, `api/media.py`, `api/feedback.py`, migration 004, `scripts/feedback.py`; runner writes `diagnostics.json`; frontend gains `DiagnosticsPanel`. The feedback store becomes the durable backlog of user-flagged improvements that future sessions work through.
 - **Linked ADRs / items:** A-023, N-015, ADR-0006 (storage), D-042.
+
+---
+
+### D-046 — Feedback loop enhancements: live per-phase diagnostics during execution + page screenshot per feedback
+
+- **Status:** accepted
+- **Date:** 2026-06-14
+- **Context:** D-045 shipped post-completion diagnostics. The user asked for the per-phase decisions to appear LIVE while the job runs, and for a screenshot of the whole page to be saved with every feedback item. Also clarified that acting on feedback can mean far more than threshold tweaks (new AI modules, new pipeline steps, heuristic rules / custom instructions, model tuning).
+- **Decision:** (1) Stream each phase's diagnostics over the job WebSocket as it completes via a new `ProgressReporter.phase_diagnostics` → `JobRegistry.emit_diagnostics` → `"diagnostics"` event; the in-progress page accumulates and renders them in a "Decisions so far" panel with the same feedback popups (using job_id since snapshot_id may not exist until Stage 6). The DiagnosticsPanel was split into a pure `DiagnosticsView` (reused by both the live in-progress view and the post-completion preview view). (2) On feedback submit the frontend captures the whole page with `html-to-image` (toPng, excluding the modal via a `data-ic-skip-capture` filter), POSTs it as a base64 data URL; the backend saves it to `~/.impact-crater/feedback_screenshots/{id}.png` (migration 005 `screenshot_path`), served at `GET /api/feedback/{id}/screenshot.png`. Capture is best-effort and never blocks submission. (3) CLAUDE.md's feedback-pickup section now spells out the full range of changes feedback can drive.
+- **Alternatives considered:** Persisting partial diagnostics to disk + polling (rejected — no snapshot_id exists for Stages 4/5, and the WS already carries job progress); server-side screenshotting (impossible — only the browser has the rendered page); a heavier capture lib or native screen-capture API (rejected — html-to-image is small, code-split, and needs no permission prompt).
+- **Consequences:** New frontend dependency `html-to-image` (code-split, lazy-imported); `DiagnosticsView` export; live diagnostics on the in-progress page; per-feedback screenshots on disk + a new GET endpoint; migration 005. 390 backend + 35 frontend tests green.
+- **Linked ADRs / items:** A-023, D-045, N-015, ADR-0005 (WS), ADR-0006 (storage).
