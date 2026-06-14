@@ -1,12 +1,14 @@
-// In-job progress view — opens a WS to /api/jobs/ws/:job_id and renders
-// stage-by-stage progress, project header, live spend split, and a
-// cancel button. On terminal `succeeded` → routes to /jobs/:job_id/preview;
-// on `failed` → renders the failure detail.
+// In-job progress view — opens a WS to /api/jobs/ws/:job_id and renders the
+// live "what the AI is doing" timeline, a current-activity banner, live spend,
+// per-phase decisions, and a cancel button. On terminal `succeeded` → routes to
+// /jobs/:job_id/preview; on `failed` → renders the failure detail.
 //
-// Design note: the WS pushes per-event updates which can be hundreds per
-// minute during Stage 2. We compute display values from the snapshot
-// (rather than maintaining duplicate state) so React renders are cheap
-// and a "last updated 2s ago" badge gives the user a liveness signal.
+// Design intent (S-2.9.13): the user dumps media + a brief and is done — but
+// while the AI works we proudly SHOW the work. The phase-by-phase timeline
+// conveys how much the app is doing on their behalf (and why it takes a little
+// time). It's engaging by default and collapsible for anyone who just wants the
+// headline. We compute display values from the snapshot rather than duplicating
+// state so renders stay cheap under the hundreds-per-minute WS event stream.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -21,24 +23,34 @@ import {
 import { DiagnosticsView } from "../components/DiagnosticsPanel";
 import type { DiagnosticPhase } from "../api/diagnostics";
 
+// Human, outcome-first phase names. The user never operates these — they just
+// watch them happen. The blurbs celebrate the work without leaking raw model
+// names or pipeline jargon as identity.
 const STAGE_LABELS: Record<string, string> = {
-  stage_1_ingest: "Ingest",
-  stage_2_bulk_ops: "Bulk ops",
-  stage_3_metadata: "Rich metadata",
-  stage_4_prefilter: "Pre-filter",
-  stage_5_judge: "Narrative judge",
-  stage_6_plan: "Plan compile",
-  stage_7_render: "Render",
+  stage_1_ingest: "Reading your media",
+  stage_2_bulk_ops: "Looking at every shot",
+  stage_3_metadata: "Understanding each moment",
+  stage_4_prefilter: "Picking the keepers",
+  stage_5_judge: "Composing your story",
+  stage_6_plan: "Designing the edit",
+  stage_7_render: "Making your video",
 };
 
-const STAGE_HINTS: Record<string, string> = {
-  stage_1_ingest: "Hash + EXIF + scene-detect every photo and video",
-  stage_2_bulk_ops: "4 LLM ops per asset: caption + 2 quality scores + embedding",
-  stage_3_metadata: "Rich metadata extraction (people, location, mood, objects)",
-  stage_4_prefilter: "Deterministic dedup + quality floor + cluster sampling",
-  stage_5_judge: "Tier-L Opus picks the narrative arc — single big call",
-  stage_6_plan: "Compile the arc into a render plan; orchestrator second-guess",
-  stage_7_render: "ffmpeg: pre-render every clip, concat, mux audio, finalize",
+const STAGE_BLURBS: Record<string, string> = {
+  stage_1_ingest:
+    "Fingerprinting every photo and video, reading capture times and GPS, and splitting videos into scenes.",
+  stage_2_bulk_ops:
+    "Captioning, quality-scoring, and fingerprinting each shot — every single one.",
+  stage_3_metadata:
+    "Reading each moment in depth: who's in it, the mood, the action, the scenery, the kind of shot.",
+  stage_4_prefilter:
+    "Dropping near-duplicates and weak frames, keeping the best of each moment.",
+  stage_5_judge:
+    "A high-reasoning AI composes your whole story in one pass — which shots, in what order, building an arc.",
+  stage_6_plan:
+    "Turning the story into a precise per-clip edit (and, for music videos, snapping the cuts to the beat).",
+  stage_7_render:
+    "Assembling the clips, scoring the audio, and finalizing a video you can share anywhere.",
 };
 
 const STAGE_ORDER = [
@@ -51,11 +63,14 @@ const STAGE_ORDER = [
   "stage_7_render",
 ];
 
+// Friendly cost-by-tier names (cost transparency is a feature — kept — but
+// without the raw model IDs as identity; the by-provider split still names
+// Anthropic / Google).
 const TIER_LABELS: Record<string, string> = {
-  S: "Tier-S — Google Flash captions + scores",
-  M: "Tier-M — Anthropic Sonnet metadata",
-  L: "Tier-L — Anthropic Opus narrative judge",
-  embedding: "Embeddings — Gemini text-embedding",
+  S: "Quick analysis",
+  M: "Detailed analysis",
+  L: "Story composition",
+  embedding: "Visual fingerprints",
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -71,6 +86,7 @@ export default function JobInProgress() {
   const [lastUpdate, setLastUpdate] = useState<number>(Date.now());
   const [now, setNow] = useState<number>(Date.now());
   const [briefOpen, setBriefOpen] = useState(false);
+  const [showDetails, setShowDetails] = useState(true);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   // Live per-phase diagnostics streamed as each phase completes (A-023).
@@ -138,9 +154,8 @@ export default function JobInProgress() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job_id]);
 
-  // Stage-2 expected calls = 4 ops/asset (caption + 2 scores + embed) +
-  // a 5th implicit caption-for-embedding via Gemini Flash. The router
-  // counts each as one cache event, so 4× is the right denominator
+  // Stage-2 expected calls = 4 ops/asset (caption + 2 scores + embed). The
+  // router counts each as one cache event, so 4× is the right denominator
   // for the user-facing progress bar.
   const stage2Expected = useMemo(() => {
     if (!snapshot || snapshot.media_count <= 0) return 0;
@@ -151,7 +166,7 @@ export default function JobInProgress() {
     if (!job_id || !snapshot) return;
     if (
       !confirm(
-        `Cancel this job? You'll keep the cached LLM results (next run will resume from where this stops), but the partial progress this job has made will be lost.`
+        `Cancel this job? You'll keep the cached AI results (next run resumes from where this stops), but the partial progress this job has made will be lost.`
       )
     ) {
       return;
@@ -203,7 +218,7 @@ export default function JobInProgress() {
         <p className="mt-3 text-xs text-slate-500">
           Spent ${snapshot.total_cost_usd.toFixed(4)} · cache{" "}
           {snapshot.cache_hits}/{snapshot.cache_hits + snapshot.cache_misses} hits.
-          The LLM cache is preserved on disk; re-running this job will resume
+          The AI cache is preserved on disk; re-running this job will resume
           from where it stopped.
         </p>
         <Link
@@ -216,14 +231,37 @@ export default function JobInProgress() {
     );
   }
 
-  const headerTitle = snapshot.project_name?.trim() || "Job in progress";
+  const headerTitle = snapshot.project_name?.trim() || "Creating your video";
   const elapsedS = snapshot.started_at
     ? Math.max(0, Math.floor((now - new Date(snapshot.started_at).getTime()) / 1000))
     : 0;
   const sinceUpdateS = Math.max(0, Math.floor((now - lastUpdate) / 1000));
   const totalCalls = snapshot.cache_hits + snapshot.cache_misses;
-  const cacheRate =
-    totalCalls > 0 ? snapshot.cache_hits / totalCalls : 0;
+  const cacheRate = totalCalls > 0 ? snapshot.cache_hits / totalCalls : 0;
+
+  // Derive the current activity + overall progress for the banner.
+  const ordered = STAGE_ORDER.map((name) => ({
+    name,
+    row: snapshot.stages.find((s) => s.stage === name),
+  }));
+  const completedCount = ordered.filter((s) => s.row?.state === "completed").length;
+  const runningEntry = ordered.find((s) => s.row?.state === "running");
+  const finished = completedCount >= STAGE_ORDER.length;
+  const currentName = runningEntry?.name;
+  const currentLabel = currentName
+    ? STAGE_LABELS[currentName]
+    : finished
+      ? "Finishing up"
+      : "Getting started";
+  const currentBlurb = currentName
+    ? STAGE_BLURBS[currentName]
+    : finished
+      ? "Wrapping up your finished video."
+      : "Warming up and getting ready to read your media.";
+  const currentStep = currentName
+    ? STAGE_ORDER.indexOf(currentName) + 1
+    : Math.min(completedCount + 1, STAGE_ORDER.length);
+  const overallPct = Math.round((completedCount / STAGE_ORDER.length) * 100);
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-12">
@@ -233,12 +271,10 @@ export default function JobInProgress() {
             {headerTitle}
           </h1>
           <p className="mt-1 text-xs text-slate-500">
-            <span className="font-mono">{snapshot.project_id}</span>
             {snapshot.media_count > 0 && (
               <>
-                {" · "}
-                {snapshot.media_count} media · {snapshot.target_duration_seconds}s
-                target
+                {snapshot.media_count} photos &amp; videos ·{" "}
+                {snapshot.target_duration_seconds}s target
               </>
             )}
           </p>
@@ -276,81 +312,124 @@ export default function JobInProgress() {
         </p>
       )}
 
-      <p className="mt-2 text-xs text-slate-400">
-        Elapsed {formatDuration(elapsedS)} ·{" "}
-        <LiveDot ageSeconds={sinceUpdateS} /> updated {sinceUpdateS}s ago
-      </p>
+      {/* Current-activity banner — the engaging "the AI is on it" hero. */}
+      <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-emerald-50 via-white to-sky-50 p-6">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+          </span>
+          Working on it · step {currentStep} of {STAGE_ORDER.length}
+        </div>
+        <h2 className="mt-2 text-2xl font-semibold text-slate-900">
+          {currentLabel}
+          {!finished && <Ellipsis />}
+        </h2>
+        <p className="mt-1 max-w-2xl text-sm text-slate-600">{currentBlurb}</p>
+        <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/80 ring-1 ring-inset ring-slate-200">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-sky-500 transition-[width] duration-500"
+            style={{ width: `${overallPct}%` }}
+          />
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          Elapsed {formatDuration(elapsedS)} ·{" "}
+          <LiveDot ageSeconds={sinceUpdateS} /> updated {sinceUpdateS}s ago
+        </p>
+      </section>
 
-      <section className="mt-8 grid gap-4 lg:grid-cols-[2fr,1fr]">
-        <ol className="space-y-3 rounded border border-slate-200 bg-white p-4">
-          {STAGE_ORDER.map((stageName) => {
-            const row = snapshot.stages.find((s) => s.stage === stageName);
-            return (
-              <StageRow
-                key={stageName}
-                label={STAGE_LABELS[stageName] ?? stageName}
-                hint={STAGE_HINTS[stageName] ?? ""}
-                stage={stageName}
-                row={row}
-                stage2Expected={stage2Expected}
-                cacheHits={snapshot.cache_hits}
-                cacheMisses={snapshot.cache_misses}
-                now={now}
-              />
-            );
-          })}
+      <div className="mt-6 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-700">
+          What the AI is doing for you
+        </h3>
+        <button
+          type="button"
+          onClick={() => setShowDetails((v) => !v)}
+          className="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+        >
+          {showDetails ? "Hide details" : "Show details"}
+        </button>
+      </div>
+
+      <section className="mt-3 grid gap-4 lg:grid-cols-[2fr,1fr]">
+        <ol className="rounded-xl border border-slate-200 bg-white p-5">
+          {ordered.map((s, i) => (
+            <TimelineStage
+              key={s.name}
+              label={STAGE_LABELS[s.name] ?? s.name}
+              blurb={STAGE_BLURBS[s.name] ?? ""}
+              stage={s.name}
+              row={s.row}
+              index={i}
+              isLast={i === ordered.length - 1}
+              showDetails={showDetails}
+              stage2Expected={stage2Expected}
+              cacheHits={snapshot.cache_hits}
+              cacheMisses={snapshot.cache_misses}
+              now={now}
+            />
+          ))}
         </ol>
 
         <aside className="space-y-3">
-          <div className="rounded border border-slate-200 bg-white p-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold text-slate-700">Live spend</h2>
-            <p className="mt-1 text-2xl font-semibold">
+            <p className="mt-1 text-2xl font-semibold text-slate-900">
               ${snapshot.total_cost_usd.toFixed(2)}
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              {totalCalls > 0 && (
+              {totalCalls > 0 ? (
                 <>
-                  {snapshot.cache_hits} hit{snapshot.cache_hits === 1 ? "" : "s"} ·{" "}
-                  {snapshot.cache_misses} miss
-                  {snapshot.cache_misses === 1 ? "" : "es"} ·{" "}
-                  {(cacheRate * 100).toFixed(0)}% cached
+                  {snapshot.cache_hits} reused ·{" "}
+                  {(cacheRate * 100).toFixed(0)}% from cache (saves you money)
                 </>
+              ) : (
+                "Tracking cost live as the AI works."
               )}
             </p>
-            {Object.keys(snapshot.cost_by_tier_usd).length > 0 && (
+            {showDetails && Object.keys(snapshot.cost_by_tier_usd).length > 0 && (
               <>
-                <h3 className="mt-3 text-xs font-medium text-slate-600">By tier</h3>
+                <h3 className="mt-3 text-xs font-medium text-slate-600">
+                  By kind of work
+                </h3>
                 <dl className="mt-1 space-y-1 text-xs text-slate-600">
                   {Object.entries(snapshot.cost_by_tier_usd).map(([tier, cost]) => (
                     <div key={tier} className="flex justify-between gap-2">
-                      <dt className="truncate" title={TIER_LABELS[tier] ?? tier}>
-                        {TIER_LABELS[tier] ?? tier}
-                      </dt>
+                      <dt className="truncate">{TIER_LABELS[tier] ?? tier}</dt>
                       <dd className="font-mono">${cost.toFixed(4)}</dd>
                     </div>
                   ))}
                 </dl>
               </>
             )}
-            {Object.keys(snapshot.cost_by_provider_usd).length > 0 && (
-              <>
-                <h3 className="mt-3 text-xs font-medium text-slate-600">By provider</h3>
-                <dl className="mt-1 space-y-1 text-xs text-slate-600">
-                  {Object.entries(snapshot.cost_by_provider_usd).map(([prov, cost]) => (
-                    <div key={prov} className="flex justify-between gap-2">
-                      <dt>{PROVIDER_LABELS[prov] ?? prov}</dt>
-                      <dd className="font-mono">${cost.toFixed(4)}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </>
-            )}
+            {showDetails &&
+              Object.keys(snapshot.cost_by_provider_usd).length > 0 && (
+                <>
+                  <h3 className="mt-3 text-xs font-medium text-slate-600">
+                    By provider
+                  </h3>
+                  <dl className="mt-1 space-y-1 text-xs text-slate-600">
+                    {Object.entries(snapshot.cost_by_provider_usd).map(
+                      ([prov, cost]) => (
+                        <div key={prov} className="flex justify-between gap-2">
+                          <dt>{PROVIDER_LABELS[prov] ?? prov}</dt>
+                          <dd className="font-mono">${cost.toFixed(4)}</dd>
+                        </div>
+                      )
+                    )}
+                  </dl>
+                </>
+              )}
           </div>
+          <p className="px-1 text-xs text-slate-400">
+            Capped by the daily budget you set in Settings — the AI stops before
+            it goes over.
+          </p>
         </aside>
       </section>
 
       {Object.keys(livePhases).length > 0 && (
-        <section className="mt-6 rounded border border-slate-200 bg-slate-50 p-4">
+        <section className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
           <h2 className="text-sm font-semibold text-slate-700">
             Decisions so far
           </h2>
@@ -380,22 +459,28 @@ const LIVE_PHASE_ORDER = [
   "stage_6_plan",
 ];
 
-// -- Stage row -----------------------------------------------------------
+// -- Timeline stage ------------------------------------------------------
 
-function StageRow({
+function TimelineStage({
   label,
-  hint,
+  blurb,
   stage,
   row,
+  index,
+  isLast,
+  showDetails,
   stage2Expected,
   cacheHits,
   cacheMisses,
   now,
 }: {
   label: string;
-  hint: string;
+  blurb: string;
   stage: string;
   row: StageProgress | undefined;
+  index: number;
+  isLast: boolean;
+  showDetails: boolean;
   stage2Expected: number;
   cacheHits: number;
   cacheMisses: number;
@@ -404,32 +489,24 @@ function StageRow({
   const state = row?.state ?? "pending";
   const detail = row?.detail ?? "";
 
-  const icon =
-    state === "completed" ? "✓" : state === "failed" ? "✗" : state === "running" ? "…" : "·";
-  const iconColor =
-    state === "completed"
-      ? "text-emerald-600"
-      : state === "failed"
-        ? "text-red-600"
-        : state === "running"
-          ? "text-amber-600"
-          : "text-slate-300";
-
-  // Per-stage progress for the running stage. Stage 2 is computable;
-  // others show their detail string.
+  // Per-stage progress for the running stage. Stage 2 is computable; others
+  // show their detail string.
   let progressText: string | null = null;
   let progressPct: number | null = null;
   if (state === "running" && stage === "stage_2_bulk_ops" && stage2Expected > 0) {
     const done = cacheHits + cacheMisses;
     progressPct = Math.min(100, Math.round((done / stage2Expected) * 100));
-    progressText = `${done.toLocaleString()}/${stage2Expected.toLocaleString()} ops · ${progressPct}%`;
+    progressText = `${done.toLocaleString()}/${stage2Expected.toLocaleString()} shots looked at · ${progressPct}%`;
   }
 
   // Elapsed for running / total for completed.
   let timing = "";
   if (state === "running" && row?.started_at) {
-    const elapsed = Math.max(0, Math.floor((now - new Date(row.started_at).getTime()) / 1000));
-    timing = `${formatDuration(elapsed)}`;
+    const elapsed = Math.max(
+      0,
+      Math.floor((now - new Date(row.started_at).getTime()) / 1000)
+    );
+    timing = formatDuration(elapsed);
   } else if (state === "completed" && row?.started_at && row?.completed_at) {
     const dur = Math.max(
       0,
@@ -437,39 +514,92 @@ function StageRow({
         (new Date(row.completed_at).getTime() - new Date(row.started_at).getTime()) / 1000
       )
     );
-    timing = `${formatDuration(dur)}`;
+    timing = formatDuration(dur);
   }
 
+  const labelColor =
+    state === "completed"
+      ? "text-slate-800"
+      : state === "running"
+        ? "text-slate-900 font-semibold"
+        : state === "failed"
+          ? "text-red-700 font-semibold"
+          : "text-slate-400";
+
   return (
-    <li className="flex flex-col gap-1">
-      <div className="flex items-baseline gap-3 text-sm">
-        <span className={`w-4 text-center font-mono ${iconColor}`}>{icon}</span>
-        <span className="flex-1 text-slate-800" title={hint}>
-          {label}
-        </span>
-        {detail && state !== "running" && (
-          <span className="text-xs text-slate-500">{detail}</span>
-        )}
-        {timing && (
-          <span className="text-xs font-mono text-slate-400">{timing}</span>
+    <li className="flex items-stretch gap-4">
+      {/* Node + connector */}
+      <div className="flex flex-col items-center">
+        <StageNode state={state} index={index} />
+        {!isLast && (
+          <div
+            className={
+              "w-0.5 flex-1 " +
+              (state === "completed" ? "bg-emerald-300" : "bg-slate-200")
+            }
+          />
         )}
       </div>
-      {state === "running" && (progressText || detail) && (
-        <div className="ml-7 flex items-center gap-2">
-          <span className="text-xs text-slate-500">
+
+      <div className={"flex-1 " + (isLast ? "pb-0" : "pb-6")}>
+        <div className="flex items-baseline justify-between gap-3">
+          <span className={"text-sm " + labelColor}>{label}</span>
+          {timing && (
+            <span className="shrink-0 font-mono text-xs text-slate-400">
+              {timing}
+            </span>
+          )}
+        </div>
+
+        {showDetails && (
+          <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{blurb}</p>
+        )}
+
+        {state === "running" && (progressText || detail) && (
+          <p className="mt-1 text-xs font-medium text-emerald-700">
             {progressText ?? detail}
-          </span>
-        </div>
-      )}
-      {progressPct !== null && state === "running" && (
-        <div className="ml-7 h-1 overflow-hidden rounded bg-slate-100">
-          <div
-            className="h-full bg-amber-400 transition-[width] duration-300"
-            style={{ width: `${progressPct}%` }}
-          />
-        </div>
-      )}
+          </p>
+        )}
+
+        {progressPct !== null && state === "running" && (
+          <div className="mt-1.5 h-1 overflow-hidden rounded bg-slate-100">
+            <div
+              className="h-full rounded bg-gradient-to-r from-emerald-500 to-sky-500 transition-[width] duration-300"
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+        )}
+      </div>
     </li>
+  );
+}
+
+function StageNode({ state, index }: { state: string; index: number }) {
+  if (state === "completed") {
+    return (
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-sm font-semibold text-white">
+        ✓
+      </span>
+    );
+  }
+  if (state === "failed") {
+    return (
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-500 text-sm font-semibold text-white">
+        ✗
+      </span>
+    );
+  }
+  if (state === "running") {
+    return (
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-sky-500 text-white ring-4 ring-emerald-100">
+        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+      </span>
+    );
+  }
+  return (
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-slate-200 bg-white text-xs font-medium text-slate-400">
+      {index + 1}
+    </span>
   );
 }
 
@@ -489,6 +619,16 @@ function statePillClass(state: string): string {
     default:
       return `${base} bg-slate-100 text-slate-600`;
   }
+}
+
+function Ellipsis() {
+  return (
+    <span className="ml-0.5 inline-flex" aria-hidden>
+      <span className="animate-bounce [animation-delay:-0.3s]">.</span>
+      <span className="animate-bounce [animation-delay:-0.15s]">.</span>
+      <span className="animate-bounce">.</span>
+    </span>
+  );
 }
 
 function LiveDot({ ageSeconds }: { ageSeconds: number }) {

@@ -173,8 +173,12 @@ function StepWelcome() {
   return (
     <div className="space-y-3 text-sm text-slate-700">
       <p>
-        Impact Crater needs a few things before it can curate your media: API keys for the
-        LLM providers it'll call, and a daily spend cap to protect against runaway jobs.
+        Impact Crater turns your photos and videos into finished, ready-to-share
+        videos — you describe what you want, and it does the rest.
+      </p>
+      <p>
+        First, two quick things so it can do the work and stay within a budget
+        you set: API keys for the AI it calls, and a daily spend cap.
       </p>
       <p>You can change everything later in Settings.</p>
     </div>

@@ -111,10 +111,10 @@ describe("JobInProgress", () => {
       </MemoryRouter>
     );
     await waitFor(() => {
-      // The 7 stages are listed in order; labels were shortened (the
-      // numeric prefix is implicit from row position now).
-      expect(screen.getByText(/^Ingest$/)).toBeInTheDocument();
-      expect(screen.getByText(/^Render$/)).toBeInTheDocument();
+      // The 7 phases are listed in order with human, outcome-first labels
+      // (S-2.9.13). First and last anchor the timeline.
+      expect(screen.getByText(/Reading your media/)).toBeInTheDocument();
+      expect(screen.getByText(/Making your video/)).toBeInTheDocument();
     });
   });
 

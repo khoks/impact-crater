@@ -231,9 +231,9 @@ export default function JobPreview() {
           <h2 className="text-sm font-semibold text-slate-700">Refine</h2>
           <p className="mt-1 text-xs text-slate-500">
             Type what you'd change ("more landscape, less faces"; "punchier
-            opener"; etc). The orchestrator will decide whether to re-run the
-            judgment with an addendum or explain why your refinement isn't
-            possible with the current candidate set.
+            opener"; etc). Impact Crater will decide whether to re-compose the
+            story with your note folded in, or explain why it isn't possible
+            with the current shots.
           </p>
           <textarea
             value={refineMessage}

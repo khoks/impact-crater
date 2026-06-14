@@ -96,7 +96,7 @@ export default function EffortAndCost() {
     <main className="mx-auto max-w-3xl px-6 py-12">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-slate-900">
-          Effort & cost preview
+          One last step — effort & cost
         </h1>
         <Link
           to="/projects/new"
@@ -107,9 +107,13 @@ export default function EffortAndCost() {
       </header>
 
       <p className="mt-2 text-sm text-slate-600">
+        Because the AI does real work (and that costs real money), pick how much
+        effort to spend and confirm the estimate — then hit Create.
+      </p>
+      <p className="mt-1 text-xs text-slate-500">
         {mediaCount} media item{mediaCount === 1 ? "" : "s"} ·{" "}
         {draft.target_duration_seconds}s target ·{" "}
-        <span className="font-mono text-xs">{draft.folder_path}</span>
+        <span className="font-mono">{draft.folder_path}</span>
       </p>
 
       {loadError && (
@@ -193,7 +197,7 @@ export default function EffortAndCost() {
           }
           className="rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
         >
-          {submitting ? "Submitting…" : "Start Job"}
+          {submitting ? "Creating…" : "Create my video"}
         </button>
       </div>
     </main>
