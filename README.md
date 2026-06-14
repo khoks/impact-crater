@@ -36,6 +36,7 @@ For dev-mode with hot-reload (Vite + uvicorn together), see [`docs/dev/M0-SMOKE-
 
 ## Where to look
 
+- **Full product & architecture overview (start here):** [`docs/OVERVIEW.md`](./docs/OVERVIEW.md) — a single, plain-language explanation of the whole application: what it does, what it produces, how the pipeline works end to end, the techniques behind it, the architecture with diagrams, the key flows, and the roadmap. Written for a general audience (no internal jargon).
 - **Vision (verbatim user input):** [`docs/vision/RAW_VISION.md`](./docs/vision/RAW_VISION.md)
 - **Groomed feature catalog:** [`docs/vision/GROOMED_FEATURES.md`](./docs/vision/GROOMED_FEATURES.md) (stub — populated in next grooming session)
 - **Architecture & ADRs:** [`docs/architecture/`](./docs/architecture/)
