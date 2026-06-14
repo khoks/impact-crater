@@ -69,7 +69,7 @@ class JobProgressEvent:
       - "log": free-form info line
     """
 
-    type: Literal["state", "stage", "llm_call", "render", "log"]
+    type: Literal["state", "stage", "llm_call", "render", "log", "diagnostics"]
     job_id: str
     timestamp: str = field(default_factory=_iso_now)
     payload: dict[str, Any] = field(default_factory=dict)
@@ -266,6 +266,17 @@ class JobRegistry:
     async def emit_log(self, job_id: str, message: str) -> None:
         await self._emit(
             JobProgressEvent(type="log", job_id=job_id, payload={"message": message})
+        )
+
+    async def emit_diagnostics(self, job_id: str, phase_doc: dict[str, Any]) -> None:
+        """Push one phase's diagnostics to subscribers as the phase finishes,
+        so the in-progress UI can show decisions live (A-023 live popups)."""
+        await self._emit(
+            JobProgressEvent(
+                type="diagnostics",
+                job_id=job_id,
+                payload={"phase": phase_doc.get("phase", ""), "doc": phase_doc},
+            )
         )
 
     # ---- Cancellation ----

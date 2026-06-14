@@ -4,6 +4,12 @@ import userEvent from "@testing-library/user-event";
 
 import DiagnosticsPanel from "../components/DiagnosticsPanel";
 
+// html-to-image needs a real browser (getComputedStyle); stub it in jsdom.
+// Production capture runs in Chrome where it works.
+vi.mock("html-to-image", () => ({
+  toPng: vi.fn(async () => "data:image/png;base64,SCREENSHOT"),
+}));
+
 const DIAG = {
   schema_version: 1,
   project_id: "proj-1",
@@ -106,6 +112,8 @@ describe("DiagnosticsPanel", () => {
     expect(sent.content_hash).toBe("drop1");
     expect(sent.decision_ref).toBe("drop:semantic_duplicate");
     expect(sent.comment).toBe("best of the burst, keep it");
+    // The captured page screenshot rides along.
+    expect(sent.screenshot_data_url).toBe("data:image/png;base64,SCREENSHOT");
   });
 
   it("shows a friendly message when diagnostics are missing (pre-feature snapshot)", async () => {

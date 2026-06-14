@@ -56,6 +56,42 @@ async def test_post_feedback_persists_and_mirrors_jsonl(client: httpx.AsyncClien
     assert lines[-1]["context"]["reason"] == "semantic_duplicate"
 
 
+async def test_feedback_saves_screenshot(client: httpx.AsyncClient) -> None:
+    # 1x1 transparent PNG.
+    png_b64 = (
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
+        "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    )
+    r = await client.post(
+        "/api/feedback",
+        json={
+            "phase": "stage_5_judge",
+            "verdict": "different",
+            "comment": "wrong opener",
+            "screenshot_data_url": f"data:image/png;base64,{png_b64}",
+        },
+    )
+    assert r.status_code == 201
+    fid = r.json()["id"]
+    # The screenshot is served back.
+    shot = await client.get(f"/api/feedback/{fid}/screenshot.png")
+    assert shot.status_code == 200
+    assert shot.headers["content-type"] == "image/png"
+    assert len(shot.content) > 0
+    # And it's on disk for Claude pickup.
+    saved = paths.home() / "feedback_screenshots" / f"{fid}.png"
+    assert saved.is_file()
+
+
+async def test_feedback_without_screenshot_has_no_file(client: httpx.AsyncClient) -> None:
+    r = await client.post(
+        "/api/feedback", json={"phase": "cast", "verdict": "correct"}
+    )
+    fid = r.json()["id"]
+    shot = await client.get(f"/api/feedback/{fid}/screenshot.png")
+    assert shot.status_code == 404
+
+
 async def test_feedback_filters_by_status_and_snapshot(client: httpx.AsyncClient) -> None:
     for i in range(3):
         await client.post(

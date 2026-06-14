@@ -61,6 +61,29 @@ export interface FeedbackPayload {
   content_hash?: string;
   comment?: string;
   context?: Record<string, unknown>;
+  screenshot_data_url?: string;
+}
+
+// Capture the whole page as a PNG data URL (best-effort). Excludes any node
+// tagged data-ic-skip-capture (the feedback modal itself). Returns undefined
+// if capture fails — feedback submission must never depend on it.
+export async function capturePageScreenshot(): Promise<string | undefined> {
+  try {
+    const { toPng } = await import("html-to-image");
+    return await toPng(document.body, {
+      cacheBust: true,
+      pixelRatio: 1,
+      filter: (node) =>
+        !(node instanceof HTMLElement && node.dataset.icSkipCapture === "true"),
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+export interface JobDiagnosticEvent {
+  phase: string;
+  doc: DiagnosticPhase;
 }
 
 export async function submitFeedback(p: FeedbackPayload): Promise<{ id: number }> {

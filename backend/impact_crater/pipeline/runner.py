@@ -34,6 +34,7 @@ from impact_crater.media.music import (
 )
 from impact_crater.pipeline import (
     cast_builder,
+    diagnostics,
     stage1_ingest,
     stage2_bulk_ops,
     stage3_metadata,
@@ -44,8 +45,7 @@ from impact_crater.pipeline import (
     stage7_render,
 )
 from impact_crater.pipeline.stage4_prefilter import CandidateSet, PreFilterOverrides
-from impact_crater.pipeline.stage6_plan import RenderPlan, StandardMusicSpec
-from impact_crater.pipeline.stage7_render import RenderResult
+from impact_crater.pipeline.stage6_plan import StandardMusicSpec
 from impact_crater.storage import settings as settings_store
 from impact_crater.workers import WorkerPool
 
@@ -66,6 +66,8 @@ class ProgressReporter(Protocol):
 
     async def stage_failed(self, stage: str, *, detail: str = "") -> None: ...
 
+    async def phase_diagnostics(self, phase_doc: dict[str, Any]) -> None: ...
+
 
 class _NoopReporter:
     """Default reporter — silence."""
@@ -77,6 +79,9 @@ class _NoopReporter:
         return None
 
     async def stage_failed(self, stage: str, *, detail: str = "") -> None:
+        return None
+
+    async def phase_diagnostics(self, phase_doc: dict[str, Any]) -> None:
         return None
 
 
@@ -125,7 +130,7 @@ async def run_headless_pipeline(
     router: LLMRouter | None = None,
     pool: WorkerPool | None = None,
     progress: ProgressReporter | None = None,
-    music_analysis: "MusicAnalysis | None" = None,
+    music_analysis: MusicAnalysis | None = None,
 ) -> HeadlessJobResult:
     """Run Stages 1-5 end-to-end and return the ArcJudgment.
 
@@ -241,7 +246,8 @@ async def run_headless_pipeline(
                     backend=config.cast_backend,
                 )
                 _persist_cast(project_id, cast_inventory)
-            except Exception as exc:  # noqa: BLE001 — cast is best-effort
+                await _emit_phase_diag(reporter, diagnostics.phase_cast, cast_inventory)
+            except Exception as exc:
                 log.warning(
                     "cast_analysis_failed project_id=%s error=%r — proceeding without cast",
                     project_id,
@@ -263,6 +269,7 @@ async def run_headless_pipeline(
             "stage_4_prefilter",
             detail=f"{len(candidate_set.items)}/{candidate_set.cluster_metadata.get('input_count', '?')} candidates",
         )
+        await _emit_phase_diag(reporter, diagnostics.phase_stage4, candidate_set)
 
         # Stage 5
         await reporter.stage_started("stage_5_judge")
@@ -279,6 +286,7 @@ async def run_headless_pipeline(
             "stage_5_judge",
             detail=f"confidence={arc_judgment.confidence:.2f}",
         )
+        await _emit_phase_diag(reporter, diagnostics.phase_stage5, arc_judgment)
 
         telemetry.emit(
             telemetry.JobLifecycleEvent(
@@ -524,6 +532,7 @@ async def run_full_pipeline(
         cast=headless.cast,
         media=headless.media,
     )
+    await _emit_phase_diag(reporter, diagnostics.phase_stage6, plan)
 
     await reporter.stage_completed(
         "stage_6_plan", detail=f"{len(plan.clips)} clips"
@@ -597,7 +606,7 @@ def _persist_cast(project_id: str, cast: Any) -> None:
             "group_persons_by_hash": cast.group_persons_by_hash,
         }
         (proj_dir / "cast.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    except Exception as exc:  # noqa: BLE001 — persistence is best-effort
+    except Exception as exc:
         log.warning("cast_persist_failed project_id=%s error=%r", project_id, str(exc)[:200])
 
 
@@ -623,8 +632,17 @@ def _write_coverage(project_id: str, snapshot_id: str, cast: Any, plan: Any) -> 
                 report.group_size,
                 report.missing_person_ids,
             )
-    except Exception as exc:  # noqa: BLE001 — coverage is best-effort
+    except Exception as exc:
         log.warning("coverage_failed project_id=%s error=%r", project_id, str(exc)[:200])
+
+
+async def _emit_phase_diag(reporter: Any, builder: Any, *args: Any) -> None:
+    """Build one phase's diagnostics and stream it to the in-progress UI.
+    Best-effort: a diagnostics failure must never break the job."""
+    try:
+        await reporter.phase_diagnostics(builder(*args))
+    except Exception as exc:
+        log.debug("phase_diagnostics emit failed: %s", str(exc)[:160])
 
 
 def _write_diagnostics(
@@ -652,7 +670,7 @@ def _write_diagnostics(
         )
         snap_dir = stage6_plan.snapshot_dir(project_id, snapshot_id)
         (snap_dir / "diagnostics.json").write_text(json.dumps(doc, indent=2), encoding="utf-8")
-    except Exception as exc:  # noqa: BLE001 — diagnostics are best-effort
+    except Exception as exc:
         log.warning("diagnostics_failed project_id=%s error=%r", project_id, str(exc)[:200])
 
 
