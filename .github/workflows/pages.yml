@@ -10,6 +10,7 @@ on:
     branches: [master]
     paths:
       - docs/OVERVIEW.md
+      - docs/From_Raw_Media_to_Masterpiece.png
       - mkdocs.yml
       - .github/workflows/pages.yml
   workflow_dispatch:
@@ -38,6 +39,7 @@ jobs:
         run: |
           mkdir -p site-src
           cp docs/OVERVIEW.md site-src/index.md
+          cp docs/From_Raw_Media_to_Masterpiece.png site-src/
       - name: Build site
         run: mkdocs build
       - name: Configure Pages

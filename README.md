@@ -2,6 +2,8 @@
 
 > A dead-simple 1-click media-to-video creator. Dump a pile of photos and videos, describe in your own words what you want and where to post it, click **Submit** — and you're **done**. Behind that one click the AI does everything: analysis, selection, sequencing, music matching, and rendering into ready-to-publish artifacts — reels, albums, journey videos, montages. The one intentional pause is yours: nothing is pushed to your connected platforms until you preview it and approve.
 
+![Impact Crater — from raw media to masterpiece: drop media and describe your vision, the AI analyzes and curates, hardware-adaptive cost balancing, a human-in-the-loop approval gate, and plain-language refinement](docs/From_Raw_Media_to_Masterpiece.png)
+
 You give Impact Crater a folder of photos and videos and a sentence about what you want ("a per-location Instagram reel and one full-journey video with a music score from my Grand Canyon trip"), click Submit, and you're done — behind that one click it does the analysis, selection, sequencing, music matching, and rendering. It chooses between locally hosted vision LLMs and remote API LLMs at runtime based on your hardware (GPU class, VRAM) and any API quotas you've configured, so a workstation with a 4090 leans local and a thin-client laptop leans cloud. Everything previews in a side-by-side viewer before any social post is made.
 
 **What else it does for you** — all in service of making that one click faster, cheaper, and more personal: it learns from your feedback, remembers the people who recur across your trips (a person library / trip cast), caches its analysis so re-runs are fast and cheap, adapts to your hardware and API quotas, and is building toward the Ultimate Trip Package.
