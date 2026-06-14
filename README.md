@@ -1,14 +1,16 @@
 # Impact Crater
 
-> An AI-driven photo and video curator that turns a pile of raw media plus a natural-language brief into ready-to-publish social-media artifacts — reels, albums, journey videos, montages — previewed in-app and pushed to connected platforms only after you approve.
+> A dead-simple 1-click media-to-video creator. Dump a pile of photos and videos, describe in your own words what you want and where to post it, click **Submit** — and you're **done**. Behind that one click the AI does everything: analysis, selection, sequencing, music matching, and rendering into ready-to-publish artifacts — reels, albums, journey videos, montages. The one intentional pause is yours: nothing is pushed to your connected platforms until you preview it and approve.
 
-You give Impact Crater a folder of photos and videos and a sentence about what you want ("a per-location Instagram reel and one full-journey video with a music score from my Grand Canyon trip"), and it does the analysis, selection, sequencing, music matching, and rendering. It chooses between locally hosted vision LLMs and remote API LLMs at runtime based on your hardware (GPU class, VRAM) and any API quotas you've configured, so a workstation with a 4090 leans local and a thin-client laptop leans cloud. Everything previews in a side-by-side viewer before any social post is made.
+You give Impact Crater a folder of photos and videos and a sentence about what you want ("a per-location Instagram reel and one full-journey video with a music score from my Grand Canyon trip"), click Submit, and you're done — behind that one click it does the analysis, selection, sequencing, music matching, and rendering. It chooses between locally hosted vision LLMs and remote API LLMs at runtime based on your hardware (GPU class, VRAM) and any API quotas you've configured, so a workstation with a 4090 leans local and a thin-client laptop leans cloud. Everything previews in a side-by-side viewer before any social post is made.
+
+**What else it does for you** — all in service of making that one click faster, cheaper, and more personal: it learns from your feedback, remembers the people who recur across your trips (a person library / trip cast), caches its analysis so re-runs are fast and cheap, adapts to your hardware and API quotas, and is building toward the Ultimate Trip Package.
 
 Self-hosted-first. Open-source under [BSL 1.1](./LICENSE) (auto-converts to Apache 2.0 in 2030).
 
 ## Status
 
-**MVP build in progress** as of 2026-05-03. Scaffolding phase is done (16 ADRs, 39 D-NNN decisions, 11 novel mechanisms, placeholder-free `MVP.md` / `ROADMAP.md` / `ARCHITECTURE.md`). The MVP is partitioned into 9 milestones (M0..M9 — see [`docs/roadmap/MVP.md`](./docs/roadmap/MVP.md)); the first one (M0 Scaffolding) lives under [`E-2.1`](./project/epics/E-2.1-scaffolding.md).
+**One-click trip videos — MVP build in progress** as of 2026-05-03. The groundwork is done and we're building the one-click experience end to end. (Under the hood: 16 ADRs, 39 D-NNN decisions, 11 novel mechanisms, and placeholder-free `MVP.md` / `ROADMAP.md` / `ARCHITECTURE.md`.) The MVP is partitioned into 9 milestones (M0..M9 — see [`docs/roadmap/MVP.md`](./docs/roadmap/MVP.md)); the first one (M0 Scaffolding) lives under [`E-2.1`](./project/epics/E-2.1-scaffolding.md).
 
 ## Quick start (developers, M0)
 

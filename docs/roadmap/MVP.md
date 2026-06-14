@@ -1,5 +1,7 @@
 # MVP.md — Impact Crater MVP scope
 
+Impact Crater is a dead-simple 1-click media-to-video creator: you dump a pile of photos and videos, describe in your own words the video you want and where to post it, click submit, and the AI does the rest. This document scopes the thinnest end-to-end slice of that one-click experience.
+
 > **Status: MVP scope LOCKED (E-1.4 round 1 closed 2026-05-03).** Product scope locked in E-1.2 (D-006..D-022). Architecture locked in E-1.3 (ADR-0005..0016 / D-023..D-035; 11 novel mechanisms N-001..N-011). Execution roadmap locked in E-1.4 round 1 (9 milestones M0..M9 = E-2.1..E-2.9 under new I-2 MVP; D-036 milestone partition + AI-assisted velocity; D-037 keep all E-1.3 expansions; D-038 code-org sequencing). Velocity = AI-assisted full-time aggressive (user is PM/EM/Architect, Claude does the build via Max 20x plan); estimated calendar 4-8 weeks. **E-1.4 round 2 (ROADMAP.md final lock with v1 / v2 / v3 sequencing) is the next thing on the board after this.**
 
 The MVP is the **single thinnest end-to-end slice** that proves the core loop: *user uploads media → AI curates → user reviews preview → user approves publish*. Everything beyond that thinnest slice goes to v1 or later.
@@ -8,7 +10,7 @@ The MVP is the **single thinnest end-to-end slice** that proves the core loop: *
 
 ## Locked: MVP success criterion (D-014)
 
-> *User drops up to 1000 photos and 50 videos from a single trip / build / event, describes in a paragraph what kind of YouTube video they want and what kind of music, picks a target duration, and gets a publish-ready **Story Video** to their connected YouTube Studio account within 2–5 hours.*
+> *User drops up to 1000 photos and 50 videos from a single trip / build / event, describes, in their own words, the kind of YouTube video and music they want, picks a target duration, clicks submit, and the AI does the rest — returning a publish-ready **Story Video** to their connected YouTube Studio account within 2–5 hours.*
 
 The user can opt into a refine pass after seeing the rendered result, alongside Approve at the post-render moment (per D-011, D-022 — supersedes the refine-loop half of D-020).
 
@@ -27,7 +29,7 @@ The user can opt into a refine pass after seeing the rendered result, alongside 
 | 7 | **Curation pipeline:** hybrid (deterministic pre-filter → multimodal-LLM judgment) with rich per-photo / per-scene metadata; scene segmentation for video | [D-009](../decisions/DECISIONS_LOG.md) |
 | 8 | **Music modes:** standard mode (background music) + music-video sub-mode (full version, including section-to-media NL mapping); user-supplied music only at MVP. Beat detection via Madmom; section detection via librosa | [D-010](../decisions/DECISIONS_LOG.md), [D-018](../decisions/DECISIONS_LOG.md), [D-030](../decisions/DECISIONS_LOG.md), [D-031](../decisions/DECISIONS_LOG.md), [A-013](../vision/RECOMMENDED_ADDITIONS.md), [ADR-0012](../architecture/ADR-0012-music-alignment-strategy.md) |
 | 9 | **Effort-level UX:** L1–L3 + agentic max-permissible recommendation | [D-013](../decisions/DECISIONS_LOG.md), [A-015](../vision/RECOMMENDED_ADDITIONS.md) |
-| 10 | **Agent harness:** single orchestrator with structured tool calls | [D-017](../decisions/DECISIONS_LOG.md) |
+| 10 | **Internal execution:** a single coordinator with structured tool calls — entirely behind the scenes; the user never sees or configures it | [D-017](../decisions/DECISIONS_LOG.md) |
 | 11 | **Mobile posture:** desktop-only at MVP. Mobile is its own v2 epic. (Optional desktop-side cloud-folder watcher is a stretch.) | [D-019](../decisions/DECISIONS_LOG.md) |
 | 12 | **Refine loop:** offered post-render alongside Approve as the secondary action; not a job-creation toggle. Per-render, not per-job (every render-complete surfaces the offer again) | [D-011](../decisions/DECISIONS_LOG.md), [D-022](../decisions/DECISIONS_LOG.md) |
 | 13 | **Privacy posture:** explicit consent / strip-EXIF / blur-faces controls — load-bearing because remote-first sends images off-device | [A-002](../vision/RECOMMENDED_ADDITIONS.md), [D-016](../decisions/DECISIONS_LOG.md) |
@@ -58,6 +60,7 @@ The full feature catalog with phase tags lives in [`GROOMED_FEATURES.md`](../vis
 - Multi-agent harness (v2 — D-017).
 - Conversational refinement at scale (v2 — D-011, D-017).
 - Generated music (v2 — D-018).
+- Ultimate Trip Package — the full multi-artifact bundle from one trip (v2/v3).
 - Hosted-service mode (v3 — CLAUDE.md mission).
 
 ---
@@ -74,12 +77,14 @@ The MVP execution path is partitioned into **9 milestones**, each mapped 1:1 ont
 | **M3** | UI MVP loop closed (no YouTube) | [E-2.4](../../project/epics/E-2.4-ui-mvp-loop-closed.md) | User drags media into the React UI, types a brief, picks effort level, sees in-job progress + cost live spend, gets a preview Story Video. Approve / Refine UI buttons present (Approve does nothing yet — no connector; Refine deferred to M6) | XL | ADR-0005, ADR-0011, ADR-0014, ADR-0015 |
 | **M4** | Music-video mode + section-to-media NL | [E-2.5](../../project/epics/E-2.5-music-video-mode-and-section-to-media-nl.md) | Madmom + librosa pipeline produces beats + sections + energy curve; tempo-aware beat-grid generated; user's NL section spec ("intro = scenic, chorus = summit") passed to Stage 5; cuts snap to beats in music-video mode | L | ADR-0012, A-013, D-031 |
 | **M5** | Person library + face recognition + privacy panel | [E-2.6](../../project/epics/E-2.6-person-library-and-privacy-panel.md) | User adds 3 family members via the face-photo-cropper UI (5 photos each); reference collage builds; **N-008 recognition integrated in Stage 3** with `recognized_persons` field populated in metadata; privacy panel UI live with three toggles + interaction matrix; EXIF/GPS strip + face-blur paths working; **N-011 routing-config schema in place** | XL | ADR-0010, ADR-0016, N-008, N-011 |
-| **M6** | Agentic refinement + orchestrator second-guess | [E-2.7](../../project/epics/E-2.7-agentic-refinement-and-second-guess.md) | Stage 9 thinking-step loop with 5 strategies running on Tier-M Sonnet; Stage 6 second-guess proposes overrides via `SecondGuessResult`; user Apply/Skip/Modify-with-NL UI surfaces overrides before render; snapshot chain via `parent.txt` per N-003 | XL | ADR-0011, ADR-0014, N-009 |
+| **M6** | Agentic refinement + AI-offered second-guess | [E-2.7](../../project/epics/E-2.7-agentic-refinement-and-second-guess.md) | Internal Stage 9 thinking-step loop with 5 strategies running on the mid-tier model; the AI may *optionally* offer refinements it spotted (`SecondGuessResult`); if it has any, an Apply/Skip/Modify-with-NL UI surfaces them as suggestions the user can accept or ignore before render — never a checkpoint the user must operate; snapshot chain via `parent.txt` per N-003 | XL | ADR-0011, ADR-0014, N-009 |
 | **M7** | YouTube publish | [E-2.8](../../project/epics/E-2.8-youtube-publish.md) | OAuth via local-loopback callback works; resumable `videos.insert` (256 MB chunks) uploads a real video to a real YouTube account; publish UI with visibility selector defaulting to public; Approve gate; audit-log writer writes a real entry; **full end-to-end demo: drop photos → curate → preview → approve → published video URL** | L | ADR-0013, A-003 |
 | **M8** | Cross-project user profile (N-010 minimum-viable) | [E-2.9](../../project/epics/E-2.9-cross-project-profile-mvp.md) | Feedback log writer hooked into all event sources (approve / refine / second-guess decisions / pre-filter overrides / publish); profile schema persisted at `~/.impact-crater/profile/profile.json`; **deterministic frequency-based derivation at MVP** (LLM-driven re-derivation deferred to post-launch); profile-driven suggestions surface on second-and-later job creation ("based on your past trips, you usually want ~90s videos"); profile reset UI works | L | ADR-0014, N-010 |
 | **M9** | Polish + D-014 success-criterion validation | (rolled into E-2.9 acceptance criteria) | Bug fixes + edge-case handling; **the user runs a real 1000-photo + 50-video job from one of their own trips and validates the 2–5 hour ceiling holds, gets a publish-ready Story Video on YouTube within the budget**; documentation polish (README install + first-time-setup walkthrough) | L (build) + open-ended (real-world iteration) | All MVP ADRs |
 
 **Total session-time estimate: ~22–30 days of focused build work** ≈ **4–8 weeks calendar time** at AI-assisted full-time velocity (the lower bound assumes minimal real-world iteration in M9; the upper bound assumes meaningful real-world fixes after M9 begins).
+
+> **Note — Stages 1–9 are internal.** The numbered Stages referenced throughout this document are steps the AI runs automatically behind the user's single click. The user never operates, configures, or steps through them; they may be surfaced as live progress so the user can watch the work happen, but the user never drives them.
 
 The full feature catalog with phase tags lives in [`GROOMED_FEATURES.md`](../vision/GROOMED_FEATURES.md). Per-epic story / task decomposition happens when each epic opens for work.
 

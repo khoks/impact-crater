@@ -4,6 +4,8 @@
 
 This file captures features, requirements, and capabilities that are not always explicitly named in [`RAW_VISION.md`](./RAW_VISION.md), but which Claude (or the user, on reflection) thinks the product needs in order to be a credible product.
 
+Anchor every gap to the one-click test: does it make the core experience — dump media, describe the videos you want in your own words, click submit, the AI does the rest — more reliable, simpler, or more delightful? Internal machinery (stages, orchestration, planners) is implementation detail behind that single click, never the product the user operates.
+
 The point is to surface gaps early so they can be discussed and either accepted (moved into `GROOMED_FEATURES.md` with a phase tag), rejected (logged here as "considered and rejected" with the reason), or deferred (tagged with a phase and a rationale).
 
 ---
@@ -228,7 +230,7 @@ Each addition gets a heading with an `A-NNN` ID (monotonically incrementing, nev
 
 **Open questions.** Cloud-source authentication (per-source OAuth). Multi-output orchestration model. During-event publish trigger UX.
 
-**Tradeoff against scope.** **Substantial** scope: live-watch + cloud-source ingest + multi-output orchestration + during-event publish gates each adds significant work. Pulling this into MVP would push the 2–5 hr ceiling (D-014) into 2–5 weeks. Hence v1, **but the MVP architecture must leave a clean feature flag** so live-job can land in v1 without a rewrite — specifically, the project / job model (A-001) and the orchestrator (D-017) must be designed for one-or-many jobs per project and one-or-many outputs per job from day one.
+**Tradeoff against scope.** **Substantial** scope: live-watch + cloud-source ingest + multi-output orchestration + during-event publish gates each adds significant work. This orchestration stays entirely internal — the user still just sets up the live job by describing the outputs they want, then approves; they never operate the multi-output machinery. Pulling this into MVP would push the 2–5 hr ceiling (D-014) into 2–5 weeks. Hence v1, **but the MVP architecture must leave a clean feature flag** so live-job can land in v1 without a rewrite — specifically, the project / job model (A-001) and the internal coordination layer (D-017) must be designed for one-or-many jobs per project and one-or-many outputs per job from day one.
 
 **Linked items.** A-001, A-014, D-017, D-019 (mobile = v2 epic, justified partly because A-012's mobile camera-roll watcher is its v1 first touch), N-005 (live-job pattern, novel mechanism), [`project/tasks/T-1.2.1.6-live-job-style-learning-posture.md`](../../project/tasks/T-1.2.1.6-live-job-style-learning-posture.md).
 
@@ -366,13 +368,15 @@ Each addition gets a heading with an `A-NNN` ID (monotonically incrementing, nev
 
 **Why this matters.** The user's stated ultimate feature (2026-06-11, verbatim intent): someone returns from a 10-day group trip, dumps thousands of photos and hundreds of videos, and does NOT want to spend time creating videos — they want the app to spend hours and deliver a complete, shareable package: per-location/event videos, reels/shorts of special moments, one overall trip video, and a montage. "Holistic and piecemeal and manageable and comprehensive and granular at the same time." This is the dump-and-delight promise that makes the app lovable; everything else is plumbing toward it.
 
-**What it would look like.** Per N-013, a planning layer ABOVE the existing single-artifact pipeline:
+**What it would look like.** The user-facing experience is the same single click: one dump of the whole trip's media, and the app returns a full coordinated package — per-location/event videos, reels/shorts, an overall trip video, a montage — surfaced on one approval surface where the user approves all / some, then publishes per ADR-0013 connectors. No extra steps, no per-artifact configuration; the one intentional pause (preview-and-approve) just covers many artifacts at once instead of one.
+
+Internally, the AI plans the package per N-013 — a planning layer ABOVE the existing single-artifact pipeline that the user never operates:
 1. **Trip segmentation** — cluster the full media set into events/locations/days/themes using capture time + GPS (requires ingest-side EXIF GPS parsing — currently GPS is only stripped for privacy, never read) + content signals (Stage 2/3 outputs).
 2. **Density-driven artifact allocation** — per cluster, score media density × quality × distinctiveness; rich clusters (e.g. a fully-documented Bryce Canyon hike) earn a dedicated video; thin clusters merge with temporal neighbors into combined videos; standout moments queue as reel/short candidates; everything contributes to the overall video + montage.
 3. **Package plan as artifact briefs** — the planner emits N artifact briefs (each = brief + media subset + duration + mode + platform target), executed by the existing Stages 1–7 pipeline per artifact, sharing one analysis pass via the A-011 cache (analysis cost is paid once, not N times).
 4. **Package preview** — one approval surface listing every artifact with previews; user approves all / some; publishes per ADR-0013 connectors.
 
-**Open questions.** Cost envelope per package (N judge calls — Tier-L × artifact count dominates; package-level effort-level UX needed); planner placement (v2.2 multi-agent harness is the natural home; a deterministic-first planner could pilot in v1.2's multi-output orchestration); per-platform variants (16:9 YouTube vs 9:16 reels) as separate artifacts or render variants; partial-package refine semantics.
+**Open questions.** Cost envelope per package (N judge calls — Tier-L × artifact count dominates; package-level effort-level UX needed); planner placement (v2.2 multi-agent harness is the natural home; a deterministic-first planner could pilot in v1.2's multi-output orchestration — which stays entirely internal: the user still just dumps media, describes the outputs, and approves the package); per-platform variants (16:9 YouTube vs 9:16 reels) as separate artifacts or render variants; partial-package refine semantics.
 
 **Tradeoff against scope.** The biggest feature on the roadmap. Explicitly gated by D-042: not before single-video quality is mastered (A-016/A-017 and the v1 quality milestones are prerequisites, per the user: "unless the individual videos are acceptable quality, the package feature doesn't make sense — it is built on top of this capability").
 
