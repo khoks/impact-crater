@@ -55,8 +55,10 @@ Cross-references:
 | Cross-job content-addressed analysis cache | mvp-lite (universal + model-versioned) / v1 (full reuse-class semantics) | Don't re-analyze the same photo across jobs | A-011, N-007 |
 | Quality floor + user override | v1 | Quality model needs calibration first | A-007 |
 | Reference-media style fingerprint applied to curation objective | v1 | Style influences *what gets selected*, not just render | A-014, N-004 |
-| Cheap-first analysis hardening (thumbs to LLMs + time-bounded scene sampling) | v1 | Analysis renditions feed every LLM call; long scenes get extra frames | A-016, S-2.9.5 |
-| Semantic near-duplicate suppression (best-of-burst) | v1 | Embedding-similarity clustering keeps the best retake, drops the rest | A-017, S-2.9.6 |
+| Media chronology (capture-time + GPS extraction) | **delivered 2026-06-11** | EXIF/filename/mtime reconciled with confidence; GPS read; judge ordered forward-in-time | A-021, N-014, D-043 |
+| Rich-metadata enrichment (shot type, per-person expression, safety, specialness, obstructions) | **delivered 2026-06-11** | The planner can land emotional peaks, vary framing, drop blocked/explicit shots | A-022, D-043 |
+| Cheap-first analysis hardening (thumbs to LLMs + time-bounded scene sampling) | **delivered 2026-06-11** | 1024px renditions feed every LLM call; long scenes subdivided | A-016, S-2.9.5, D-043 |
+| Semantic near-duplicate suppression (best-of-burst) | **delivered 2026-06-11** | Embedding-similarity clustering, time-windowed, keeps the best retake | A-017, S-2.9.6, D-043 |
 | Auto-derived trip cast + coverage-aware curation | v1-late / v2 | Unique-face inventory, group-vs-crowd inference, "is everyone included?" | A-018, N-012 |
 
 ### 3. Story Video generation
