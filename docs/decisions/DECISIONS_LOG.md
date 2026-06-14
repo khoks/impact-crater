@@ -1065,3 +1065,15 @@ E-1.4 round 1 needs to ratify or trim this expanded scope before sequencing. Cut
 - **Alternatives considered:** insightface-only (rejected: forces a heavy dependency + model download on every user for a feature many won't need); local-generative-only for A-019 (rejected: excludes thin-client users the remote default serves); remote-only with no local option (rejected: the user wants an on-device path for privacy/capability).
 - **Consequences:** New `media/face_embed.py` (FaceEmbedder protocol + GeminiFaceEmbedder default + InsightFaceEmbedder optional + factory); `media/cast.py` + `pipeline/cast_builder.py` (detect→embed→cluster→group/crowd→coverage); settings keys `cast_analysis_enabled` + `cast_backend`; `_face_detect.py` resilient detection (also fixes privacy-blur on mediapipe 0.10.35); pipeline wires the cast through Stage 4 annotation + Stage 6 coverage report; `cast.json` persisted per project. A-019 backends to be built next on this pattern. Default-backend accuracy is a documented limitation; insightface is the accuracy path.
 - **Linked ADRs / items:** A-018, A-019, N-012, ADR-0007, ADR-0008, ADR-0010, ADR-0016.
+
+---
+
+### D-045 — In-app feedback loop: persisted per-phase diagnostics + decision-level feedback, picked up out-of-band by Claude
+
+- **Status:** accepted
+- **Date:** 2026-06-14
+- **Context:** The user asked for a low-friction way to keep improving video quality by giving feedback on specific automated decisions inside the app, then having Claude pick that feedback up in a later session and act on it. The pipeline already makes richly-inspectable decisions but exposed none of them.
+- **Decision:** (1) Persist a `diagnostics.json` per snapshot built from existing artifacts (Stage 4 `filter_log`, the `ArcJudgment`, the `RenderPlan`, the `CastInventory`) — no new LLM calls. (2) Serve it via `GET /api/snapshots/{id}/diagnostics` + a `GET /api/media/{hash}/thumb.jpg` thumbnail endpoint. (3) Capture feedback via `POST /api/feedback` into a `feedback` table (migration 004) + an append-only `~/.impact-crater/feedback.jsonl` mirror. (4) Frontend: a per-phase diagnostics viewer + a per-decision feedback popup on the preview page. (5) `scripts/feedback.py` + a CLAUDE.md protocol are the out-of-band pickup path (N-015). Post-completion (not live-during-execution) for v1 — the data is identical, the complexity is far lower.
+- **Alternatives considered:** Live per-phase popups streamed over WS during execution (deferred — same data, much more complex, no extra value for the review-and-improve goal); a free-text "rate this video" box (rejected — too coarse to drive concrete pipeline changes); auto-tuning thresholds directly from feedback (deferred — needs volume + guardrails; the human-in-the-loop Claude pickup is the safe first step).
+- **Consequences:** New `pipeline/diagnostics.py`, `api/media.py`, `api/feedback.py`, migration 004, `scripts/feedback.py`; runner writes `diagnostics.json`; frontend gains `DiagnosticsPanel`. The feedback store becomes the durable backlog of user-flagged improvements that future sessions work through.
+- **Linked ADRs / items:** A-023, N-015, ADR-0006 (storage), D-042.
