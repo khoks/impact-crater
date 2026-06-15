@@ -1,8 +1,8 @@
 # Impact Crater — Product & Architecture Overview
 
-[![Impact Crater — video masterpieces from your media; you describe, the AI does it](banner.png)](https://notebooklm.google.com/notebook/d7db525d-d686-47d9-995b-211092185d03/artifact/73f4bd79-f941-4004-adb4-0408ff4e4077?utm_source=nlm_web_share&utm_medium=google_oo&utm_campaign=art_share_1&utm_content=&utm_smc=nlm_web_share_google_oo_art_share_1_)
+[![Impact Crater — video masterpieces from your media; you describe, the AI does it](banner.png)](https://notebooklm.google.com/notebook/d7db525d-d686-47d9-995b-211092185d03/artifact/39a9e5a9-eccb-4cd2-a52a-9d07423c4eb0?utm_source=nlm_web_share&utm_medium=google_oo&utm_campaign=art_share_1&utm_content=&utm_smc=nlm_web_share_google_oo_art_share_1_)
 
-**[▶ Watch the video overview](https://notebooklm.google.com/notebook/d7db525d-d686-47d9-995b-211092185d03/artifact/73f4bd79-f941-4004-adb4-0408ff4e4077?utm_source=nlm_web_share&utm_medium=google_oo&utm_campaign=art_share_1&utm_content=&utm_smc=nlm_web_share_google_oo_art_share_1_)**
+**[▶ Watch the video overview](https://notebooklm.google.com/notebook/d7db525d-d686-47d9-995b-211092185d03/artifact/39a9e5a9-eccb-4cd2-a52a-9d07423c4eb0?utm_source=nlm_web_share&utm_medium=google_oo&utm_campaign=art_share_1&utm_content=&utm_smc=nlm_web_share_google_oo_art_share_1_)**
 
 ![Impact Crater — from raw media to masterpiece: drop media and describe your vision, the AI analyzes quality and narrative flow, hardware-adaptive processing balances power and cost, a human-in-the-loop approval gate, and refine results in plain language](From_Raw_Media_to_Masterpiece.png)
 
