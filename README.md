@@ -9,7 +9,11 @@
 > A dead-simple 1-click media-to-video creator. Dump a pile of photos and videos, describe in your own words what you want and where to post it, click **Submit** — and you're **done**. Behind that one click the AI does everything: analysis, selection, sequencing, music matching, and rendering into ready-to-publish artifacts — reels, albums, journey videos, montages. The one intentional pause is yours: nothing is pushed to your connected platforms until you preview it and approve.
 
 <p align="center">
-  <img src="docs/banner.png" alt="Impact Crater — video masterpieces from your media; you describe, the AI does it" width="100%" />
+  <a href="https://notebooklm.google.com/notebook/d7db525d-d686-47d9-995b-211092185d03/artifact/73f4bd79-f941-4004-adb4-0408ff4e4077?utm_source=nlm_web_share&utm_medium=google_oo&utm_campaign=art_share_1&utm_content=&utm_smc=nlm_web_share_google_oo_art_share_1_">
+    <img src="docs/banner.png" alt="Impact Crater — video masterpieces from your media; you describe, the AI does it" width="100%" />
+  </a>
+  <br/>
+  <a href="https://notebooklm.google.com/notebook/d7db525d-d686-47d9-995b-211092185d03/artifact/73f4bd79-f941-4004-adb4-0408ff4e4077?utm_source=nlm_web_share&utm_medium=google_oo&utm_campaign=art_share_1&utm_content=&utm_smc=nlm_web_share_google_oo_art_share_1_"><b>▶ Watch the video overview</b></a>
 </p>
 
 ![Impact Crater — from raw media to masterpiece: drop media and describe your vision, the AI analyzes and curates, hardware-adaptive cost balancing, a human-in-the-loop approval gate, and plain-language refinement](docs/From_Raw_Media_to_Masterpiece.png)
