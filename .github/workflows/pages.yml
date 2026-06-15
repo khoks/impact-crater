@@ -11,6 +11,8 @@ on:
     paths:
       - docs/OVERVIEW.md
       - docs/From_Raw_Media_to_Masterpiece.png
+      - docs/banner.png
+      - docs/logo.png
       - mkdocs.yml
       - .github/workflows/pages.yml
   workflow_dispatch:
@@ -40,6 +42,8 @@ jobs:
           mkdir -p site-src
           cp docs/OVERVIEW.md site-src/index.md
           cp docs/From_Raw_Media_to_Masterpiece.png site-src/
+          cp docs/banner.png site-src/
+          cp docs/logo.png site-src/
       - name: Build site
         run: mkdocs build
       - name: Configure Pages
