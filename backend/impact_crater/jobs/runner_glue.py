@@ -39,6 +39,42 @@ log = logging.getLogger(__name__)
 _STAGE_BY_NAME: dict[str, StageId] = {s.value: s for s in StageId}
 
 
+def _classify_failure(exc: Exception) -> str:
+    """Translate a raw pipeline exception into a concise, user-facing reason.
+
+    Recognized provider errors get an actionable message (especially the
+    Anthropic "credit balance is too low" 400, which is a billing issue, not
+    a code bug); everything else falls back to the truncated raw string so
+    underlying detail is never hidden. The full traceback is always logged.
+    """
+    raw = str(exc)
+    low = raw.lower()
+    if "credit balance is too low" in low or ("insufficient" in low and "credit" in low):
+        return (
+            "Anthropic API credits exhausted — your credit balance is too low. Add "
+            "credits at console.anthropic.com (Plans & Billing), then re-run this "
+            "job: the analysis already done is cached, so it resumes cheaply from "
+            "where it stopped."
+        )
+    if "rate limit" in low or "rate_limit" in low or "429" in low:
+        return (
+            "Rate limited — an AI provider is throttling requests right now. Wait a "
+            "few minutes and re-run; it resumes from cache."
+        )
+    if (
+        "invalid x-api-key" in low
+        or "invalid api key" in low
+        or "authentication_error" in low
+        or "permission denied" in low
+        or "401" in low
+    ):
+        return (
+            "API key rejected — an AI provider refused the configured key. Check "
+            "your keys in Settings, then re-run."
+        )
+    return raw[:300]
+
+
 class _RegistryReporter:
     """ProgressReporter that forwards stage callbacks to the registry."""
 
@@ -242,7 +278,7 @@ async def _run_and_capture(
             str(exc)[:200],
         )
         await registry.update_state(
-            job_id, "failed", failure_reason=str(exc)[:200]
+            job_id, "failed", failure_reason=_classify_failure(exc)
         )
     finally:
         # Detach the per-job sink so subsequent jobs don't accidentally

@@ -495,3 +495,53 @@ async def test_cache_miss_bumps_daily_quota_spend(
     await router.caption_image(b"\x00fake-jpg", content_hash="hash-X")
     today_after_hit = await quota.get_today_spend()
     assert today_after_hit["_total_"] == pytest.approx(miss_total)
+
+
+# ---- Token-accurate cost (2026-06-17 ~5x undercount regression) -------
+
+
+@pytest.mark.usefixtures("db_initialized")
+async def test_cost_uses_real_token_usage_not_flat_ballpark(
+    routing_config: Path, prompts_dir: Path
+) -> None:
+    """When the provider client reports real token usage on `params`, the
+    router must price the call via the rate card — NOT the flat per-tier
+    ballpark fallback.
+
+    Regression for the cost-metering bug where _ballpark_cost() returned a
+    hardcoded $0.005/call (Tier-M) and the API's real token usage was
+    discarded, under-billing vision calls ~5x ($6.93 recorded vs $34 actual).
+    """
+    from impact_crater import rate_cards
+
+    captured: list[dict[str, Any]] = []
+
+    async def _sink(payload: dict[str, Any]) -> None:
+        captured.append(payload)
+
+    google = _mock_client("google")
+
+    def _caption(image_bytes: bytes, *, prompt_template: str, params: CallParams) -> str:
+        # Simulate the real client writing the API's usage back onto params.
+        params.usage_input_tokens = 1000
+        params.usage_output_tokens = 200
+        return "a caption"
+
+    google.caption_image = AsyncMock(side_effect=_caption)
+    router = LLMRouter(clients={"google": google}, config_path=routing_config)
+    router.set_progress_sink(_sink)
+
+    await router.caption_image(b"\x00img", content_hash="hash-tok")
+
+    expected = rate_cards.estimate_cost_usd(
+        provider="google",
+        model="gemini-2.5-flash",
+        model_version="v1",
+        input_tokens=1000,
+        output_tokens=200,
+    )
+    assert len(captured) == 1
+    # Priced from the rate card (1000*0.0003/1k + 200*0.0025/1k = $0.0008)…
+    assert captured[0]["cost_usd"] == pytest.approx(expected)
+    # …and NOT the flat Tier-S ballpark ($0.001).
+    assert captured[0]["cost_usd"] != pytest.approx(0.001)

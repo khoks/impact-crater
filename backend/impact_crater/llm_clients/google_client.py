@@ -145,6 +145,7 @@ class GoogleLLMClient:
                 ),
             ),
         )
+        _apply_usage(params, result)
         return _extract_text(result)
 
     async def caption_video_scene(
@@ -170,6 +171,7 @@ class GoogleLLMClient:
                 ),
             ),
         )
+        _apply_usage(params, result)
         return _extract_text(result)
 
     async def score_image(
@@ -202,6 +204,7 @@ class GoogleLLMClient:
                 ),
             ),
         )
+        _apply_usage(params, result)
         text = _extract_text(result).strip()
         try:
             score = _first_float(text)
@@ -395,6 +398,7 @@ class GoogleLLMClient:
                 config=config,
             ),
         )
+        _apply_usage(params, result)
         text = _extract_text(result).strip()
         # Strip markdown fences in case the model added them despite the prompt.
         if text.startswith("```"):
@@ -472,6 +476,22 @@ def _extract_first_json_object(text: str) -> str | None:
             if depth == 0:
                 return text[start : i + 1]
     return None
+
+
+def _apply_usage(params: CallParams, result: Any) -> None:
+    """Write the Gemini response's real token usage back onto `params`.
+
+    `usage_metadata.prompt_token_count` already includes image-input tokens,
+    so we fold it into input and leave image_tokens at 0. Read by
+    LLMRouter._record_call to price via the rate card instead of the flat
+    ballpark fallback.
+    """
+    um = getattr(result, "usage_metadata", None)
+    if um is None:
+        return
+    params.usage_input_tokens = int(getattr(um, "prompt_token_count", 0) or 0)
+    params.usage_output_tokens = int(getattr(um, "candidates_token_count", 0) or 0)
+    params.usage_image_tokens = 0
 
 
 def _extract_text(result: Any) -> str:
