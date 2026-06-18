@@ -158,8 +158,16 @@ export default function JobInProgress() {
   // router counts each as one cache event, so 4× is the right denominator
   // for the user-facing progress bar.
   const stage2Expected = useMemo(() => {
-    if (!snapshot || snapshot.media_count <= 0) return 0;
-    return snapshot.media_count * 4;
+    if (!snapshot) return 0;
+    // Videos split into scenes, so the raw input-file count under-counts the
+    // "shots" the AI actually analyzes. The backend reports the true
+    // post-scene-split count in the Stage-2 detail ("N shots …"); prefer it
+    // and fall back to the file count until that detail arrives.
+    const s2 = snapshot.stages.find((s) => s.stage === "stage_2_bulk_ops");
+    const m = s2?.detail?.match(/([\d,]+)\s*shots/);
+    const shots = m ? parseInt(m[1].replace(/,/g, ""), 10) : 0;
+    const base = shots > 0 ? shots : snapshot.media_count;
+    return base > 0 ? base * 4 : 0;
   }, [snapshot]);
 
   async function onCancel() {
@@ -495,8 +503,9 @@ function TimelineStage({
   let progressPct: number | null = null;
   if (state === "running" && stage === "stage_2_bulk_ops" && stage2Expected > 0) {
     const done = cacheHits + cacheMisses;
+    const shown = Math.min(done, stage2Expected);
     progressPct = Math.min(100, Math.round((done / stage2Expected) * 100));
-    progressText = `${done.toLocaleString()}/${stage2Expected.toLocaleString()} shots looked at · ${progressPct}%`;
+    progressText = `${shown.toLocaleString()}/${stage2Expected.toLocaleString()} shots analyzed · ${progressPct}%`;
   }
 
   // Elapsed for running / total for completed.

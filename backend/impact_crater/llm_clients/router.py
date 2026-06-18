@@ -162,7 +162,7 @@ class LLMRouter:
             prompt_version=prompt.prompt_version,
             params_canonical=params_canonical,
         )
-        await self._record_call(route, cache_hit=False, result_bytes_hash=content_hash)
+        await self._record_call(route, cache_hit=False, params=params, result_bytes_hash=content_hash)
         return result
 
     async def score_image(
@@ -220,7 +220,7 @@ class LLMRouter:
             prompt_version=prompt.prompt_version,
             params_canonical=params_canonical,
         )
-        await self._record_call(route, cache_hit=False, result_bytes_hash=content_hash)
+        await self._record_call(route, cache_hit=False, params=params, result_bytes_hash=content_hash)
         return result
 
     async def extract_metadata_image(
@@ -269,7 +269,7 @@ class LLMRouter:
             prompt_version=prompt.prompt_version,
             params_canonical=params_canonical,
         )
-        await self._record_call(route, cache_hit=False, result_bytes_hash=content_hash)
+        await self._record_call(route, cache_hit=False, params=params, result_bytes_hash=content_hash)
         return result
 
     async def embed_image(self, image_bytes: bytes, *, content_hash: str) -> Embedding:
@@ -304,7 +304,7 @@ class LLMRouter:
             prompt_version=prompt_version,
             params_canonical=params_canonical,
         )
-        await self._record_call(route, cache_hit=False, result_bytes_hash=content_hash)
+        await self._record_call(route, cache_hit=False, params=params, result_bytes_hash=content_hash)
         return result
 
     async def embed_text(self, text: str, *, cache_key_text: str | None = None) -> Embedding:
@@ -345,7 +345,7 @@ class LLMRouter:
             prompt_version=prompt_version,
             params_canonical=params_canonical,
         )
-        await self._record_call(route, cache_hit=False, result_bytes_hash=content_hash)
+        await self._record_call(route, cache_hit=False, params=params, result_bytes_hash=content_hash)
         return result
 
     async def judge_narrative_arc(
@@ -437,7 +437,7 @@ class LLMRouter:
             prompt_version=prompt.prompt_version,
             params_canonical=params_canonical,
         )
-        await self._record_call(route, cache_hit=False, result_bytes_hash=content_hash)
+        await self._record_call(route, cache_hit=False, params=params, result_bytes_hash=content_hash)
         return result
 
     async def parse_user_brief(
@@ -488,7 +488,7 @@ class LLMRouter:
             prompt_version=prompt.prompt_version,
             params_canonical=params_canonical,
         )
-        await self._record_call(route, cache_hit=False, result_bytes_hash=content_hash)
+        await self._record_call(route, cache_hit=False, params=params, result_bytes_hash=content_hash)
         return result
 
     # -- Internal helpers -----------------------------------------------
@@ -498,25 +498,50 @@ class LLMRouter:
         route: OperationRoute,
         *,
         cache_hit: bool,
+        params: CallParams | None = None,
         latency_ms: int = 0,
         result_bytes_hash: str = "",
     ) -> None:
         """Emit LLMCallEvent telemetry + invoke progress sink (if any).
 
-        Cost is best-effort estimated from rate cards. Missing rate cards
-        log a warning but don't fail the call. Cache hits report cost=0.
+        Cost is computed from the provider's REAL token usage (written onto
+        `params` by the client after the API responds) priced against the rate
+        card (ADR-0015). When usage isn't available — a cache hit, an embedding
+        op, or a fake client in tests — we fall back to the per-tier ballpark.
+        Cache hits report cost=0.
         """
         cost = 0.0
+        in_tok = 0
+        out_tok = 0
         if not cache_hit:
-            try:
-                # Rough estimate — we don't have actual token counts at the
-                # router layer (they live inside each provider client). We
-                # ballpark per-tier averages from ADR-0009 §"per-job envelope".
-                cost = _ballpark_cost(route)
-            except Exception as exc:  # pragma: no cover — best-effort
-                log.debug("rate-card lookup failed for %s/%s: %s",
-                          route.provider, route.model, exc)
-                cost = 0.0
+            in_tok = params.usage_input_tokens if params is not None else 0
+            out_tok = params.usage_output_tokens if params is not None else 0
+            img_tok = params.usage_image_tokens if params is not None else 0
+            if in_tok or out_tok or img_tok:
+                try:
+                    cost = rate_cards.estimate_cost_usd(
+                        provider=route.provider,
+                        model=route.model,
+                        model_version=route.model_version,
+                        input_tokens=in_tok,
+                        output_tokens=out_tok,
+                        image_tokens=img_tok,
+                        is_embedding=route.operation in ("embed_image", "embed_text"),
+                    )
+                except Exception as exc:  # pragma: no cover — best-effort
+                    log.debug("rate-card cost calc failed for %s/%s: %s",
+                              route.provider, route.model, exc)
+                    cost = _ballpark_cost(route)
+            else:
+                # No usage reported (embeddings don't surface tokens here, and
+                # test fakes never set them) — fall back to the ballpark so a
+                # quota check is never silently skipped.
+                try:
+                    cost = _ballpark_cost(route)
+                except Exception as exc:  # pragma: no cover — best-effort
+                    log.debug("rate-card lookup failed for %s/%s: %s",
+                              route.provider, route.model, exc)
+                    cost = 0.0
 
         ctx = self._telemetry_context
         # Single structured log line on EVERY dispatch (cache hit or miss).
@@ -545,8 +570,8 @@ class LLMRouter:
                     provider=route.provider,
                     model=route.model,
                     model_version=route.model_version,
-                    input_tokens=0,
-                    output_tokens=0,
+                    input_tokens=in_tok,
+                    output_tokens=out_tok,
                     latency_ms=latency_ms,
                     cost_estimate_usd=cost,
                     result_bytes_hash=result_bytes_hash,

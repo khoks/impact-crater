@@ -88,6 +88,14 @@ class CallParams:
     max_tokens: int = 1024
     temperature: float = 0.0
     extra: dict[str, Any] = field(default_factory=dict)
+    # Real token usage written back by the provider client after the API
+    # responds, read by the LLMRouter to compute accurate per-token cost
+    # (ADR-0015). A fresh CallParams is created per dispatch, so writing here
+    # is concurrency-safe under the worker pool. Left at 0 when the provider
+    # doesn't report usage (the router then falls back to a ballpark estimate).
+    usage_input_tokens: int = 0
+    usage_output_tokens: int = 0
+    usage_image_tokens: int = 0
 
 
 # ---- Tool / message shapes for tool-call loops --------------------------

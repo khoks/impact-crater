@@ -352,7 +352,9 @@ class AnthropicLLMClient:
             kwargs["system"] = system
         if tools:
             kwargs["tools"] = tools
-        return await _retry(params, lambda: self._client.messages.create(**kwargs))
+        msg = await _retry(params, lambda: self._client.messages.create(**kwargs))
+        _apply_usage(params, msg)
+        return msg
 
     async def _call_tool_use(
         self,
@@ -530,6 +532,26 @@ def _resize_to_max_edge(img: Image.Image, max_edge: int) -> Image.Image:
         return img
     scale = max_edge / longest
     return img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
+
+
+def _apply_usage(params: CallParams, msg: Any) -> None:
+    """Write the Anthropic response's real token usage back onto `params`.
+
+    Anthropic's `usage.input_tokens` already includes image-input tokens, so
+    we fold everything into input/output and leave image_tokens at 0. Cache
+    tokens are added defensively (they're 0 unless prompt caching is used,
+    which we don't). Read by LLMRouter._record_call to price the call via the
+    rate card instead of the flat ballpark fallback.
+    """
+    u = getattr(msg, "usage", None)
+    if u is None:
+        return
+    in_tok = int(getattr(u, "input_tokens", 0) or 0)
+    in_tok += int(getattr(u, "cache_creation_input_tokens", 0) or 0)
+    in_tok += int(getattr(u, "cache_read_input_tokens", 0) or 0)
+    params.usage_input_tokens = in_tok
+    params.usage_output_tokens = int(getattr(u, "output_tokens", 0) or 0)
+    params.usage_image_tokens = 0
 
 
 def _first_text(msg: anthropic.types.Message) -> str:

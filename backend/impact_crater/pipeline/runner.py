@@ -217,12 +217,19 @@ async def run_headless_pipeline(
 
         # Stage 2 + 3 — sequentially (3 needs the full media list); inside
         # each stage we parallelize per-asset.
-        await reporter.stage_started("stage_2_bulk_ops")
+        # True post-scene-split shot count (videos expand into multiple
+        # scenes), surfaced in the Stage-2 detail so the in-progress bar uses
+        # an accurate denominator instead of the raw input-file count. Cheap:
+        # just flattens the already-loaded media records, no I/O.
+        asset_count = len(list(stage2_bulk_ops._enumerate_assets(media)))
+        await reporter.stage_started(
+            "stage_2_bulk_ops", detail=f"{asset_count} shots to analyze"
+        )
         stage2 = await stage2_bulk_ops.run_stage2(
             router=router, media=media, brief=config.brief, pool=pool
         )
         await reporter.stage_completed(
-            "stage_2_bulk_ops", detail=f"{len(stage2)} assets"
+            "stage_2_bulk_ops", detail=f"{len(stage2)} shots analyzed"
         )
 
         await reporter.stage_started("stage_3_metadata")
