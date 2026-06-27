@@ -199,6 +199,12 @@ export default function Dashboard() {
                               {playingSnapshot === snap.id ? "Hide" : "▶ Watch"}
                             </button>
                           )}
+                          <Link
+                            to={`/snapshots/${snap.id}/inspect?project=${project.id}`}
+                            className="text-xs font-medium text-slate-600 hover:text-slate-900"
+                          >
+                            Inspect &amp; feedback
+                          </Link>
                         </div>
                         {playingSnapshot === snap.id && (
                           <video
