@@ -11,6 +11,7 @@ import NewProject from "./routes/NewProject";
 import PersonLibrary from "./routes/PersonLibrary";
 import Settings from "./routes/Settings";
 import Setup from "./routes/Setup";
+import SnapshotInspect from "./routes/SnapshotInspect";
 import WorkplanTracker from "./routes/WorkplanTracker";
 import { useSetupStore } from "./stores/setupStore";
 
@@ -64,6 +65,7 @@ export default function App() {
       <Route path="/projects/new/effort" element={<EffortAndCost />} />
       <Route path="/jobs/:job_id" element={<JobInProgress />} />
       <Route path="/jobs/:job_id/preview" element={<JobPreview />} />
+      <Route path="/snapshots/:snapshot_id/inspect" element={<SnapshotInspect />} />
       <Route path="/settings" element={<Settings />} />
       <Route path="/people" element={<PersonLibrary />} />
       <Route path="/feedback" element={<FeedbackTracker />} />
