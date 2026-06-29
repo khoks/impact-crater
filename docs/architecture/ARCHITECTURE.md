@@ -2,6 +2,8 @@
 
 Impact Crater is a dead-simple, one-click media-to-video creator: the user drops a pile of photos and videos, types in their own words what video(s) they want and where to post, clicks Submit, and is done — the AI does everything else, pausing only once at a preview-and-approve gate before publishing. Everything described below — the curation engine, the orchestrator, the LLM router, the worker pool, the connector layer — is **internal machinery that delivers that single user action**. The user never operates these stages, tiers, or tools; they exist so the one click is fast, cheap, and personal. This document is the engineering reference for that machinery and intentionally keeps the full technical detail.
 
+> **See also → [`PIPELINE_DATAFLOW.md`](./PIPELINE_DATAFLOW.md):** the code-level, module-by-module **data-flow** trace of a job from input media to rendered MP4 — every step labelled AI-prompt / AI-embedding / deterministic / external-tool, with file paths, prompts, and the data objects that flow between stages (fed to NotebookLM to visualize processing). This ARCHITECTURE doc is the high-level map; that one is the detailed flow.
+
 > **Status: E-1.3 complete (2026-05-03).** All 12 ADRs from rounds 1 + 2 + 3 accepted (ADR-0005..0016 / D-023..D-035). Plus the four governance ADRs (ADR-0001..0004) gives 16 ADRs total. Eleven novel mechanisms (N-001..N-011) filed in [`docs/vision/NOVEL_IDEAS.md`](../vision/NOVEL_IDEAS.md). E-1.4 (roadmap + MVP final lock) is the next thing on the board.
 
 The accepted decisions live in this folder as `ADR-NNNN-*.md` files. As of 2026-05-03: sixteen ADRs accepted, no remaining "to decide" placeholders in this document.

@@ -29,6 +29,7 @@ You are the **only** writer for these files:
 | Verbatim long user dumps that are too unstructured to file directly | `docs/vision/notes/YYYY-MM-DD-slug.md` |
 | **Verbatim user vision / intent clarification** (a restatement or shift of *core product intent / positioning*, in the user's own words) | `docs/vision/RAW_VISION.md` — append a **dated, verbatim** addendum below the `## Addenda` rule (NEVER edit above it) |
 | **Material change to product features / architecture / flows / outputs** | refresh `docs/OVERVIEW.md` (the maintained external-facing mirror — keep it free of internal IDs / ADR numbers / tracker shorthand, per CLAUDE.md) |
+| **Change to the pipeline modules / data objects / prompts / stage flow** | refresh `docs/architecture/PIPELINE_DATAFLOW.md` (the code-level, module-by-module data-flow mirror — keep step kinds [AI-prompt / AI-embedding / deterministic / external-tool], file paths, prompts, and data objects current; this is the doc fed to NotebookLM to visualize processing) |
 | **Significant bug + its root-cause learning** | `docs/decisions/DECISIONS_LOG.md` (a D-NNN with **Context + Root cause + Decision/fix**) so the lesson survives outside commit history |
 
 You do **not** touch `project/` — that's the work-tracker skill's domain. You **own `RAW_VISION.md` addenda only**: when the user states a verbatim clarification or shift of core product intent, append it as a dated, verbatim entry below the `## Addenda` rule. **Never edit the original block above the rule** — it is frozen as the source of truth for original intent.
