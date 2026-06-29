@@ -445,3 +445,11 @@ Internally, the AI plans the package per N-013 — a planning layer ABOVE the ex
 **Tradeoff against scope.** Moderate — feedback is already DB-native; the workplan view is a read-only markdown parser + an override table. No change to the canonical tracking model.
 
 **Linked items.** A-023, D-045, D-046, D-047.
+
+### A-025 — Native job persistence so finished jobs survive a restart (2026-06-18)
+
+- **Source:** session 2026-06-18, from Claude (gap found in use).
+- **Idea:** Jobs live only in the in-memory `JobRegistry`, so a server/computer restart loses the live job object and its `/jobs/:id` + preview routes. S-2.9.16 added a snapshot-keyed Inspect & Feedback view as a workaround; the deeper fix is to persist the registry (or reconstruct jobs from the DB `snapshots` table on startup) so the live/preview views survive restarts natively.
+- **Why it matters:** Multi-hour jobs + restarts are common; losing the job view — and nearly losing access to give feedback — is a real UX hit, and in-memory-only is a robustness/scaling ceiling.
+- **Status:** proposed.
+- **Linked items:** S-2.9.16, S-2.9.19.

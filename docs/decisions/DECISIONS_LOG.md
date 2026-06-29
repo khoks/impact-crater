@@ -1101,3 +1101,54 @@ E-1.4 round 1 needs to ratify or trim this expanded scope before sequencing. Cut
 - **Alternatives considered:** Writing workplan status/priority straight to the markdown from the API (rejected — bypasses the work-tracker PR flow + ownership, creates uncommitted working-tree edits); mirroring the whole workplan into the DB as a second source of truth (rejected — markdown stays canonical per CLAUDE.md); read-only workplan with no priority editing (rejected — the user explicitly wants to change priority).
 - **Consequences:** New `api/workplan.py`, feedback API detail/patch, migration 006, frontend `/feedback` + `/workplan` routes + dashboard nav. Priority overrides become a small reconciliation task for work-tracker (documented in CLAUDE.md). 402 backend + 38 frontend tests green.
 - **Linked ADRs / items:** A-024, A-023, D-045, D-046, ADR-0002 (work hierarchy), ADR-0006 (storage).
+
+### D-048 — Token-accurate LLM cost metering (replace the flat per-tier ballpark)
+
+- **Status:** accepted
+- **Date:** 2026-06-17
+- **Context:** A 1,663-asset validation job recorded only ~$6.93 of Anthropic Sonnet while Anthropic billed ~$34.09 — a ~5x undercount that made the spend cap effectively blind.
+- **Decision:** Price every LLM call from the provider's REAL token usage via the existing `rate_cards.estimate_cost_usd`. Each client writes the API response's usage onto the per-call `CallParams` (Anthropic `Message.usage`, Gemini `usage_metadata`); `LLMRouter._record_call` reads it and prices accurately, falling back to the per-tier ballpark only when usage is absent (cache hits, embeddings, test fakes). Emit the real input/output tokens in `LLMCallEvent`.
+- **Root cause:** `_record_call` called `_ballpark_cost`, which loaded the rate card then ignored it and returned a flat $0.005/call; API usage was discarded (`input_tokens`/`output_tokens` hardcoded to 0; image tokens never counted). The correct `estimate_cost_usd` existed but was only exercised in tests.
+- **Alternatives considered:** Keep the ballpark + just raise the cap (rejected — hides true spend); compute cost from a token estimate instead of real usage (rejected — the API already reports exact usage).
+- **Consequences:** Accurate live + per-job cost; the cap is meaningful again; daily cap raised $50→$100 for jobs this size. The pre-job estimate (cost-preview) is still ballpark — follow-up (S-2.9.18). Shipped as S-2.9.14 with a regression test.
+- **Linked ADRs / items:** S-2.9.14, S-2.9.18, ADR-0015 (cost model), A-025.
+
+### D-049 — Pipeline order: rich metadata stays BEFORE pre-filter; cut cost with a two-phase split, not a reorder
+
+- **Status:** accepted
+- **Date:** 2026-06-17
+- **Context:** Stage-3 rich metadata (Tier-M Sonnet) ran on ~1,422 shots, then Stage-4 pre-filter kept only 621 — so we paid for expensive metadata on ~800 shots that were then dropped. The obvious "pre-filter first" optimization was investigated.
+- **Decision:** Do NOT reorder pre-filter before metadata. Pre-filter depends on Stage-3 metadata: the safety floor (drops explicit frames), obstruction filtering, location/time-of-day clustering, specialness ranking, and the `metadata_summary` the Opus judge reads. Instead, plan a two-phase pre-filter: a cheap Stage-2-only pass (quality floor + relevance + perceptual-hash + embedding dedup) BEFORE metadata, then metadata on survivors only, then the full metadata-aware pass.
+- **Alternatives considered:** Naive reorder (rejected — loses safety + curation intelligence); leave as-is (rejected — wastes ~half the Tier-M cost on large jobs).
+- **Consequences:** ~half the Tier-M cost saved on large jobs with no quality loss, once built. Filed as S-2.9.15 (backlog, v1). Directly serves the A-016 cheap-first principle.
+- **Linked ADRs / items:** S-2.9.15, A-016, D-043 (prep-phase overhaul).
+
+### D-050 — Product positioning: a 1-click media-to-video creator, not an "orchestrator"/"curator"/platform
+
+- **Status:** accepted
+- **Date:** 2026-06-14
+- **Context:** A NotebookLM deck generated from `OVERVIEW.md` kept calling the app an "orchestrator"; a 13-agent doc audit (adversarially verified) found the docs AND the app UI led with "curator"/"orchestrator"/pipeline framing rather than the true 1-click identity. `RAW_VISION.md` confirms the 1-click spirit is original intent and scopes the agentic harness as internal.
+- **Decision:** Frame Impact Crater everywhere as a dead-simple 1-click media-to-video creator (dump media → describe in your own words → submit → done; the AI does the rest, publishing only after a preview-and-approve gate). Orchestration / pipelines / stages are internal, invisible implementation detail — never the identity. Secondary qualities (learns, tracks, efficient, adaptive, caches, person library, Trip Package) stay subordinate. Transparency surfaces (the mandatory cost preview and the live execution view) are KEPT — they are features — but presented engagingly (owner's call).
+- **Alternatives considered:** Lead with "AI curator"/transparency (rejected — buries the simple identity, the very drift that misled NotebookLM); hide the cost/execution surfaces for pure simplicity (rejected by owner — transparency is a feature).
+- **Consequences:** 9 docs + the app UI rewritten; `RAW_VISION.md` gained 6 dated verbatim addenda; positioning saved to memory. Shipped as S-2.9.13.
+- **Linked ADRs / items:** S-2.9.13, D-052, RAW_VISION addenda (2026-06-14).
+
+### D-051 — knowledge-curator scope expanded: owns RAW_VISION addenda + OVERVIEW.md upkeep + bug-fix root-causes
+
+- **Status:** accepted
+- **Date:** 2026-06-18
+- **Context:** A capture audit found three blind spots in the knowledge-curator skill: (1) RAW_VISION addenda were unowned by any skill — the gap behind "RAW_VISION not updated since 4/25"; (2) `OVERVIEW.md` upkeep (mandated by CLAUDE.md) was unowned; (3) significant bug root-causes had no knowledge home beyond a judgment-call D-NNN.
+- **Decision:** knowledge-curator now (1) appends dated, verbatim user vision/intent clarifications below the `## Addenda` rule in `RAW_VISION.md` (still never edits above it); (2) refreshes `OVERVIEW.md` when product/features/architecture/flows materially change; (3) records significant bug root-cause learnings as D-NNN. Added a long-session/compaction note: when the conversation was compacted, read the session transcript so mid-session knowledge is not lost.
+- **Alternatives considered:** Leave RAW_VISION/OVERVIEW to the in-session assistant (rejected — that is exactly what failed); a separate "lessons/gotchas" doc (deferred — D-NNN is the home for now).
+- **Consequences:** `knowledge-curator/SKILL.md` updated; verbatim vision, overview drift, and bug learnings are now captured automatically.
+- **Linked ADRs / items:** `.claude/skills/knowledge-curator/SKILL.md`, RAW_VISION.md, OVERVIEW.md.
+
+### D-052 — External docs site: MkDocs Material on GitHub Pages, OVERVIEW-only
+
+- **Status:** accepted
+- **Date:** 2026-06-14
+- **Context:** Wanted a public, themed, outward-facing site rendering the consolidated `OVERVIEW.md` (incl. Mermaid diagrams) for sharing / NotebookLM, without exposing internal trackers/ADRs.
+- **Decision:** Build the site with MkDocs Material via a GitHub Actions workflow that assembles ONLY `docs/OVERVIEW.md` (+ branding assets) into the published site (`docs_dir: site-src`); Mermaid via `pymdownx.superfences`. Pages is enabled out-of-band with `build_type=workflow` (the workflow `GITHUB_TOKEN` cannot create the Pages site itself). Live at `khoks.github.io/impact-crater`.
+- **Alternatives considered:** Publishing the whole `docs/` tree (rejected — leaks internal IDs/ADRs); committing a pre-built site (rejected — drifts from source).
+- **Consequences:** New `mkdocs.yml` + `.github/workflows/pages.yml`; `OVERVIEW.md` is the public source, kept jargon-free per D-050; logo/banner/infographic branding + NotebookLM video link added.
+- **Linked ADRs / items:** D-050, OVERVIEW.md.
