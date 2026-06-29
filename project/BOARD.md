@@ -1,6 +1,6 @@
 # Board
 
-> **Last updated:** 2026-06-11 (second pass) — **Dashboard gap closed.** After the morning's validation hot-fixes (S-2.9.1, PRs #35–#37, D-040/D-041), the user hit the dashboard stub live ("can't see already submitted and completed jobs"). **S-2.9.2 + S-2.9.3 shipped same-day:** real `GET /api/projects` (DB-backed, snapshots + has_render), `GET /api/jobs` session list, Dashboard rewrite (session-jobs strip, project cards, inline render playback), name/brief upsert at submit, and the `Content-Disposition: inline` fix without which Chrome refuses to play render.mp4 in any `<video>` (also unblocks JobPreview). Verified live in Chrome: 11 projects listed, both Zion renders play inline. **346 backend + 33 frontend tests green.** Remaining under E-2.9: S-2.9.4 crossfades (parked v1) + the user-side D-014 1000-photo validation run. **Third pass: 2026-06-11 feature grooming** — A-016..A-020 + N-012/N-013 + D-042 (Trip Package north star, gated on single-video quality); S-2.9.5/S-2.9.6 filed as the first v1 quality stories.
+> **Last updated:** 2026-06-18 — **MVP D-014 validation PASSED + cost/UX hardening.** The user ran a real **1,663-asset SW-US-trip job** (1,481 photos + 182 videos → 2,067 shots) end-to-end → a publish-ready **108s Story Video at confidence 0.85**, evaluated good against the brief — **the D-014 MVP gate is met**. This session also shipped **S-2.9.13** (1-click positioning realign across 9 docs + the app UI + RAW_VISION addenda, D-050), **S-2.9.14** (token-accurate cost metering after a ~5× undercount + credit-exhausted error surfacing + accurate Stage-2 progress; daily cap $50→$100; D-048), and **S-2.9.16** (snapshot-keyed Inspect & Feedback so finished jobs stay reviewable after a restart). Filed: **S-2.9.15** (two-phase pre-filter, D-049), **S-2.9.17** (faststart render), **S-2.9.18** (token-aware pre-job estimate), **S-2.9.19** (persist job registry, A-025), **S-2.9.20** (Las Vegas absent from curation). GitHub Pages docs site + branding live (D-052). **Knowledge swept:** D-048..D-052 + A-025 logged.
 > **How to read this:** Hand-maintained mirror of frontmatter `status:` values. The `work-tracker` skill refreshes this file at end-of-session. If you see drift, re-derive from `grep -l "status:" project/{initiatives,epics,stories,tasks}/*.md`.
 
 ---
@@ -14,7 +14,11 @@
 
 ## Up Next (Ready)
 
-(empty — S-2.9.4 is parked at v1; D-014 validation is user-side)
+| ID | Title | Type | Priority | Phase |
+|---|---|---|---|---|
+| [S-2.9.18](./stories/S-2.9.18-token-aware-pre-job-cost-estimate.md) | Token-aware pre-job cost estimate (align preview with the accurate meter; D-048) | Story | P2 | mvp-hardening |
+| [S-2.9.20](./stories/S-2.9.20-investigate-las-vegas-absent-from-curation.md) | Investigate Las Vegas absent from the curated video | Story | P2 | mvp-hardening |
+| [S-2.9.17](./stories/S-2.9.17-faststart-render-instant-preview.md) | Faststart render so inline previews load instantly | Story | P3 | mvp-hardening |
 
 ## Backlog (queued)
 
@@ -22,14 +26,20 @@
 |---|---|---|---|---|
 | [S-2.9.7](./stories/S-2.9.7-ai-crowd-removal.md) | AI crowd removal — inpaint non-group people (remote default / local optional, D-044) | Story | P3 | v2 |
 | [S-2.9.4](./stories/S-2.9.4-crossfade-transitions-slow-tempo.md) | Crossfade transitions on slow-tempo music (ADR-0011/0012) | Story | P3 | v1 |
+| [S-2.9.15](./stories/S-2.9.15-two-phase-prefilter-cheap-before-metadata.md) | Two-phase pre-filter — cheap pass before rich metadata (~½ Tier-M cost saved; D-049) | Story | P2 | v1 |
+| [S-2.9.19](./stories/S-2.9.19-persist-job-registry-survive-restart.md) | Persist job registry so live/preview survive a restart (A-025) | Story | P2 | v1 |
 
 > **2026-06-11 prep-phase overhaul (D-043):** the preparation phase was rebuilt before the heavier features. **Delivered:** A-021 media chronology (EXIF/filename/mtime reconciliation + GPS read; the judge now orders forward-in-time), A-022 rich-metadata enrichment (shot type, per-person expression, safety, specialness, obstructions), A-016 cheap-first analysis (~47× smaller payloads), A-017 best-of-burst semantic dedup.
 > **2026-06-11 auto trip cast (D-044):** A-018 analysis half delivered — detect→embed→cluster→group/crowd-by-recurrence-breadth→coverage report, pluggable backends (gemini cloud default / insightface optional local); also fixed face detection (mediapipe 0.10.35 dropped `mp.solutions`, which had silently disabled privacy-blur too). **Next:** A-019 crowd removal (remote-API default / local-generative optional per D-044) builds on the cast. Trip Package (A-020/N-013, v2) stays gated on single-video quality (D-042).
 
-## Recently Done (this session)
+## Recently Done
 
 | ID | Title | Type | Done |
 |---|---|---|---|
+| **D-014 validation** | **MVP gate PASSED — real 1,663-asset SW-US-trip job → publish-ready 108s Story Video (conf 0.85), good vs brief** | Milestone | 2026-06-18 |
+| **[S-2.9.16](./stories/S-2.9.16-snapshot-keyed-inspect-feedback-view.md)** | **Snapshot-keyed Inspect & Feedback — review finished jobs after a restart [A-025]** | Story | 2026-06-18 |
+| **[S-2.9.14](./stories/S-2.9.14-cost-metering-accuracy-and-failure-surfacing.md)** | **Token-accurate cost metering + credit-exhausted surfacing + accurate Stage-2 progress; cap → $100 [D-048]** | Story | 2026-06-18 |
+| **[S-2.9.13](./stories/S-2.9.13-one-click-spirit-realignment.md)** | **1-click positioning realign — 9 docs + app UI + RAW_VISION addenda [D-050]** | Story | 2026-06-18 |
 | **[S-2.9.9](./stories/S-2.9.9-developer-tracker-pages.md)** | **Developer tracker pages — feedback tracker + workplan tracker (editable priority) [A-024/D-047]** | Story | 2026-06-14 |
 | **[S-2.9.8](./stories/S-2.9.8-in-app-feedback-loop.md)** | **In-app feedback loop — per-phase diagnostics + decision-level feedback; +live-during-execution + page screenshots [A-023/N-015/D-045/D-046]** | Story | 2026-06-14 |
 | **A-018 / N-012** | **Auto trip cast — face inventory + group/crowd + coverage (analysis half) [D-044]** | Feature | 2026-06-11 |
