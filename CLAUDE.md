@@ -34,6 +34,7 @@ Tech stack, MVP scope, agent harness shape, vision-model choices, sandbox approa
 - **Gaps the user didn't mention but the product needs:** [`docs/vision/RECOMMENDED_ADDITIONS.md`](./docs/vision/RECOMMENDED_ADDITIONS.md).
 - **Novel-ideas / inventions log (N-NNN entries):** [`docs/vision/NOVEL_IDEAS.md`](./docs/vision/NOVEL_IDEAS.md). File ideas here *before* a public commit if you want pre-publication priority.
 - **Architecture map:** [`docs/architecture/ARCHITECTURE.md`](./docs/architecture/ARCHITECTURE.md).
+- **End-to-end job data flow (every module, AI + non-AI):** [`docs/architecture/PIPELINE_DATAFLOW.md`](./docs/architecture/PIPELINE_DATAFLOW.md). A code-level, module-by-module trace of how a job is processed from input media to rendered MP4 — each step labelled AI-prompt / AI-embedding / deterministic / external-tool, with files, prompts, and data objects. Maintained mirror of the pipeline (curator-refreshed); the doc to feed NotebookLM for visualizing processing.
 - **ADRs:** [`docs/architecture/ADR-*.md`](./docs/architecture/). Update or add an ADR for any architectural change.
 - **Decision log:** [`docs/decisions/DECISIONS_LOG.md`](./docs/decisions/DECISIONS_LOG.md). Append-only D-NNN entries.
 - **MVP scope:** [`docs/roadmap/MVP.md`](./docs/roadmap/MVP.md). Locked once chosen — anything outside it becomes a backlog Story.
@@ -66,8 +67,10 @@ The `work-tracker` skill (under `.claude/skills/`) automates this loop at end-of
 The `knowledge-curator` skill (under `.claude/skills/`) runs on the `Stop` hook and routes anything new from the conversation into the right doc:
 
 - Future-looking requirements / vision shifts → `docs/vision/RECOMMENDED_ADDITIONS.md`
+- Verbatim clarification or shift of *core product intent* → `docs/vision/RAW_VISION.md` addenda (dated, verbatim, below the rule — never edit above it)
+- Material product / feature / architecture / flow / output change → refresh `docs/OVERVIEW.md` (external mirror); for pipeline / module / data-flow / prompt changes also refresh `docs/architecture/PIPELINE_DATAFLOW.md`
 - Architecture / scaling / tech-stack / infra discussion → `docs/architecture/ARCHITECTURE.md` (or a new ADR)
-- Crucial decisions (option chosen, alternative rejected, scope deferred) → `docs/decisions/DECISIONS_LOG.md` as a new D-NNN entry
+- Crucial decisions (option chosen, alternative rejected, scope deferred) and significant bug root-causes → `docs/decisions/DECISIONS_LOG.md` as a new D-NNN entry
 - Novel mechanism / non-obvious idea → `docs/vision/NOVEL_IDEAS.md` as a new N-NNN entry
 - Long verbatim user dumps → `docs/vision/notes/YYYY-MM-DD-slug.md`
 
