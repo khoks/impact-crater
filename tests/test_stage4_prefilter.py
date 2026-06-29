@@ -367,6 +367,82 @@ def test_prefilter_default_target_is_30_percent() -> None:
     assert len(cs.items) <= cs.target_size
 
 
+# ---- A-026 specialness-aware selection -------------------------------------
+
+
+def _one(ch, *, quality, narrative=0.6, specialness=0.5, phash=None, ts=None, loc="spot"):
+    rec = MediaRecord(
+        content_hash=ch, source_path=f"/tmp/{ch}.jpg", media_type="photo", file_size=1,
+        quick_stats={"phash": phash or _spread_phash(abs(hash(ch)) % 1000), "dhash": "0"},
+        capture_timestamp=ts, capture_source="exif" if ts else None,
+    )
+    s2 = Stage2AssetOutputs(content_hash=ch, caption=ch, quality_score=quality,
+                            narrative_relevance_score=narrative, embedding_dim=8)
+    s3 = Stage3AssetOutputs(content_hash=ch, metadata=RichMetadataPhoto(
+        time_of_day="midday", specialness_score=specialness,
+        location={"description": loc}))
+    return rec, s2, s3
+
+
+def test_specialness_rescues_soft_but_memorable_shot() -> None:
+    """A-026: a soft (low-quality) but high-specialness shot survives the
+    quality floor; a soft AND unremarkable one is dropped."""
+    rows = [
+        _one("special", quality=0.2, specialness=0.9),   # rescued
+        _one("dull", quality=0.2, specialness=0.5),       # dropped
+        _one("sharp", quality=0.8, specialness=0.5),      # normal keep
+    ]
+    media, stage2, stage3 = [r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows]
+    cs = prefilter(media=media, stage2=stage2, stage3=stage3, target_duration_seconds=10,
+                   overrides=PreFilterOverrides(target_size=10))
+    kept = {it.content_hash for it in cs.items}
+    assert "special" in kept and "sharp" in kept
+    assert "dull" not in kept
+    rescues = [e for e in cs.filter_log if e.get("reason") == "specialness_rescue"]
+    assert {e["key"] for e in rescues} == {"special"}
+
+
+def test_specialness_wins_semantic_dedup_tiebreak() -> None:
+    """A-026: within a burst, the most SPECIAL member is kept even when a
+    near-duplicate is marginally sharper (the 0.95-specialness case)."""
+    import numpy as np
+
+    emb = np.ones((8,), dtype=np.float32)
+    specs = [
+        ("plain", 0.85, 0.40, "2026-04-05T16:31:21"),    # slightly sharper, dull
+        ("hero", 0.80, 0.95, "2026-04-05T16:31:24"),     # the keeper
+    ]
+    media, stage2, stage3 = [], [], []
+    for i, (ch, q, sp, ts) in enumerate(specs):
+        media.append(MediaRecord(content_hash=ch, source_path=f"/tmp/{ch}.jpg",
+            media_type="photo", file_size=1,
+            quick_stats={"phash": _spread_phash(i), "dhash": "0"},
+            capture_timestamp=ts, capture_source="exif"))
+        stage2.append(Stage2AssetOutputs(content_hash=ch, caption=ch, quality_score=q,
+            narrative_relevance_score=0.6, embedding_dim=8, embedding=emb))
+        stage3.append(Stage3AssetOutputs(content_hash=ch, metadata=RichMetadataPhoto(
+            time_of_day="midday", specialness_score=sp, location={"description": "trail"})))
+    cs = prefilter(media=media, stage2=stage2, stage3=stage3, target_duration_seconds=10,
+                   overrides=PreFilterOverrides(quality_threshold=0.0, target_size=10))
+    kept = {it.content_hash for it in cs.items}
+    assert kept == {"hero"}  # the special one survives the burst, not the sharper-but-dull one
+
+
+def test_filter_log_entries_carry_all_three_scores() -> None:
+    """F8c: keep and rank-drop entries carry quality/narrative/specialness so
+    the inspect UI can show why a borderline item was kept or cut."""
+    media, stage2, stage3 = _records(120)
+    cs = prefilter(media=media, stage2=stage2, stage3=stage3, target_duration_seconds=10,
+                   overrides=PreFilterOverrides(target_size=50))
+    scored = [e for e in cs.filter_log if e.get("decision") in ("keep", "drop")]
+    assert scored, "expected keep/drop entries"
+    for e in scored:
+        if e.get("reason") in (None, "rank_below_target_size") or e["decision"] == "keep":
+            assert "quality_score" in e
+            assert "narrative_relevance" in e
+            assert "specialness_score" in e
+
+
 # ---- Fail-fast on zero candidates (Bug 3 fix from 2026-05-07 UI test) ----
 
 

@@ -237,6 +237,17 @@ function DecisionCard({
             {decision.caption}
           </p>
         )}
+        {(decision.quality_score != null ||
+          decision.narrative_relevance != null ||
+          decision.specialness_score != null) && (
+          <p
+            className="text-[10px] text-slate-400"
+            title="quality · narrative-relevance · specialness"
+          >
+            q {fmtNum(decision.quality_score)} · n {fmtNum(decision.narrative_relevance)} · s{" "}
+            {fmtNum(decision.specialness_score)}
+          </p>
+        )}
         <button
           type="button"
           onClick={onFeedback}

@@ -17,7 +17,9 @@ Pre-filter steps:
      Each cluster contributes ⌈cluster_size / dedup_factor⌉ representatives.
   3. Time/location clustering via Stage-3 metadata.
      Clusters > 10 items down-sample to 10 representatives.
-  4. Rank by combined_score = α*quality + β*narrative + γ*scene_diversity.
+  4. Rank by combined_score = α*quality + β*narrative + δ*specialness +
+     γ*scene_diversity (S-2.10.2: specialness participates in ranking and every
+     tie-break; a high-specialness shot is also rescued past the quality floor).
   5. Take top `target_size`.
 
 `filter_log` records every drop/keep decision so the cost-transparency UI
@@ -56,9 +58,14 @@ class PreFilterOverrides:
     quality_threshold: float | None = None  # default 0.4
     dedup_factor: int | None = None         # default 3
     target_size: int | None = None          # user override; clamped to [floor, ceiling]
-    weight_quality: float | None = None     # default α=0.3
-    weight_narrative: float | None = None   # default β=0.5
-    weight_diversity: float | None = None   # default γ=0.2
+    weight_quality: float | None = None     # default α=0.25
+    weight_narrative: float | None = None   # default β=0.40
+    weight_specialness: float | None = None  # default δ=0.20 (S-2.10.2)
+    weight_diversity: float | None = None   # default γ=0.15
+    # S-2.10.2: a genuinely memorable shot (high Stage-3 specialness) survives the
+    # quality floor even when slightly soft. None → default 0.75; raise to 1.1
+    # to disable the rescue.
+    specialness_rescue_threshold: float | None = None
     # A-017 best-of-burst semantic dedup. Cosine ≥ threshold within the
     # time window collapses retakes to their best member. None → defaults;
     # set threshold to 1.1 (impossible) to disable.
@@ -73,7 +80,12 @@ _DEFAULT_QUALITY_THRESHOLD = 0.4
 _DEFAULT_DEDUP_FACTOR = 3
 _DEFAULT_LOCATION_CLUSTER_CAP = 10
 _DEFAULT_PHASH_HAMMING = 5
-_DEFAULT_WEIGHTS = (0.3, 0.5, 0.2)  # (quality, narrative, diversity)
+# (quality, narrative, specialness, diversity). S-2.10.2: specialness (the richest
+# Stage-3 signal) now participates in ranking + every tie-break so the most
+# memorable member of a burst is the one kept and standout shots aren't ranked
+# out by bland-but-sharp ones. Narrative stays dominant so the brief still steers.
+_DEFAULT_WEIGHTS = (0.25, 0.40, 0.20, 0.15)
+_DEFAULT_SPECIALNESS_RESCUE_THRESHOLD = 0.75
 # A-017 best-of-burst: cosine ≥ this collapses retakes. Within the time
 # window we trust a moderate threshold; without timestamps we demand a
 # higher one (near-identical visuals) so different scenery never merges.
@@ -104,7 +116,13 @@ def prefilter(
     weights = (
         overrides.weight_quality if overrides.weight_quality is not None else _DEFAULT_WEIGHTS[0],
         overrides.weight_narrative if overrides.weight_narrative is not None else _DEFAULT_WEIGHTS[1],
-        overrides.weight_diversity if overrides.weight_diversity is not None else _DEFAULT_WEIGHTS[2],
+        overrides.weight_specialness if overrides.weight_specialness is not None else _DEFAULT_WEIGHTS[2],
+        overrides.weight_diversity if overrides.weight_diversity is not None else _DEFAULT_WEIGHTS[3],
+    )
+    rescue_threshold = (
+        overrides.specialness_rescue_threshold
+        if overrides.specialness_rescue_threshold is not None
+        else _DEFAULT_SPECIALNESS_RESCUE_THRESHOLD
     )
     quality_threshold = (
         overrides.quality_threshold
@@ -138,12 +156,14 @@ def prefilter(
     # only "explicit" is removed.
     after_safety = _apply_safety_floor(assets, filter_log)
 
-    # Step 1 — quality floor.
-    after_quality = _apply_quality_floor(after_safety, quality_threshold, filter_log)
+    # Step 1 — quality floor (with S-2.10.2 specialness rescue).
+    after_quality = _apply_quality_floor(
+        after_safety, quality_threshold, rescue_threshold, filter_log
+    )
 
     # Step 2 — dedup clusters via pHash (near-identical pixels).
     dedup_clusters = _phash_clusters(after_quality)
-    after_dedup = _apply_dedup(after_quality, dedup_clusters, dedup_factor, filter_log)
+    after_dedup = _apply_dedup(after_quality, dedup_clusters, dedup_factor, weights, filter_log)
 
     # Step 2b — semantic best-of-burst dedup (A-017): collapse retakes of
     # the same moment (same pose/scene from a slightly different angle)
@@ -155,7 +175,7 @@ def prefilter(
     # Step 3 — location/time clusters.
     location_clusters = _location_clusters(after_semantic)
     after_location = _cap_location_clusters(
-        after_semantic, location_clusters, _DEFAULT_LOCATION_CLUSTER_CAP, filter_log
+        after_semantic, location_clusters, _DEFAULT_LOCATION_CLUSTER_CAP, weights, filter_log
     )
 
     # Step 4 — rank by combined score; assign placeholder diversity score
@@ -163,7 +183,7 @@ def prefilter(
     cluster_size_by_asset = _cluster_size_by_asset(after_location, dedup_clusters)
     ranked = sorted(
         after_location,
-        key=lambda a: -_combined_score(a, weights, cluster_size_by_asset.get(a.key, 1)),
+        key=lambda a: (-_combined_score(a, weights, cluster_size_by_asset.get(a.key, 1)), a.key),
     )
 
     # Step 5 — take top `target_size` (already clamped to [floor, ceiling]).
@@ -174,10 +194,11 @@ def prefilter(
                 "key": asset.key,
                 "decision": "drop",
                 "reason": "rank_below_target_size",
+                **_scores(asset),
             }
         )
     for asset in chosen:
-        filter_log.append({"key": asset.key, "decision": "keep"})
+        filter_log.append({"key": asset.key, "decision": "keep", **_scores(asset)})
 
     items = [_to_candidate_ref(a) for a in chosen]
 
@@ -448,6 +469,10 @@ def _summarize_metadata(md: dict[str, Any]) -> str:
         parts.append(f"lighting={light}")
     if scenery := md.get("scenery_description"):
         parts.append(f"scenery={scenery}")
+    # Video scenes carry a scene_summary over the 3 sampled frames — surface it
+    # so the judge reads what MOVES in the clip, not just one frozen frame (F2).
+    if ss := md.get("scene_summary"):
+        parts.append(f"motion_summary={ss}")
     if loc := md.get("location", {}).get("description"):
         parts.append(f"loc={loc}")
     spec = md.get("specialness_score")
@@ -485,11 +510,30 @@ def _apply_safety_floor(
 
 
 def _apply_quality_floor(
-    assets: list[_Asset], threshold: float, filter_log: list[dict[str, Any]]
+    assets: list[_Asset],
+    threshold: float,
+    rescue_threshold: float,
+    filter_log: list[dict[str, Any]],
 ) -> list[_Asset]:
+    """Drop low-quality assets — but rescue a genuinely memorable one (S-2.10.2):
+    a soft shot with high Stage-3 specialness (a once-in-a-trip moment) is worth
+    keeping over a sharp-but-bland frame the floor would otherwise let through."""
     out = []
     for a in assets:
-        if a.quality_score < threshold:
+        if a.quality_score >= threshold:
+            out.append(a)
+        elif a.specialness_score >= rescue_threshold:
+            out.append(a)
+            filter_log.append(
+                {
+                    "key": a.key,
+                    "decision": "keep",
+                    "reason": "specialness_rescue",
+                    "quality_score": a.quality_score,
+                    "specialness_score": a.specialness_score,
+                }
+            )
+        else:
             filter_log.append(
                 {
                     "key": a.key,
@@ -499,8 +543,6 @@ def _apply_quality_floor(
                     "threshold": threshold,
                 }
             )
-        else:
-            out.append(a)
     return out
 
 
@@ -536,14 +578,16 @@ def _apply_dedup(
     assets: list[_Asset],
     clusters: list[list[_Asset]],
     dedup_factor: int,
+    weights: tuple[float, float, float, float],
     filter_log: list[dict[str, Any]],
 ) -> list[_Asset]:
     keep: set[str] = set()
     for cluster in clusters:
-        # Pick best-scoring members; drop the rest.
+        # Pick best-scoring members; drop the rest. Specialness participates
+        # via _combined_score (S-2.10.2), so the most memorable retake is kept.
         cluster_sorted = sorted(
             cluster,
-            key=lambda a: -(_combined_score(a, _DEFAULT_WEIGHTS, len(cluster))),
+            key=lambda a: (-_combined_score(a, weights, len(cluster)), a.key),
         )
         cap = max(1, math.ceil(len(cluster) / max(dedup_factor, 1)))
         for a in cluster_sorted[:cap]:
@@ -556,6 +600,7 @@ def _apply_dedup(
                     "reason": "dedup_cluster_excess",
                     "cluster_size": len(cluster),
                     "dedup_factor": dedup_factor,
+                    **_scores(a),
                 }
             )
     return [a for a in assets if a.key in keep]
@@ -627,6 +672,7 @@ def _apply_semantic_dedup(
                     "reason": "semantic_duplicate",
                     "kept_key": best.key,
                     "cluster_size": len(cluster),
+                    **_scores(loser),
                 }
             )
     return kept
@@ -672,13 +718,16 @@ def _cap_location_clusters(
     assets: list[_Asset],
     clusters: dict[str, list[_Asset]],
     cap: int,
+    weights: tuple[float, float, float, float],
     filter_log: list[dict[str, Any]],
 ) -> list[_Asset]:
     keep: set[str] = set()
     for bucket, members in clusters.items():
+        # S-2.10.2: rank within a location bucket by the full combined score
+        # (incl. specialness) so the cap never discards the standout shot.
         sorted_members = sorted(
             members,
-            key=lambda a: -(a.quality_score * 0.5 + a.narrative_relevance_score * 0.5),
+            key=lambda a: (-_combined_score(a, weights, 1), a.key),
         )
         for a in sorted_members[:cap]:
             keep.add(a.key)
@@ -690,6 +739,7 @@ def _cap_location_clusters(
                     "reason": "location_cluster_excess",
                     "bucket": bucket,
                     "cap": cap,
+                    **_scores(a),
                 }
             )
     return [a for a in assets if a.key in keep]
@@ -709,22 +759,38 @@ def _cluster_size_by_asset(
     return out
 
 
+def _scores(asset: _Asset) -> dict[str, float]:
+    """The three AI signals carried onto every keep/drop log entry so the
+    inspect UI can show WHY a borderline item was kept or cut (A-023 F8c)."""
+    return {
+        "quality_score": asset.quality_score,
+        "narrative_relevance": asset.narrative_relevance_score,
+        "specialness_score": asset.specialness_score,
+    }
+
+
 def _combined_score(
     asset: _Asset,
-    weights: tuple[float, float, float],
+    weights: tuple[float, float, float, float],
     cluster_size: int,
 ) -> float:
-    α, β, γ = weights
+    α, β, δ, γ = weights
     diversity = 1.0 / max(cluster_size, 1)
     return (
         α * asset.quality_score
         + β * asset.narrative_relevance_score
+        + δ * asset.specialness_score
         + γ * diversity
     )
 
 
 def _to_candidate_ref(asset: _Asset) -> CandidateRef:
     summary = asset.metadata_summary
+    # Lead with an explicit media tag so the judge never has to infer video
+    # from the `#scene_index` suffix — it was selecting zero video for a
+    # "highlight video" because every candidate read like a still (F2).
+    media_tag = "MOTION(video clip)" if asset.scene_index is not None else "STILL(photo)"
+    summary = f"{media_tag} | {summary}" if summary else media_tag
     if asset.burst_best_of > 1:
         # Tell the judge this frame stands in for N retakes of one moment.
         tag = f"burst_best_of={asset.burst_best_of}"

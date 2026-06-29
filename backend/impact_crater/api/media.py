@@ -13,7 +13,7 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import FileResponse
 
 from impact_crater import paths
@@ -37,15 +37,40 @@ def _find_thumb(content_hash: str) -> str | None:
     return None
 
 
+@lru_cache(maxsize=4096)
+def _find_scene_frame(content_hash: str, scene_index: int) -> str | None:
+    """Locate a Stage-1 representative frame for a video scene (F8b).
+    Video scenes have no photo thumbnail; the inspect UI needs the extracted
+    frame so video keep/drop/select decisions are reviewable."""
+    root = paths.projects_dir()
+    if not root.is_dir():
+        return None
+    for label in ("middle", "start", "end"):
+        for match in root.glob(
+            f"*/cache/scenes/{content_hash}/scene-{scene_index}-{label}.png"
+        ):
+            if match.is_file():
+                return str(match)
+    return None
+
+
 @router.get("/{content_hash}/thumb.jpg")
-async def get_media_thumb(content_hash: str) -> FileResponse:
-    """Serve the thumbnail for a media content hash."""
+async def get_media_thumb(
+    content_hash: str, scene: int | None = Query(default=None)
+) -> FileResponse:
+    """Serve the thumbnail for a media content hash. With `?scene=N`, serve the
+    extracted representative frame for that video scene (F8b)."""
     if not _HASH_RE.match(content_hash):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid content hash")
+    if scene is not None:
+        frame = _find_scene_frame(content_hash, scene)
+        if frame is not None and Path(frame).is_file():
+            return FileResponse(frame, media_type="image/png", content_disposition_type="inline")
+        _find_scene_frame.cache_clear()
+        # Fall through to a photo thumb (ref may be mis-tagged), else 404 below.
     path = _find_thumb(content_hash)
     if path is None or not Path(path).is_file():
-        # Bust a stale cache entry and report cleanly (videos have no photo
-        # thumbnail; the UI falls back to a placeholder).
+        # Bust a stale cache entry and report cleanly.
         _find_thumb.cache_clear()
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

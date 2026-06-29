@@ -63,6 +63,37 @@ def test_group_vs_crowd_by_recurrence_breadth() -> None:
     assert set(inv.group_persons_by_hash.get("p1", [])) == groups
 
 
+def test_two_appearances_is_not_group_even_when_breadth_high() -> None:
+    """A face seen only twice — even across two different days AND places
+    (breadth 4) — is a passing stranger / detection false positive, not the
+    travel party. Regression for the real SW-trip job where 81 people were
+    tagged 'group'; min appearances + min distinct days demote these."""
+    obs = [
+        _obs(ALICE, "p1", "2026-04-05T09:00:00", "37.21,-112.94"),
+        _obs(ALICE, "p2", "2026-04-06T10:00:00", "37.30,-113.00"),
+    ]
+    inv = build_cast_inventory(obs, cluster_threshold=0.5)
+    assert len(inv.persons) == 1
+    p = inv.persons[0]
+    assert p.appearance_count == 2
+    assert p.recurrence_breadth == 4  # 2 days + 2 locations
+    assert not p.is_group  # demoted: too few appearances
+
+
+def test_many_appearances_one_day_is_not_group() -> None:
+    """Many appearances spread over several LOCATIONS but all on ONE day is
+    the day-tour-companion case — should stay crowd (requires >=2 days)."""
+    obs = [
+        _obs(BOB, f"b{i}", "2026-04-05T09:00:00", f"37.2{i},-112.9{i}")
+        for i in range(5)
+    ]
+    inv = build_cast_inventory(obs, cluster_threshold=0.5)
+    p = inv.persons[0]
+    assert p.appearance_count == 5
+    assert p.distinct_days == 1
+    assert not p.is_group
+
+
 def test_faces_without_embedding_become_singletons() -> None:
     obs = [
         _obs(None, "a", "2026-04-05T09:00:00", "loc1"),

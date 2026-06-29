@@ -35,7 +35,11 @@ allows; flag in `arc_reasoning` where it doesn't.
 
 You are given a pre-filtered candidate set of {{ candidates|length }} items. Each candidate is a photo or video scene with its content_hash, optional scene_index, caption, summarized metadata, quality score (0–1), a per-candidate narrative-relevance hint (0–1, computed deterministically by Stage 4 — treat as a hint, not gospel), and (where known) its real capture time.
 
-Chronology: most candidates carry a `captured` timestamp extracted from the photo's EXIF / filename. A trip or event Story Video usually reads best flowing FORWARD in time. Default to a broadly chronological order; you may deviate for a strong opener, a thematic callback, or to honor the brief — but when you depart from chronology, say so briefly in `arc_reasoning`. Treat `captured=?` (unknown time) items as freely placeable. The `subjects=[...]` field gives each main person's facial expression — use it to land emotional peaks (big smiles, laughter) at the right beat; the `shot=` field gives the cinematographic scale — favor a wide/establishing shot for the opener and vary framing so consecutive clips aren't all the same scale.
+Chronology: most candidates carry a `captured` timestamp extracted from the photo's EXIF / filename. A trip or event Story Video usually reads best flowing FORWARD in time. Default to a broadly chronological order; you may deviate for a strong opener, a thematic callback, or to honor the brief — but when you depart from chronology, say so briefly in `arc_reasoning`. Treat `captured=?` (unknown time) items as freely placeable.
+{% if chronological %}
+The brief explicitly asks for chronological order. The opener (position 0) MAY be a strong hero/teaser shot taken out of strict order, but position 1 onward MUST resume forward order from the EARLIEST part of the story — do NOT open on a later-day shot and then step back a day at position 1. After the opener, each item's `captured` time should be >= the previous item's, except items you explicitly mark role "callback".
+{% endif %}
+Each candidate begins with a media tag: `MOTION(video clip)` is real moving footage; `STILL(photo)` is a single still frame. For MOTION candidates a `motion_summary=...` field (when present) describes what happens across the clip — read it, not just the single-frame caption. The `subjects=[...]` field gives each main person's facial expression — use it to land emotional peaks (big smiles, laughter) at the right beat. The `shot=` field gives the cinematographic scale — favor a wide/establishing shot for the opener and VARY framing so consecutive clips aren't all the same scale.
 
 Candidates. The `ref` line for each is the **only** valid value for that
 candidate's `selected_items.candidate_ref` field — copy the whole string
@@ -57,8 +61,20 @@ Constraints:
 - Total `intended_duration_ms` across selected_items should sum to within ±10% of the target duration.
 - Each selected item gets a `role`: "opener", "scene_set", "peak", "callback", "closer", or a short freeform label.
 - `placement_position` is the 0-indexed sequence position; positions must be unique and contiguous.
+- MOTION / VIDEO SHARE: a "highlight video" must feel like a video, not a slideshow. When MOTION candidates exist in the set, at least ~25% of your selected items (and at least 2 whenever there are ≥2 motion candidates) MUST be `MOTION` clips — prefer them for energy/action beats and for movement the brief implies (driving, hiking, water, crowds). If you deliberately pick fewer, justify it in `arc_reasoning`.
+- VARIETY (avoid monotony): do NOT place more than 2 CONSECUTIVE items that share the same combination of {main subject/person, location, time-of-day, framing(`shot=`)}. Several near-identical shots of the same people in the same place at the same time of day is a failure even if each is individually good — keep the best 1–2 and move on. Vary the `shot=` scale between neighbouring clips.
+- ROLE BALANCE: at most ~25% of selected items may have role "peak". A story has a few peaks, not a wall of them — use "scene_set", "callback", and freeform roles for the rest.
+- PEOPLE ↔ LANDSCAPE: honor the brief's balance intent. When the brief asks for a balance of people and landscapes, keep neither above ~65% of selected items, and alternate people-forward and scenery-forward shots rather than clustering all the people shots together. (A shot is people-forward when it has a non-empty `subjects=[...]`.)
+- LOCATION BALANCE: when the candidates span multiple places, distribute selections roughly across them; do not let one location dominate the cut while another is absent.
 - `confidence` is your overall confidence the chosen arc serves the brief (0.0–1.0). Be honest — under 0.5 if the candidate set is weak.
 - `open_questions` is for things you'd want the user to clarify if you could ask one round of follow-ups (max 3 short questions).
+{% if named_destinations %}
+
+Named-destination coverage (HARD requirement): the brief explicitly names these places/subjects. For EACH one that has candidate media you MUST include at least one beat (selected_item) that depicts it — even if its candidates score slightly lower than alternatives — placed roughly in the order the brief implies. Coverage candidates are tagged `dest=<name>` in their metadata_summary.
+{% for d in named_destinations %}
+- {{ d.name }}: {% if d.matched and d.matched > 0 %}{{ d.matched }} candidate(s) available — include ≥1 beat.{% else %}no usable media found — do NOT fabricate it; instead note in open_questions that this place was barely/not photographed.{% endif %}
+{% endfor %}
+{% endif %}
 {% if mode == "music_video" %}
 - `section_mapping`: map each music section name → list of candidate-indices in this judgment that belong to that section.
 {% endif %}
