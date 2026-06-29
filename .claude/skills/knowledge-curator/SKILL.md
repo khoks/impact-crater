@@ -12,6 +12,10 @@ You are the knowledge-curator skill for the Impact Crater repo. Your single job 
 - Automatically — the project's Stop hook in `.claude/settings.json` blocks session end and asks for you and the work-tracker skill to run before exiting.
 - Manually — the user invokes `/knowledge-curator`.
 
+### Long / compacted sessions
+
+If the conversation was **compacted** (a summary replaced earlier turns), your in-context view is incomplete — sweep from the **full session transcript** too: read the session's `.jsonl` under the project transcript dir (the path appears in the compaction notice) and scan every user turn, so mid-session decisions / vision / novelty / bug root-causes aren't lost. Long dense sessions are exactly where the end-of-session sweep silently drops things.
+
 ## What you own
 
 You are the **only** writer for these files:
@@ -23,14 +27,20 @@ You are the **only** writer for these files:
 | Crucial product or engineering decisions (chosen approach, rejected alternative, scope deferral) | `docs/decisions/DECISIONS_LOG.md` (append D-NNN entry) |
 | Novel mechanisms, non-obvious combinations, potentially-patentable concepts | `docs/vision/NOVEL_IDEAS.md` (append N-NNN entry — flag clearly if the user wants pre-publication priority before the public-repo commit lands) |
 | Verbatim long user dumps that are too unstructured to file directly | `docs/vision/notes/YYYY-MM-DD-slug.md` |
+| **Verbatim user vision / intent clarification** (a restatement or shift of *core product intent / positioning*, in the user's own words) | `docs/vision/RAW_VISION.md` — append a **dated, verbatim** addendum below the `## Addenda` rule (NEVER edit above it) |
+| **Material change to product features / architecture / flows / outputs** | refresh `docs/OVERVIEW.md` (the maintained external-facing mirror — keep it free of internal IDs / ADR numbers / tracker shorthand, per CLAUDE.md) |
+| **Significant bug + its root-cause learning** | `docs/decisions/DECISIONS_LOG.md` (a D-NNN with **Context + Root cause + Decision/fix**) so the lesson survives outside commit history |
 
-You do **not** touch `project/` — that's the work-tracker skill's domain. You do **not** touch `RAW_VISION.md` — it is frozen as the source of truth for the original intent (addenda go below the rule, never edits above).
+You do **not** touch `project/` — that's the work-tracker skill's domain. You **own `RAW_VISION.md` addenda only**: when the user states a verbatim clarification or shift of core product intent, append it as a dated, verbatim entry below the `## Addenda` rule. **Never edit the original block above the rule** — it is frozen as the source of truth for original intent.
 
 ## Detection heuristic — only run if at least one of these is true
 
 - The user described a **future-looking requirement** or a shift from previously documented intent.
+- The user stated a **verbatim clarification or shift of core product intent / positioning** (→ RAW_VISION addendum) — e.g. "it's really a 1-click creator, not an orchestrator".
+- A **material change to product features / architecture / flows / outputs** landed that the maintained `OVERVIEW.md` mirror should reflect.
 - The conversation produced an **architectural / scaling / performance / infra / tech-stack** decision or open question worth recording.
 - A **crucial product or engineering decision** was reached (a path was chosen, an alternative was rejected, scope was deferred).
+- A **significant bug was found and fixed** with a non-obvious root cause worth preserving (→ D-NNN that captures the root cause, not just the fix).
 - A **novel mechanism, non-obvious combination, or potentially-patentable concept** surfaced.
 - The user issued a long, dense brain-dump that should be preserved verbatim before grooming.
 
@@ -153,7 +163,7 @@ knowledge-curator: no knowledge to curate this session
 
 - Never `git push` to `master` directly. Always via PR.
 - Never `--no-verify`, never bypass hooks.
-- Never edit `docs/vision/RAW_VISION.md` above the source-of-truth rule.
+- Never edit `docs/vision/RAW_VISION.md` *above* the source-of-truth rule. You MAY and SHOULD append dated, verbatim addenda *below* the `## Addenda` rule — that is the home for new verbatim user intent.
 - Never write to `project/`. That's the work-tracker skill.
 - Never reuse an ID.
 - Never invent IDs without grepping for the current max first.

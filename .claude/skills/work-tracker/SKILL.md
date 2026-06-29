@@ -60,8 +60,11 @@ ls project/tasks/       | sed -E 's/^T-1\.2\.3\.([0-9]+)-.*/\1/' | sort -V | tai
 - **A status changed** — a PR merged, a story accepted, a task completed, an epic deferred or canceled.
 - **Scope changed** — a story was split, an epic was narrowed or expanded, an initiative shifted phase.
 - **A new dependency was spotted** between existing items.
+- **A significant validation / milestone outcome** was reached (e.g. an MVP success-criterion validated, a release gate met, a big quality run passed) — record it on the relevant item's activity log + BOARD even if no code changed.
 
 If none of these apply, **no-op explicitly**: print `work-tracker: no work-state changes to record` and exit without creating a branch.
+
+> **Long / compacted sessions:** if the conversation was compacted, your in-context view is partial — read the session `.jsonl` transcript and re-derive item state from disk so mid-session work isn't missed.
 
 ## What you do, in order
 
