@@ -64,6 +64,17 @@ async def test_title_card_none_when_no_background_available(tmp_path: Path) -> N
     assert clip is None
 
 
+def test_long_title_is_shrunk_to_fit_frame() -> None:
+    from PIL import ImageDraw
+
+    canvas = Image.new("RGB", (tc._W, tc._H), (0, 0, 0))
+    d = ImageDraw.Draw(canvas)
+    long_title = "Early-April Through Zion Bryce Horseshow Grand Canyon Las Vegas"
+    font = tc._fit_font(d, long_title, 96, tc._SAFE_W)
+    width = d.textbbox((0, 0), long_title, font=font)[2]
+    assert width <= tc._SAFE_W  # never runs past the safe margin
+
+
 def test_derive_year_modal() -> None:
     media = [
         MediaRecord(content_hash="a", source_path="a", media_type="photo", file_size=1,

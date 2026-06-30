@@ -30,6 +30,7 @@ _W, _H = 1920, 1080
 _TITLE_MS = 3000
 _MAX_FACES = 4
 _FACE_PX = 200
+_SAFE_W = int(_W * 0.88)  # keep title inside ~12% side margins
 
 _FILLER = {"a", "an", "the", "our", "my", "of", "video", "highlight", "reel", "trip", "this"}
 
@@ -224,12 +225,29 @@ def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
 
 def _draw_title(canvas: Image.Image, title: str, year: str) -> None:
     d = ImageDraw.Draw(canvas)
-    title_font = _font(96)
+    title_font = _fit_font(d, title, 96, _SAFE_W)
     year_font = _font(44)
     cy = _H - _FACE_PX - 150 - 120  # above the face row
     _centered(d, title, title_font, cy, fill=(255, 255, 255))
     if year:
         _centered(d, year, year_font, cy + 110, fill=(230, 230, 230))
+
+
+def _fit_font(
+    d: ImageDraw.ImageDraw, text: str, start_size: int, max_width: int, min_size: int = 40
+) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    """Largest font (≤ start_size) whose rendered text fits within max_width."""
+    size = start_size
+    while size > min_size:
+        font = _font(size)
+        try:
+            bbox = d.textbbox((0, 0), text, font=font)
+        except Exception:
+            return font
+        if (bbox[2] - bbox[0]) <= max_width:
+            return font
+        size -= 4
+    return _font(min_size)
 
 
 def _centered(d: ImageDraw.ImageDraw, text: str, font: Any, y: int, *, fill: tuple) -> None:
