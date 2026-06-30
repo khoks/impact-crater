@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,6 +31,14 @@ from impact_crater.pipeline.stage1_ingest import MediaRecord, SceneRecord
 from impact_crater.storage.db import connection
 
 log = logging.getLogger(__name__)
+
+# Per-clip display-duration band (S-2.11.1). The MAX is the real fix — a sparse
+# selection can no longer balloon a photo to 5-7s; the judge aims for 2-3s. The
+# MIN is just a safety floor so an over-packed timeline doesn't flicker (it does
+# not force a short 2-photo video over its target).
+_PHOTO_MIN_MS = 1000
+_PHOTO_MAX_MS = 3000
+_VIDEO_MIN_MS = 2000
 
 
 # ---- Public types ------------------------------------------------------
@@ -359,9 +366,9 @@ def _snap_clips_to_cut_grid(
     cuts = sorted({c for c in cut_grid.cut_points_ms if 0 <= c <= target_ms})
     if len(cuts) < 2:
         # Degenerate grid — fall back to linear scale.
-        return _scale_to_target(clips, target_ms)
+        return _linear_scale(clips, target_ms)
 
-    scaled = _scale_to_target(clips, target_ms)
+    scaled = _linear_scale(clips, target_ms)
 
     out: list[RenderClip] = []
     prev_ms = 0
@@ -390,21 +397,20 @@ def _nearest_cut(cuts: list[int], t: int, *, floor: int) -> int:
     return min(candidates, key=lambda c: abs(c - t))
 
 
-def _scale_to_target(
+def _linear_scale(
     clips: list[RenderClip], target_ms: int, *, tolerance: float = 0.10
 ) -> list[RenderClip]:
-    """Scale each clip's duration linearly so the sum is within ±tolerance of target.
+    """Legacy proportional scale (photos stretch, video capped at natural).
 
-    Photos can stretch to any duration; video scenes are capped by their natural length.
+    Used ONLY by music-video beat-snapping, where the cut grid — not a per-clip
+    duration band — drives pacing (beats can be far shorter than 1.5s). Standard
+    mode uses _scale_to_target with the S-2.11.1 caps instead.
     """
     total = sum(c.intended_duration_ms for c in clips)
     if total <= 0:
         return clips
-
-    diff_ratio = (total - target_ms) / target_ms
-    if abs(diff_ratio) <= tolerance:
+    if abs((total - target_ms) / target_ms) <= tolerance:
         return clips
-
     factor = target_ms / total
     out: list[RenderClip] = []
     for c in clips:
@@ -413,19 +419,78 @@ def _scale_to_target(
             scene_max = max(int((c.end_seconds - c.start_seconds) * 1000), 250)
             new_ms = min(new_ms, scene_max)
         out.append(c.model_copy(update={"intended_duration_ms": new_ms}))
-
-    # If video-scene caps left us short, distribute the remainder across photos.
-    new_total = sum(c.intended_duration_ms for c in out)
-    deficit = target_ms - new_total
+    deficit = target_ms - sum(c.intended_duration_ms for c in out)
     if deficit > 0:
         photo_idxs = [i for i, c in enumerate(out) if c.kind == "photo"]
         if photo_idxs:
-            extra = math.ceil(deficit / len(photo_idxs))
+            extra = (deficit + len(photo_idxs) - 1) // len(photo_idxs)
             for idx in photo_idxs:
                 out[idx] = out[idx].model_copy(
                     update={"intended_duration_ms": out[idx].intended_duration_ms + extra}
                 )
     return out
+
+
+def _clip_band(c: RenderClip) -> tuple[int, int]:
+    """(min, max) display duration for a clip (S-2.11.1).
+
+    Photos read in ~2-3s; a 5s hold feels frozen. Videos play >=2s at their
+    natural pace (a <2s flash is jerky noise); a video's max is its natural
+    length so it never freezes on a held last frame.
+    """
+    if c.kind == "video_scene":
+        natural = max(int((c.end_seconds - c.start_seconds) * 1000), 0)
+        hi = max(natural, _VIDEO_MIN_MS)
+        return (min(_VIDEO_MIN_MS, hi), hi)
+    return (_PHOTO_MIN_MS, _PHOTO_MAX_MS)
+
+
+def _scale_to_target(
+    clips: list[RenderClip], target_ms: int, *, tolerance: float = 0.10
+) -> list[RenderClip]:
+    """Fit the timeline to the target while keeping every clip inside its
+    per-kind duration band (S-2.11.1): photos 1.5-3s, videos 2s-to-natural.
+
+    Photos no longer stretch to fill a target the judge under-populated — they
+    are hard-capped, so too few clips yield a SHORTER video, not 5-7s photos.
+    The judge is instructed to pick enough 2-3s clips to fill the target.
+    """
+    # 1. Clamp every clip into its band first (hard caps, regardless of judge).
+    capped: list[RenderClip] = []
+    for c in clips:
+        lo, hi = _clip_band(c)
+        capped.append(
+            c.model_copy(update={"intended_duration_ms": min(max(c.intended_duration_ms, lo), hi)})
+        )
+
+    total = sum(c.intended_duration_ms for c in capped)
+    if total <= 0:
+        return capped
+    if abs((total - target_ms) / target_ms) <= tolerance:
+        return capped
+
+    if total > target_ms:
+        # Too long: shrink proportionally toward target, never below each
+        # clip's band floor (slightly over target is fine if all hit floor).
+        factor = target_ms / total
+        out: list[RenderClip] = []
+        for c in capped:
+            lo, _ = _clip_band(c)
+            out.append(
+                c.model_copy(update={"intended_duration_ms": max(int(c.intended_duration_ms * factor), lo)})
+            )
+        return out
+
+    # Under target even at the per-clip caps: accept a shorter video rather than
+    # stretching photos. Surface it so a too-thin selection is visible.
+    log.info(
+        "stage6_under_target capped_total_ms=%d target_ms=%d clips=%d "
+        "(judge selected too few clips to fill the target at 2-3s each)",
+        total,
+        target_ms,
+        len(capped),
+    )
+    return capped
 
 
 # ---- Persistence -------------------------------------------------------

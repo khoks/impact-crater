@@ -106,4 +106,6 @@ operations:
     model: claude-opus-4-5
     model_version: latest
     tier: L
-    max_tokens: 4096
+    # 8192: snappy 2-3s clips mean ~40-60 selected_items for a 120s video
+    # (S-2.11.1) — 4096 truncated the tool call at that clip count.
+    max_tokens: 8192

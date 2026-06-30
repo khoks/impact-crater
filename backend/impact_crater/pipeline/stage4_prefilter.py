@@ -86,6 +86,9 @@ _DEFAULT_PHASH_HAMMING = 5
 # out by bland-but-sharp ones. Narrative stays dominant so the brief still steers.
 _DEFAULT_WEIGHTS = (0.25, 0.40, 0.20, 0.15)
 _DEFAULT_SPECIALNESS_RESCUE_THRESHOLD = 0.75
+# A video scene shorter than this is ineligible (S-2.11.1): <2s of footage in
+# the output reads as a jerky flash, so it shouldn't compete for a slot at all.
+_DEFAULT_MIN_VIDEO_MS = 2000.0
 # A-017 best-of-burst: cosine ≥ this collapses retakes. Within the time
 # window we trust a moderate threshold; without timestamps we demand a
 # higher one (near-identical visuals) so different scenery never merges.
@@ -155,6 +158,10 @@ def prefilter(
     # else so they can never reach a shareable artifact. "mild" survives;
     # only "explicit" is removed.
     after_safety = _apply_safety_floor(assets, filter_log)
+
+    # Step 0b — min-video floor (S-2.11.1). A video scene under ~2s is a jerky
+    # flash in the output; make it ineligible before it can win a slot.
+    after_safety = _apply_min_video_floor(after_safety, _DEFAULT_MIN_VIDEO_MS, filter_log)
 
     # Step 1 — quality floor (with S-2.10.2 specialness rescue).
     after_quality = _apply_quality_floor(
@@ -369,6 +376,7 @@ class _Asset:
     obstruction_level: float = 0.0
     embedding: Any = None  # numpy ndarray for semantic dedup (A-017)
     burst_best_of: int = 1  # how many retakes this asset represents
+    scene_duration_ms: float = 0.0  # video-scene natural length (S-2.11.1); 0 for photos
 
     @property
     def key(self) -> str:
@@ -392,7 +400,7 @@ def _join_assets(
             out.append(_make_asset(rec, None, s2_by_key, s3_by_key))
         elif rec.media_type == "video" and rec.scenes:
             for scene in rec.scenes:
-                out.append(_make_asset(rec, scene.index, s2_by_key, s3_by_key))
+                out.append(_make_asset(rec, scene.index, s2_by_key, s3_by_key, scene=scene))
     return out
 
 
@@ -401,13 +409,19 @@ def _make_asset(
     scene_index: int | None,
     s2_by_key: dict,
     s3_by_key: dict,
+    *,
+    scene: Any = None,
 ) -> _Asset:
     s2 = s2_by_key.get((rec.content_hash, scene_index))
     s3 = s3_by_key.get((rec.content_hash, scene_index))
     metadata_dict = s3.metadata.model_dump() if s3 else None
+    scene_duration_ms = (
+        max((scene.end_seconds - scene.start_seconds) * 1000.0, 0.0) if scene is not None else 0.0
+    )
     return _Asset(
         content_hash=rec.content_hash,
         scene_index=scene_index,
+        scene_duration_ms=scene_duration_ms,
         quality_score=float(s2.quality_score) if s2 else 0.0,
         narrative_relevance_score=float(s2.narrative_relevance_score) if s2 else 0.0,
         caption=s2.caption if s2 else "",
@@ -502,6 +516,29 @@ def _apply_safety_floor(
                     "decision": "drop",
                     "reason": "safety_explicit",
                     "safety_level": a.safety_level,
+                }
+            )
+        else:
+            out.append(a)
+    return out
+
+
+def _apply_min_video_floor(
+    assets: list[_Asset], min_ms: float, filter_log: list[dict[str, Any]]
+) -> list[_Asset]:
+    """Drop video scenes whose natural length is under `min_ms` (S-2.11.1).
+    Photos (scene_duration_ms == 0) and timing-less scenes always pass."""
+    out = []
+    for a in assets:
+        if a.scene_index is not None and 0.0 < a.scene_duration_ms < min_ms:
+            filter_log.append(
+                {
+                    "key": a.key,
+                    "decision": "drop",
+                    "reason": "video_too_short",
+                    "scene_duration_ms": a.scene_duration_ms,
+                    "min_ms": min_ms,
+                    **_scores(a),
                 }
             )
         else:

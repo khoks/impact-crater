@@ -56,6 +56,53 @@ def _arc(items: list[SelectedItem], *, confidence: float = 0.7, reasoning: str =
     return ArcJudgment(selected_items=items, arc_reasoning=reasoning, confidence=confidence)
 
 
+# ---- S-2.11.1 per-clip duration caps ----------------------------------
+
+
+def _rc(ref: str, ms: int, *, kind: str = "photo", start: float = 0.0, end: float = 0.0) -> RenderClip:
+    return RenderClip(
+        candidate_ref=ref,
+        kind=kind,  # type: ignore[arg-type]
+        source_path=f"/tmp/{ref}",
+        start_seconds=start,
+        end_seconds=end,
+        intended_duration_ms=ms,
+        aspect_ratio_action="as_is",
+    )
+
+
+def test_photos_capped_at_3s_and_not_stretched() -> None:
+    """A 120s target with only 3 photos must NOT balloon them to ~40s each —
+    each photo is hard-capped at 3s and the video is simply shorter (S-2.11.1)."""
+    clips = [_rc("a", 5000), _rc("b", 5000), _rc("c", 5000)]
+    out = stage6_plan._scale_to_target(clips, target_ms=120_000)
+    assert [c.intended_duration_ms for c in out] == [3000, 3000, 3000]
+    assert sum(c.intended_duration_ms for c in out) == 9000  # short, not stretched
+
+
+def test_photo_floored_to_min() -> None:
+    out = stage6_plan._scale_to_target([_rc("a", 500)], target_ms=10_000)
+    assert out[0].intended_duration_ms == 1000
+
+
+def test_video_clamped_between_2s_and_natural() -> None:
+    # natural 4s: a 5s intent caps to 4s; a 1s intent floors to 2s.
+    long_intent = _rc("v1", 5000, kind="video_scene", start=0.0, end=4.0)
+    short_intent = _rc("v2", 1000, kind="video_scene", start=0.0, end=4.0)
+    out = stage6_plan._scale_to_target([long_intent, short_intent], target_ms=60_000)
+    assert out[0].intended_duration_ms == 4000
+    assert out[1].intended_duration_ms == 2000
+
+
+def test_over_target_shrinks_toward_target_with_floor() -> None:
+    # 60 photos × capped 3s = 180s for a 60s target → shrink toward 60s but
+    # never below the 1.5s photo floor.
+    clips = [_rc(f"p{i}", 3000) for i in range(60)]
+    out = stage6_plan._scale_to_target(clips, target_ms=60_000)
+    assert all(c.intended_duration_ms >= 1000 for c in out)
+    assert sum(c.intended_duration_ms for c in out) <= 90_000  # pulled down from 180s
+
+
 # ---- Resolution + clip kinds ------------------------------------------
 
 

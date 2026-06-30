@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from impact_crater.pipeline.stage1_ingest import MediaRecord
+from impact_crater.pipeline.stage1_ingest import MediaRecord, SceneRecord
 from impact_crater.pipeline.stage4_prefilter import (
     PreFilterOverrides,
     Stage4EmptyCandidateSet,
@@ -441,6 +441,32 @@ def test_filter_log_entries_carry_all_three_scores() -> None:
             assert "quality_score" in e
             assert "narrative_relevance" in e
             assert "specialness_score" in e
+
+
+def test_short_video_scene_is_ineligible() -> None:
+    """S-2.11.1: a video scene under ~2s is a jerky flash — dropped before it
+    can win a slot; a >=2s scene from the same video survives."""
+    vid = MediaRecord(
+        content_hash="vid", source_path="/tmp/vid.mp4", media_type="video", file_size=9,
+        quick_stats={"width": 1920, "height": 1080},
+        scenes=[
+            SceneRecord(index=0, start_seconds=0.0, end_seconds=1.2, representative_frame_paths=[]),
+            SceneRecord(index=1, start_seconds=1.2, end_seconds=4.4, representative_frame_paths=[]),
+        ],
+    )
+    stage2 = [
+        Stage2AssetOutputs(content_hash="vid", scene_index=0, caption="flash", quality_score=0.9,
+                           narrative_relevance_score=0.8, embedding_dim=8),
+        Stage2AssetOutputs(content_hash="vid", scene_index=1, caption="clip", quality_score=0.9,
+                           narrative_relevance_score=0.8, embedding_dim=8),
+    ]
+    cs = prefilter(media=[vid], stage2=stage2, stage3=[], target_duration_seconds=10,
+                   overrides=PreFilterOverrides(quality_threshold=0.0, target_size=10))
+    keys = {it.content_hash + (f"#{it.scene_index}" if it.scene_index is not None else "") for it in cs.items}
+    assert "vid#1" in keys
+    assert "vid#0" not in keys
+    dropped = [e for e in cs.filter_log if e.get("reason") == "video_too_short"]
+    assert [e["key"] for e in dropped] == ["vid#0"]
 
 
 # ---- Fail-fast on zero candidates (Bug 3 fix from 2026-05-07 UI test) ----
