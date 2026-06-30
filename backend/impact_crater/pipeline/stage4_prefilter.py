@@ -51,6 +51,9 @@ class CandidateSet:
     target_size: int
     floor: int
     ceiling: int
+    # S-2.11.4: dense same-backdrop bursts (each = ordered member asset.keys) that
+    # Stage 6 can collapse into one rapid burst-montage clip. Empty when none.
+    montage_groups: list[list[str]] = field(default_factory=list)
 
 
 @dataclass
@@ -71,6 +74,12 @@ class PreFilterOverrides:
     # set threshold to 1.1 (impossible) to disable.
     semantic_dedup_threshold: float | None = None      # default 0.93
     semantic_dedup_window_seconds: int | None = None   # default 120
+    # S-2.11.4 burst-montage detection knobs. montage_enabled=False is a kill
+    # switch (no montage groups ever produced).
+    montage_enabled: bool | None = None                # default True
+    montage_min_members: int | None = None             # default 6
+    montage_window_seconds: int | None = None          # default 1800
+    montage_phash_hamming: int | None = None           # default 14
 
 
 # ---- Defaults ----------------------------------------------------------
@@ -95,6 +104,12 @@ _DEFAULT_MIN_VIDEO_MS = 2000.0
 # Slightly above the Stage-6 hard cap (3) so the judge has a best-of choice.
 _DEFAULT_VIEWPOINT_CANDIDATE_CAP = 4
 _VIEWPOINT_CELL_DP = 2  # round GPS to 2dp ≈ 1.1km
+# S-2.11.4 burst-montage: a dense same-backdrop cluster (one GPS cell, short
+# window, near-identical framing, many photos) becomes a rapid 0.5s-per-photo
+# montage. Used sparingly — needs >=6 such photos.
+_DEFAULT_MONTAGE_MIN_MEMBERS = 6
+_DEFAULT_MONTAGE_WINDOW_S = 1800  # 30 min
+_DEFAULT_MONTAGE_PHASH_HAMMING = 14  # looser than dedup's 5 = "same backdrop"
 # A-017 best-of-burst: cosine ≥ this collapses retakes. Within the time
 # window we trust a moderate threshold; without timestamps we demand a
 # higher one (near-identical visuals) so different scenery never merges.
@@ -191,10 +206,26 @@ def prefilter(
         after_semantic, location_clusters, _DEFAULT_LOCATION_CLUSTER_CAP, weights, filter_log
     )
 
+    # Step 3a — detect dense same-backdrop bursts (S-2.11.4) BEFORE the
+    # per-viewpoint cap, so a >=6-photo burst is found (the cap keeps only 4).
+    montage_enabled = overrides.montage_enabled if overrides.montage_enabled is not None else True
+    montage_groups: list[list[str]] = []
+    if montage_enabled:
+        montage_groups = _detect_montage_groups(
+            after_location,
+            min_members=overrides.montage_min_members or _DEFAULT_MONTAGE_MIN_MEMBERS,
+            window_s=overrides.montage_window_seconds or _DEFAULT_MONTAGE_WINDOW_S,
+            phash_hamming=overrides.montage_phash_hamming or _DEFAULT_MONTAGE_PHASH_HAMMING,
+            filter_log=filter_log,
+        )
+    montage_member_keys = {k for g in montage_groups for k in g}
+
     # Step 3b — per-viewpoint candidate cap (T-2.11.1.6): keep at most N best
     # per ~1km GPS cell so the judge spreads across places and fills the target.
+    # Montage members are EXEMPT (the montage represents the whole dense burst).
     after_location = _cap_gps_viewpoints(
-        after_location, _DEFAULT_VIEWPOINT_CANDIDATE_CAP, weights, filter_log
+        after_location, _DEFAULT_VIEWPOINT_CANDIDATE_CAP, weights, filter_log,
+        exempt_keys=montage_member_keys,
     )
 
     # Step 4 — rank by combined score; assign placeholder diversity score
@@ -221,10 +252,18 @@ def prefilter(
 
     items = [_to_candidate_ref(a) for a in chosen]
 
+    # Keep only montage groups whose members all survived into `chosen` and
+    # still meet the minimum (S-2.11.4); otherwise those photos render solo.
+    chosen_keys = {a.key for a in chosen}
+    _min_m = overrides.montage_min_members or _DEFAULT_MONTAGE_MIN_MEMBERS
+    montage_groups = [[k for k in g if k in chosen_keys] for g in montage_groups]
+    montage_groups = [g for g in montage_groups if len(g) >= _min_m]
+
     cluster_metadata = {
         "dedup_cluster_count": len(dedup_clusters),
         "location_cluster_count": len(location_clusters),
         "input_count": input_count,
+        "montage_group_count": len(montage_groups),
     }
 
     if not after_quality:
@@ -273,6 +312,7 @@ def prefilter(
         target_size=target_size,
         floor=floor,
         ceiling=ceiling,
+        montage_groups=montage_groups,
     )
 
 
@@ -798,21 +838,88 @@ def _cap_location_clusters(
     return [a for a in assets if a.key in keep]
 
 
+def _detect_montage_groups(
+    assets: list[_Asset],
+    *,
+    min_members: int,
+    window_s: int,
+    phash_hamming: int,
+    filter_log: list[dict[str, Any]],
+) -> list[list[str]]:
+    """Find dense same-backdrop photo bursts (S-2.11.4): photos at one ~1km GPS
+    cell, within a short window, with near-identical pHash. Returns groups of
+    asset.key (ordered by capture time). Photos only; GPS required."""
+    cells: dict[tuple[float, float], list[_Asset]] = {}
+    for a in assets:
+        if a.scene_index is not None or a.gps_lat is None or a.gps_lon is None:
+            continue  # photos with GPS only
+        cells.setdefault((round(a.gps_lat, _VIEWPOINT_CELL_DP), round(a.gps_lon, _VIEWPOINT_CELL_DP)), []).append(a)
+    groups: list[list[str]] = []
+    for cell, members in cells.items():
+        if len(members) < min_members:
+            continue
+        for run in _montage_runs(members, window_s, phash_hamming):
+            if len(run) >= min_members:
+                groups.append([a.key for a in run])
+                filter_log.append(
+                    {
+                        "decision": "montage_group",
+                        "reason": "dense_same_backdrop_cluster",
+                        "cell": f"{cell[0]},{cell[1]}",
+                        "member_count": len(run),
+                        "keys": [a.key for a in run],
+                    }
+                )
+    return groups
+
+
+def _montage_runs(
+    members: list[_Asset], window_s: int, phash_hamming: int
+) -> list[list[_Asset]]:
+    """Split a GPS cell's photos into time+backdrop runs: a new run starts when
+    the gap to the run's first member exceeds `window_s` OR the pHash distance to
+    the run anchor exceeds `phash_hamming`."""
+    ordered = sorted(members, key=lambda a: (a.capture_timestamp or "", a.key))
+    runs: list[list[_Asset]] = []
+    cur: list[_Asset] = []
+    for a in ordered:
+        if not cur:
+            cur = [a]
+            continue
+        anchor = cur[0]
+        same_backdrop = (
+            anchor.phash_hex
+            and a.phash_hex
+            and _hamming_hex(a.phash_hex, anchor.phash_hex) <= phash_hamming
+        )
+        if same_backdrop and _within_window(a, anchor, window_s):
+            cur.append(a)
+        else:
+            runs.append(cur)
+            cur = [a]
+    if cur:
+        runs.append(cur)
+    return runs
+
+
 def _cap_gps_viewpoints(
     assets: list[_Asset],
     cap: int,
     weights: tuple[float, float, float, float],
     filter_log: list[dict[str, Any]],
+    *,
+    exempt_keys: set[str] | None = None,
 ) -> list[_Asset]:
     """Keep at most `cap` candidates per ~1km GPS cell (T-2.11.1.6), the best by
     combined score. Forces the judge to fill the target from many places rather
-    than over-picking one iconic overlook. Assets without GPS (videos) are
-    exempt — they're few and aren't a single viewpoint."""
+    than over-picking one iconic overlook. Assets without GPS (videos) and any
+    in `exempt_keys` (montage members, S-2.11.4) are kept regardless."""
+    exempt = exempt_keys or set()
     by_cell: dict[tuple[float, float], list[_Asset]] = {}
     keep: set[str] = set()
     for a in assets:
-        if a.gps_lat is None or a.gps_lon is None:
-            keep.add(a.key)  # no-GPS exempt
+        if a.gps_lat is None or a.gps_lon is None or a.key in exempt:
+            keep.add(a.key)  # no-GPS / montage members exempt
             continue
         by_cell.setdefault((round(a.gps_lat, _VIEWPOINT_CELL_DP), round(a.gps_lon, _VIEWPOINT_CELL_DP)), []).append(a)
     for cell, members in by_cell.items():

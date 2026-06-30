@@ -44,6 +44,13 @@ _VIDEO_MIN_MS = 2000
 # total; a single overlook (Horseshoe Bend) is held to this. (S-2.11.1)
 _MAX_CLIPS_PER_LOCATION = 3
 _LOCATION_CELL_DP = 2  # round GPS to 2dp ≈ 1.1km
+# Burst-montage (S-2.11.4): N member photos at ~0.4-0.6s each, whole montage 2-4s.
+_MONTAGE_MEMBER_MIN_MS = 400
+_MONTAGE_MEMBER_MAX_MS = 600
+_MONTAGE_TARGET_MS = 3000
+_MONTAGE_MIN_MS = 2000
+_MONTAGE_MAX_MS = 4000
+_MONTAGE_MAX_MEMBERS = 8
 
 
 # ---- Public types ------------------------------------------------------
@@ -51,7 +58,17 @@ _LOCATION_CELL_DP = 2  # round GPS to 2dp ≈ 1.1km
 
 AspectRatioAction = Literal["smart_crop", "letterbox", "pad", "as_is"]
 TransitionType = Literal["cut", "crossfade"]
-ClipKind = Literal["photo", "video_scene"]
+ClipKind = Literal["photo", "video_scene", "burst_montage"]
+
+
+class MontageMember(BaseModel):
+    """One photo inside a burst-montage clip (S-2.11.4)."""
+
+    model_config = ConfigDict(extra="ignore")
+    candidate_ref: str
+    source_path: str
+    aspect_ratio_action: AspectRatioAction
+    duration_ms: int  # per-photo micro-duration (~0.4-0.6s)
 
 
 class RenderClip(BaseModel):
@@ -69,6 +86,9 @@ class RenderClip(BaseModel):
     transition_in: TransitionType = "cut"
     role: str = ""
     notes: str = ""
+    # burst_montage only (S-2.11.4): the member photos shown in rapid sequence.
+    # Empty for photo/video_scene. Sum of member durations == intended_duration_ms.
+    members: list[MontageMember] = Field(default_factory=list)
 
 
 class StandardMusicSpec(BaseModel):
@@ -126,6 +146,7 @@ async def compile_plan(
     audio: StandardMusicSpec | None = None,
     parent_snapshot_id: str | None = None,
     candidate_refs: list[str] | None = None,
+    montage_groups: list[list[str]] | None = None,
 ) -> RenderPlan:
     """Compile a `RenderPlan` from an `ArcJudgment` + ingest records.
 
@@ -152,17 +173,21 @@ async def compile_plan(
     if not clips:
         raise ValueError("ArcJudgment selected_items produced zero resolvable clips")
 
-    # S-2.11.1: deterministically cap clips per physical viewpoint (~1km GPS
-    # cell) so one iconic overlook can't dominate even when the judge over-picks
-    # it. Standard mode only — music-video pacing is beat-driven.
-    if mode != "music_video":
-        clips = _cap_per_location(clips, ingest_records, _MAX_CLIPS_PER_LOCATION)
-
     if mode == "music_video":
         assert audio is not None and audio.cut_grid is not None  # narrowed above
         clips = _snap_clips_to_cut_grid(clips, audio.cut_grid, target_ms)
     else:
+        # S-2.11.4: collapse dense same-backdrop bursts into one rapid montage
+        # FIRST (it represents the whole dense viewpoint), then…
+        if montage_groups:
+            clips = _collapse_montage_groups(clips, montage_groups)
+        # S-2.11.1: …cap clips per physical viewpoint (~1km GPS cell) so one
+        # overlook can't dominate, then enforce the snappy per-clip band.
+        clips = _cap_per_location(clips, ingest_records, _MAX_CLIPS_PER_LOCATION)
         clips = _scale_to_target(clips, target_ms)
+        # Keep each montage's member micro-durations in sync with its (possibly
+        # scaled) total so Stage 7's concat length matches the planned length.
+        clips = _resync_montage_members(clips)
 
     snapshot_id = uuid.uuid4().hex[:16]
     plan = RenderPlan(
@@ -254,6 +279,86 @@ def _build_clips(
     return clips
 
 
+def _collapse_montage_groups(
+    clips: list[RenderClip], montage_groups: list[list[str]]
+) -> list[RenderClip]:
+    """Replace each dense same-backdrop group (S-2.11.4) with ONE burst_montage
+    clip at the group's first timeline position; drop the other members."""
+    ref_to_group: dict[str, int] = {}
+    for gi, g in enumerate(montage_groups):
+        for ref in g:
+            ref_to_group[ref] = gi
+    group_clips: dict[int, list[RenderClip]] = {}
+    for c in clips:
+        gi = ref_to_group.get(c.candidate_ref)
+        if gi is not None:
+            group_clips.setdefault(gi, []).append(c)
+    anchor_montage: dict[str, RenderClip] = {}
+    drop_refs: set[str] = set()
+    for members in group_clips.values():
+        if len(members) < 2:
+            continue  # degenerate — leave as individual clips
+        anchor_montage[members[0].candidate_ref] = _montage_clip(members)
+        drop_refs.update(m.candidate_ref for m in members[1:])
+    if not anchor_montage:
+        return clips
+    out: list[RenderClip] = []
+    for c in clips:
+        if c.candidate_ref in anchor_montage:
+            out.append(anchor_montage[c.candidate_ref])
+        elif c.candidate_ref not in drop_refs:
+            out.append(c)
+    return out
+
+
+def _montage_clip(members: list[RenderClip]) -> RenderClip:
+    members = members[:_MONTAGE_MAX_MEMBERS]
+    n = len(members)
+    per = min(max(round(_MONTAGE_TARGET_MS / n), _MONTAGE_MEMBER_MIN_MS), _MONTAGE_MEMBER_MAX_MS)
+    return RenderClip(
+        candidate_ref=members[0].candidate_ref,
+        kind="burst_montage",
+        source_path=members[0].source_path,
+        intended_duration_ms=per * n,
+        aspect_ratio_action=members[0].aspect_ratio_action,
+        transition_in="cut",
+        role=members[0].role or "montage",
+        notes=f"burst-montage of {n} photos at one spot",
+        members=[
+            MontageMember(
+                candidate_ref=m.candidate_ref,
+                source_path=m.source_path,
+                aspect_ratio_action=m.aspect_ratio_action,
+                duration_ms=per,
+            )
+            for m in members
+        ],
+    )
+
+
+def _resync_montage_members(clips: list[RenderClip]) -> list[RenderClip]:
+    """After scaling, redistribute a montage clip's total across its members so
+    sum(member.duration_ms) == clip.intended_duration_ms exactly (audio sync)."""
+    out: list[RenderClip] = []
+    for c in clips:
+        if c.kind != "burst_montage" or not c.members:
+            out.append(c)
+            continue
+        n = len(c.members)
+        base, rem = divmod(c.intended_duration_ms, n)
+        out.append(
+            c.model_copy(
+                update={
+                    "members": [
+                        m.model_copy(update={"duration_ms": base + (1 if i < rem else 0)})
+                        for i, m in enumerate(c.members)
+                    ]
+                }
+            )
+        )
+    return out
+
+
 def _cap_per_location(
     clips: list[RenderClip], ingest_records: list[MediaRecord], max_per_loc: int
 ) -> list[RenderClip]:
@@ -264,6 +369,9 @@ def _cap_per_location(
     seen: dict[tuple[float, float], int] = {}
     out: list[RenderClip] = []
     for c in clips:
+        if c.kind == "burst_montage":
+            out.append(c)  # the montage IS the dense viewpoint's representation
+            continue
         rec = by_hash.get(c.candidate_ref.split("#", 1)[0])
         cell = (
             (round(rec.gps_lat, _LOCATION_CELL_DP), round(rec.gps_lon, _LOCATION_CELL_DP))
@@ -474,6 +582,8 @@ def _clip_band(c: RenderClip) -> tuple[int, int]:
     natural pace (a <2s flash is jerky noise); a video's max is its natural
     length so it never freezes on a held last frame.
     """
+    if c.kind == "burst_montage":
+        return (_MONTAGE_MIN_MS, _MONTAGE_MAX_MS)
     if c.kind == "video_scene":
         natural = max(int((c.end_seconds - c.start_seconds) * 1000), 0)
         hi = max(natural, _VIDEO_MIN_MS)

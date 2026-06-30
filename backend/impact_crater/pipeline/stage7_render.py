@@ -227,6 +227,10 @@ async def _prerender_one(
     *,
     pool: WorkerPool | None,
 ) -> None:
+    if clip.kind == "burst_montage":  # S-2.11.4
+        await _prerender_montage(clip, out_path, pool=pool)
+        return
+
     duration_s = max(clip.intended_duration_ms / 1000.0, 0.25)
     vf = _video_filter(clip.aspect_ratio_action)
 
@@ -285,6 +289,48 @@ async def _prerender_one(
             stage="prerender",
             ffmpeg_exit_code=rc,
             stderr_excerpt=stderr_str,
+        )
+
+
+async def _prerender_montage(
+    clip: RenderClip, out_path: Path, *, pool: WorkerPool | None
+) -> None:
+    """Render each montage member photo to a tiny normalized segment, then
+    concat them (stream-copy) into one montage segment that is byte-compatible
+    with the other top-level segments (S-2.11.4)."""
+    work = out_path.parent
+    stem = out_path.stem
+    member_segs: list[Path] = []
+    for j, m in enumerate(clip.members):
+        seg = work / f"{stem}-m{j:03d}.mp4"
+        dur_s = max(m.duration_ms / 1000.0, 0.2)
+        args = [
+            "-y", "-loop", "1", "-t", f"{dur_s:.3f}", "-i", m.source_path,
+            "-vf", _video_filter(m.aspect_ratio_action), "-r", str(_OUT_FPS),
+            "-c:v", "libx264", "-preset", _X264_PRESET, "-crf", str(_X264_CRF),
+            "-pix_fmt", "yuv420p", "-color_range", "tv", "-an", str(seg),
+        ]
+        rc, _stdout, stderr = await _run(args, pool=pool)
+        if rc != 0:
+            raise RenderError(
+                f"montage member pre-render failed for {m.candidate_ref!r}",
+                stage="prerender",
+                ffmpeg_exit_code=rc,
+                stderr_excerpt=stderr.decode("utf-8", errors="replace"),
+            )
+        member_segs.append(seg)
+    list_file = out_path.with_suffix(".members.txt")
+    list_file.write_text(
+        "\n".join(f"file '{s.as_posix()}'" for s in member_segs) + "\n", encoding="utf-8"
+    )
+    args = ["-y", "-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", str(out_path)]
+    rc, _stdout, stderr = await _run(args, pool=pool)
+    if rc != 0:
+        raise RenderError(
+            "montage member concat failed",
+            stage="concat",
+            ffmpeg_exit_code=rc,
+            stderr_excerpt=stderr.decode("utf-8", errors="replace"),
         )
 
 

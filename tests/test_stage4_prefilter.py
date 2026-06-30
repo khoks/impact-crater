@@ -443,6 +443,42 @@ def test_filter_log_entries_carry_all_three_scores() -> None:
             assert "specialness_score" in e
 
 
+def test_montage_group_detected_for_dense_same_backdrop_burst() -> None:
+    """S-2.11.4: 7 same-spot, same-backdrop photos within 30 min → one montage
+    group; the per-viewpoint cap exempts them so all survive."""
+    media, stage2, stage3 = [], [], []
+    for i in range(7):
+        ch = f"m{i}"
+        # phashes pairwise Hamming 6 (>5 so dedup keeps them; <=14 so montage groups)
+        ph = f"{(7 << (3 * i)):016x}"
+        media.append(MediaRecord(
+            content_hash=ch, source_path=f"/tmp/{ch}.jpg", media_type="photo", file_size=1,
+            quick_stats={"phash": ph, "dhash": "0"}, gps_lat=36.879, gps_lon=-111.510,
+            capture_timestamp=f"2026-04-06T19:0{i}:00", capture_source="exif"))
+        stage2.append(Stage2AssetOutputs(content_hash=ch, caption=ch, quality_score=0.8,
+                                         narrative_relevance_score=0.7, embedding_dim=8))
+    cs = prefilter(media=media, stage2=stage2, stage3=stage3, target_duration_seconds=10,
+                   overrides=PreFilterOverrides(quality_threshold=0.0, target_size=50))
+    assert len(cs.montage_groups) == 1
+    assert len(cs.montage_groups[0]) >= 6
+    assert {it.content_hash for it in cs.items} >= {f"m{i}" for i in range(6)}
+
+
+def test_no_montage_without_gps_or_too_few() -> None:
+    media, stage2, stage3 = [], [], []
+    for i in range(7):  # same backdrop, but NO gps → no montage
+        ch = f"n{i}"
+        ph = f"{(7 << (3 * i)):016x}"
+        media.append(MediaRecord(content_hash=ch, source_path=f"/tmp/{ch}.jpg", media_type="photo",
+                                 file_size=1, quick_stats={"phash": ph, "dhash": "0"},
+                                 capture_timestamp=f"2026-04-06T19:0{i}:00", capture_source="exif"))
+        stage2.append(Stage2AssetOutputs(content_hash=ch, caption=ch, quality_score=0.8,
+                                         narrative_relevance_score=0.7, embedding_dim=8))
+    cs = prefilter(media=media, stage2=stage2, stage3=stage3, target_duration_seconds=10,
+                   overrides=PreFilterOverrides(quality_threshold=0.0, target_size=50))
+    assert cs.montage_groups == []
+
+
 def test_viewpoint_candidate_cap_limits_per_gps_cell() -> None:
     """T-2.11.1.6: at most 4 candidates survive per ~1km GPS cell, so the judge
     spreads across places. 8 photos at one overlook → 4 kept; a distinct spot is

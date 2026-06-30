@@ -111,6 +111,31 @@ def test_cap_per_location_drops_excess_from_one_viewpoint() -> None:
 
 
 @pytest.mark.usefixtures("db_initialized")
+async def test_compile_collapses_montage_group() -> None:
+    """S-2.11.4: a montage group of 6 photos becomes ONE burst_montage clip
+    whose member durations sum to its (band-clamped) total."""
+    recs = [_photo_record(f"b{i}") for i in range(6)]
+    for r in recs:
+        r.gps_lat, r.gps_lon = 36.879, -111.510
+    arc = _arc([
+        SelectedItem(candidate_ref=f"b{i}", placement_position=i, intended_duration_ms=2500, role="scene_set")
+        for i in range(6)
+    ])
+    plan = await compile_plan(
+        arc_judgment=arc, ingest_records=recs, project_id="p-montage",
+        target_duration_seconds=60, montage_groups=[[f"b{i}" for i in range(6)]],
+    )
+    montages = [c for c in plan.clips if c.kind == "burst_montage"]
+    assert len(montages) == 1
+    m = montages[0]
+    assert len(m.members) == 6
+    assert sum(mm.duration_ms for mm in m.members) == m.intended_duration_ms
+    assert 2000 <= m.intended_duration_ms <= 4000
+    # the 6 members are not also present as standalone clips
+    assert len([c for c in plan.clips if c.kind == "photo"]) == 0
+
+
+@pytest.mark.usefixtures("db_initialized")
 async def test_compile_caps_iconic_viewpoint() -> None:
     recs = []
     for i in range(5):

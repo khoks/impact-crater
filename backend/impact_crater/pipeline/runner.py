@@ -475,6 +475,7 @@ async def run_full_pipeline(
         mode=config.mode,
         audio=music,
         candidate_refs=candidate_refs,
+        montage_groups=headless.candidate_set.montage_groups,
     )
 
     # M6 — orchestrator second-guess. Auto-applies high-confidence
