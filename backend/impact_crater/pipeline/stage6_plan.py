@@ -39,6 +39,11 @@ log = logging.getLogger(__name__)
 _PHOTO_MIN_MS = 1000
 _PHOTO_MAX_MS = 3000
 _VIDEO_MIN_MS = 2000
+# At most this many clips from one physical viewpoint (~1km GPS cell). A big
+# destination (Grand Canyon rim) spans several cells so it still gets more
+# total; a single overlook (Horseshoe Bend) is held to this. (S-2.11.1)
+_MAX_CLIPS_PER_LOCATION = 3
+_LOCATION_CELL_DP = 2  # round GPS to 2dp ≈ 1.1km
 
 
 # ---- Public types ------------------------------------------------------
@@ -147,6 +152,12 @@ async def compile_plan(
     if not clips:
         raise ValueError("ArcJudgment selected_items produced zero resolvable clips")
 
+    # S-2.11.1: deterministically cap clips per physical viewpoint (~1km GPS
+    # cell) so one iconic overlook can't dominate even when the judge over-picks
+    # it. Standard mode only — music-video pacing is beat-driven.
+    if mode != "music_video":
+        clips = _cap_per_location(clips, ingest_records, _MAX_CLIPS_PER_LOCATION)
+
     if mode == "music_video":
         assert audio is not None and audio.cut_grid is not None  # narrowed above
         clips = _snap_clips_to_cut_grid(clips, audio.cut_grid, target_ms)
@@ -241,6 +252,31 @@ def _build_clips(
                 scene_index,
             )
     return clips
+
+
+def _cap_per_location(
+    clips: list[RenderClip], ingest_records: list[MediaRecord], max_per_loc: int
+) -> list[RenderClip]:
+    """Drop clips beyond `max_per_loc` from the same ~1km GPS cell, preserving
+    the judge's order (keep the first N at each spot). Videos / no-GPS media are
+    exempt — they're few and not 'one overlook'. (S-2.11.1, feedback #2.)"""
+    by_hash = {r.content_hash: r for r in ingest_records}
+    seen: dict[tuple[float, float], int] = {}
+    out: list[RenderClip] = []
+    for c in clips:
+        rec = by_hash.get(c.candidate_ref.split("#", 1)[0])
+        cell = (
+            (round(rec.gps_lat, _LOCATION_CELL_DP), round(rec.gps_lon, _LOCATION_CELL_DP))
+            if rec is not None and rec.gps_lat is not None and rec.gps_lon is not None
+            else None
+        )
+        if cell is not None:
+            if seen.get(cell, 0) >= max_per_loc:
+                log.info("stage6_capped_viewpoint cell=%s ref=%s", cell, c.candidate_ref)
+                continue
+            seen[cell] = seen.get(cell, 0) + 1
+        out.append(c)
+    return out
 
 
 def _coerce_ref(

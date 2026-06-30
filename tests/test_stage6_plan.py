@@ -94,6 +94,33 @@ def test_video_clamped_between_2s_and_natural() -> None:
     assert out[1].intended_duration_ms == 2000
 
 
+def test_cap_per_location_drops_excess_from_one_viewpoint() -> None:
+    """S-2.11.1 #2: at most 3 clips from one ~1km GPS cell; a far-apart spot is
+    independent; no-GPS (video) clips are exempt."""
+    recs = []
+    for i in range(5):  # 5 photos at the SAME overlook (Horseshoe Bend)
+        r = _photo_record(f"hb{i}")
+        r.gps_lat, r.gps_lon = 36.879, -111.510
+        recs.append(r)
+    other = _photo_record("zion"); other.gps_lat, other.gps_lon = 37.2, -112.95
+    recs.append(other)
+    clips = [_rc(f"hb{i}", 2500) for i in range(5)] + [_rc("zion", 2500)]
+    out = stage6_plan._cap_per_location(clips, recs, max_per_loc=3)
+    kept = [c.candidate_ref for c in out]
+    assert kept == ["hb0", "hb1", "hb2", "zion"]  # 3 HB + the distinct spot
+
+
+@pytest.mark.usefixtures("db_initialized")
+async def test_compile_caps_iconic_viewpoint() -> None:
+    recs = []
+    for i in range(5):
+        r = _photo_record(f"v{i}"); r.gps_lat, r.gps_lon = 36.879, -111.510
+        recs.append(r)
+    arc = _arc([SelectedItem(candidate_ref=f"v{i}", placement_position=i, intended_duration_ms=2500, role="scene_set") for i in range(5)])
+    plan = await compile_plan(arc_judgment=arc, ingest_records=recs, project_id="p-cap", target_duration_seconds=60)
+    assert len(plan.clips) == 3  # 5 same-overlook shots capped to 3
+
+
 def test_over_target_shrinks_toward_target_with_floor() -> None:
     # 60 photos × capped 3s = 180s for a 60s target → shrink toward 60s but
     # never below the 1.5s photo floor.
