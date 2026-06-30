@@ -74,6 +74,16 @@ class AnthropicLLMClient:
             last_error="anthropic provider does not support embed_text; route to google",
         )
 
+    async def generate_image(self, prompt: str, *, params: CallParams) -> bytes:
+        # Anthropic has no image-generation endpoint (S-2.11.5 routes to Google).
+        raise LLMOperationFailed(
+            operation=params.operation,
+            provider=self.provider,
+            model=params.model,
+            attempts=0,
+            last_error="anthropic provider does not support generate_image; route to google",
+        )
+
     # -- Vision-language captioning + scoring ------------------------------
 
     async def caption_image(

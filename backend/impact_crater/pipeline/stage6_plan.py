@@ -58,7 +58,7 @@ _MONTAGE_MAX_MEMBERS = 8
 
 AspectRatioAction = Literal["smart_crop", "letterbox", "pad", "as_is"]
 TransitionType = Literal["cut", "crossfade"]
-ClipKind = Literal["photo", "video_scene", "burst_montage"]
+ClipKind = Literal["photo", "video_scene", "burst_montage", "title_card"]
 
 
 class MontageMember(BaseModel):

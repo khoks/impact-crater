@@ -126,6 +126,37 @@ class GoogleLLMClient:
 
     # -- Vision-language captioning + scoring ------------------------------
 
+    async def generate_image(self, prompt: str, *, params: CallParams) -> bytes:
+        """Generate an image from a text prompt (S-2.11.5). Returns raw PNG/JPEG
+        bytes from the first inline image part; raises if none came back."""
+        result = await _retry(
+            params,
+            lambda: _to_async(
+                self._client.models.generate_content,
+                model=params.model,  # e.g. "gemini-2.5-flash-image"
+                contents=[prompt],
+                config=gtypes.GenerateContentConfig(
+                    response_modalities=["IMAGE"],
+                    temperature=params.temperature,
+                ),
+            ),
+        )
+        _apply_usage(params, result)
+        for cand in getattr(result, "candidates", None) or []:
+            content = getattr(cand, "content", None)
+            for part in getattr(content, "parts", None) or []:
+                inline = getattr(part, "inline_data", None)
+                data = getattr(inline, "data", None) if inline is not None else None
+                if data:
+                    return bytes(data)
+        raise LLMOperationFailed(
+            operation=params.operation,
+            provider=self.provider,
+            model=params.model,
+            attempts=1,
+            last_error="no inline image part in generate_content response",
+        )
+
     async def caption_image(
         self, image_bytes: bytes, *, prompt_template: str, params: CallParams
     ) -> str:

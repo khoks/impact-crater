@@ -18,6 +18,8 @@ interface FormState {
   target_duration_seconds: number;
   mode: ProjectMode;
   section_to_media_nl: string;
+  add_title_card: boolean;
+  title_text: string;
 }
 
 const INITIAL: FormState = {
@@ -28,6 +30,8 @@ const INITIAL: FormState = {
   target_duration_seconds: 60,
   mode: "standard",
   section_to_media_nl: "",
+  add_title_card: false,
+  title_text: "",
 };
 
 export default function NewProject() {
@@ -73,6 +77,8 @@ export default function NewProject() {
         target_duration_seconds: form.target_duration_seconds,
         mode: form.mode,
         section_to_media_nl: form.section_to_media_nl.trim(),
+        add_title_card: form.add_title_card,
+        title_text: form.title_text.trim(),
         scanned_media_paths: scan.items.map((it) => it.path),
         scanned_photo_count: scan.photo_count,
         scanned_video_count: scan.video_count,
@@ -241,6 +247,31 @@ export default function NewProject() {
             </p>
           </Field>
         )}
+
+        <Field label="Title card">
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={form.add_title_card}
+              onChange={(e) => setForm({ ...form, add_title_card: e.target.checked })}
+              className="mt-1"
+            />
+            <span>
+              <strong>Add an AI title card</strong> — a splash screen with the
+              main people, a title, and the year, opening the video.
+            </span>
+          </label>
+          {form.add_title_card && (
+            <input
+              type="text"
+              value={form.title_text}
+              onChange={(e) => setForm({ ...form, title_text: e.target.value })}
+              maxLength={120}
+              className="mt-2 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+              placeholder="Title (optional — we'll derive one from your brief if blank)"
+            />
+          )}
+        </Field>
       </div>
 
       {submitError && (

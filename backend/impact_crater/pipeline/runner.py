@@ -42,6 +42,7 @@ from impact_crater.pipeline import (
     stage5_judge,
     stage6_plan,
     stage6_second_guess,
+    stage6_title_card,
     stage7_render,
 )
 from impact_crater.pipeline.stage4_prefilter import CandidateSet, PreFilterOverrides
@@ -343,6 +344,9 @@ class FullJobConfig:
     overrides: PreFilterOverrides | None = None
     enable_cast: bool = True
     cast_backend: str | None = None
+    # S-2.11.5 opt-in AI title/splash card.
+    add_title_card: bool = False
+    title_text: str | None = None
 
 
 @dataclass
@@ -533,6 +537,29 @@ async def run_full_pipeline(
                 len(sg_result.overrides),
                 sg_result.overall_confidence,
             )
+
+    # S-2.11.5 — opt-in AI title/splash card, prepended to the final timeline
+    # (after second-guess so positions are stable). Fail-soft: never blocks.
+    if config.add_title_card:
+        await reporter.stage_started("stage_6_title_card")
+        try:
+            title_clip = await stage6_title_card.build_title_clip(
+                router=sg_router,
+                plan=plan,
+                media=headless.media,
+                cast=headless.cast,
+                brief=config.brief,
+                title_text=config.title_text,
+                snapshot_dir=stage6_plan.snapshot_dir(headless.project_id, plan.snapshot_id),
+            )
+            if title_clip is not None:
+                plan = plan.model_copy(update={"clips": [title_clip, *plan.clips]})
+                (stage6_plan.snapshot_dir(headless.project_id, plan.snapshot_id) / "plan.json").write_text(
+                    plan.model_dump_json(indent=2), encoding="utf-8"
+                )
+        except Exception as exc:
+            log.warning("title_card_step_failed (proceeding without): %r", str(exc)[:200])
+        await reporter.stage_completed("stage_6_title_card")
 
     # A-018 coverage report: are all group members represented in the cut?
     if headless.cast is not None:

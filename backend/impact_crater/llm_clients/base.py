@@ -143,6 +143,10 @@ class LLMClient(Protocol):
 
     provider: str  # "anthropic" / "google" / "local" / etc.
 
+    # Image generation (S-2.11.5) — returns raw PNG/JPEG bytes. Not every
+    # provider supports it (Anthropic raises LLMOperationFailed).
+    async def generate_image(self, prompt: str, *, params: CallParams) -> bytes: ...
+
     # Embeddings -----------------------------------------------------------
     async def embed_image(self, image_bytes: bytes, *, params: CallParams) -> Embedding: ...
 

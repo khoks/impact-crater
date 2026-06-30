@@ -286,6 +286,8 @@ class SubmitJobRequest(BaseModel):
     section_to_media_nl: str | None = None
     project_id: str | None = None
     project_name: str = ""
+    add_title_card: bool = False  # S-2.11.5
+    title_text: str | None = Field(default=None, max_length=120)
 
 
 class SubmitJobResponse(BaseModel):
@@ -335,6 +337,8 @@ async def post_submit_job(req: SubmitJobRequest) -> SubmitJobResponse:
         project_name=req.project_name,
         enable_cast=enable_cast,
         cast_backend=cast_backend,
+        add_title_card=req.add_title_card,
+        title_text=req.title_text,
     )
     await _upsert_project(snap.project_id, name=req.project_name, brief=req.brief)
     return SubmitJobResponse(

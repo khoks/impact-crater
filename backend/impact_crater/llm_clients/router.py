@@ -165,6 +165,26 @@ class LLMRouter:
         await self._record_call(route, cache_hit=False, params=params, result_bytes_hash=content_hash)
         return result
 
+    async def generate_title_background(
+        self, *, spirit_prompt: str, aspect: str = "16:9"
+    ) -> bytes:
+        """Generate a title-card background image from a spirit prompt (S-2.11.5).
+        Not cached (image bytes; one call per job)."""
+        op = "generate_title_background"
+        route = self.route_for(op)
+        client = self._client_for(route)
+        prompt = prompts.load(op, route.provider, route.model)
+        rendered = prompts.render(prompt, spirit=spirit_prompt, aspect=aspect)
+        params = self._params(route)
+        result = await client.generate_image(rendered, params=params)
+        await self._record_call(
+            route,
+            cache_hit=False,
+            params=params,
+            result_bytes_hash=hashlib.sha256(result).hexdigest(),
+        )
+        return result
+
     async def score_image(
         self,
         image_bytes: bytes,

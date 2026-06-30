@@ -234,7 +234,7 @@ async def _prerender_one(
     duration_s = max(clip.intended_duration_ms / 1000.0, 0.25)
     vf = _video_filter(clip.aspect_ratio_action)
 
-    if clip.kind == "photo":
+    if clip.kind in ("photo", "title_card"):  # title card renders as a static image (S-2.11.5)
         args = [
             "-y",
             "-loop", "1",
