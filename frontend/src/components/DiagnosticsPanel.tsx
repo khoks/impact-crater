@@ -21,7 +21,8 @@ import {
 
 interface FeedbackTarget {
   phase: string;
-  decision: DiagnosticDecision;
+  decision?: DiagnosticDecision; // absent → job- or phase-level feedback (S-2.11.2)
+  level?: "job" | "phase"; // when decision is absent
 }
 
 // Fetch-mode wrapper: loads a completed snapshot's diagnostics (Preview page).
@@ -121,6 +122,18 @@ export function DiagnosticsView({
           Claude to “pick up the submitted feedback” in a future session.
         </p>
       )}
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-slate-500">
+          Leave feedback on the whole video, on a phase, or on any single decision below.
+        </p>
+        <button
+          type="button"
+          onClick={() => setTarget({ phase: "job", level: "job" })}
+          className="shrink-0 rounded border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-slate-500"
+        >
+          Feedback on the whole video
+        </button>
+      </div>
       {phases.map((phase) => (
         <PhaseSection
           key={phase.phase}
@@ -128,6 +141,7 @@ export function DiagnosticsView({
           open={openPhases.has(phase.phase)}
           onToggle={() => togglePhase(phase.phase)}
           onFeedback={(decision) => setTarget({ phase: phase.phase, decision })}
+          onPhaseFeedback={() => setTarget({ phase: phase.phase, level: "phase" })}
         />
       ))}
 
@@ -153,11 +167,13 @@ function PhaseSection({
   open,
   onToggle,
   onFeedback,
+  onPhaseFeedback,
 }: {
   phase: DiagnosticPhase;
   open: boolean;
   onToggle: () => void;
   onFeedback: (d: DiagnosticDecision) => void;
+  onPhaseFeedback: () => void;
 }) {
   const counts = useMemo(() => summarize(phase), [phase]);
   return (
@@ -175,7 +191,16 @@ function PhaseSection({
       </button>
       {open && (
         <div className="border-t border-slate-100 px-4 py-3">
-          <p className="mb-3 text-xs text-slate-500">{phase.description}</p>
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <p className="text-xs text-slate-500">{phase.description}</p>
+            <button
+              type="button"
+              onClick={onPhaseFeedback}
+              className="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-[10px] font-medium text-slate-600 hover:border-slate-500"
+            >
+              Feedback on this phase
+            </button>
+          </div>
           {phase.phase === "stage_5_judge" && typeof phase.summary.arc_reasoning === "string" && (
             <details className="mb-3 text-xs text-slate-600">
               <summary className="cursor-pointer font-medium text-slate-700">
@@ -279,7 +304,13 @@ function FeedbackModal({
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { phase, decision } = target;
+  const { phase, decision, level } = target;
+  // Job- or phase-level feedback has no specific decision (S-2.11.2).
+  const ref = decision
+    ? decisionRef(decision)
+    : level === "job"
+      ? "job"
+      : `phase:${phase}`;
 
   async function onSubmit() {
     setSaving(true);
@@ -290,15 +321,15 @@ function FeedbackModal({
       // from the capture (tagged data-ic-skip-capture).
       const screenshot = await capturePageScreenshot();
       await submitFeedback({
-        phase,
+        phase: level === "job" ? "job" : phase,
         verdict,
         snapshot_id: snapshotId,
         job_id: jobId,
         project_id: projectId,
-        content_hash: decision.content_hash,
-        decision_ref: decisionRef(decision),
+        content_hash: decision?.content_hash,
+        decision_ref: ref,
         comment: comment.trim() || undefined,
-        context: decision as unknown as Record<string, unknown>,
+        context: (decision ?? { level: level ?? "decision", phase }) as unknown as Record<string, unknown>,
         screenshot_data_url: screenshot,
       });
       onSaved();
@@ -321,18 +352,34 @@ function FeedbackModal({
         className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-sm font-semibold text-slate-900">Feedback on this decision</h3>
+        <h3 className="text-sm font-semibold text-slate-900">
+          {level === "job"
+            ? "Feedback on the whole video"
+            : level === "phase"
+              ? `Feedback on the ${phaseTitle(phase)} phase`
+              : "Feedback on this decision"}
+        </h3>
         <div className="mt-2 flex items-start gap-3">
-          {decision.thumb_url && (
+          {decision?.thumb_url && (
             <img src={decision.thumb_url} alt="" className="h-16 w-16 shrink-0 rounded object-cover" onError={(e) => ((e.target as HTMLImageElement).style.display = "none")} />
           )}
           <div className="min-w-0 text-xs text-slate-600">
-            <p>
-              <span className="font-medium">{phaseTitle(phase)}</span> · {decisionLabel(decision)}
-            </p>
-            {decision.reason && <p className="text-slate-500">reason: {decision.reason}</p>}
-            {decision.role && <p className="text-slate-500">role: {decision.role}</p>}
-            {decision.caption && <p className="truncate text-slate-500">{decision.caption}</p>}
+            {decision ? (
+              <>
+                <p>
+                  <span className="font-medium">{phaseTitle(phase)}</span> · {decisionLabel(decision)}
+                </p>
+                {decision.reason && <p className="text-slate-500">reason: {decision.reason}</p>}
+                {decision.role && <p className="text-slate-500">role: {decision.role}</p>}
+                {decision.caption && <p className="truncate text-slate-500">{decision.caption}</p>}
+              </>
+            ) : (
+              <p className="text-slate-500">
+                {level === "job"
+                  ? "Overall reaction to the finished video — pacing, length, coverage, story."
+                  : "Your reaction to this whole phase's decisions."}
+              </p>
+            )}
           </div>
         </div>
 
