@@ -64,6 +64,40 @@ async def test_title_card_none_when_no_background_available(tmp_path: Path) -> N
     assert clip is None
 
 
+class _Person:
+    def __init__(self, content_hashes: list[str]) -> None:
+        self.content_hashes = content_hashes
+        self.is_group = True
+
+
+class _Cast:
+    def __init__(self, group: list) -> None:
+        self.group = group
+
+
+async def test_title_card_composites_group_faces(tmp_path: Path, monkeypatch) -> None:
+    # A populated cast whose group member appears in one photo; face detection
+    # is monkeypatched so we exercise the composite path without a real face.
+    photo = _photo(tmp_path, "g0")
+    face_buf = io.BytesIO()
+    Image.new("RGB", (120, 120), (10, 220, 10)).save(face_buf, format="JPEG")
+    monkeypatch.setattr(
+        tc.cast_mod, "detect_and_crop_faces",
+        lambda data: [(face_buf.getvalue(), (0.4, 0.4, 0.2, 0.2))],
+    )
+    cast = _Cast(group=[_Person([photo.content_hash])])
+
+    faces = tc._collect_faces(cast, {photo.content_hash: photo})
+    assert len(faces) == 1  # the group member's face was collected
+
+    # _paste_faces must actually alter the canvas in the face row region.
+    canvas = Image.new("RGB", (tc._W, tc._H), (0, 0, 0))
+    before = canvas.getpixel((tc._W // 2, tc._H - tc._FACE_PX - 150 + tc._FACE_PX // 2))
+    tc._paste_faces(canvas, faces)
+    after = canvas.getpixel((tc._W // 2, tc._H - tc._FACE_PX - 150 + tc._FACE_PX // 2))
+    assert before != after  # a face ring was composited onto the canvas
+
+
 def test_long_title_is_shrunk_to_fit_frame() -> None:
     from PIL import ImageDraw
 
