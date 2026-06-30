@@ -63,6 +63,62 @@ const STAGE_ORDER = [
   "stage_7_render",
 ];
 
+// The internal modules each stage runs — surfaced (S-2.11.3) so the live view
+// shows the real depth of work, not just one line per stage. Kept jargon-light.
+const STAGE_SUBMODULES: Record<string, string[]> = {
+  stage_1_ingest: [
+    "fingerprint every file",
+    "read capture time (EXIF → filename → date)",
+    "extract GPS",
+    "detect video scenes",
+    "make thumbnails",
+  ],
+  stage_2_bulk_ops: [
+    "one-line caption",
+    "quality score",
+    "narrative-relevance score",
+    "visual embedding",
+  ],
+  stage_3_metadata: [
+    "who's in it + expressions",
+    "mood & lighting",
+    "shot type & framing",
+    "scenery & location",
+    "specialness score",
+  ],
+  stage_4_prefilter: [
+    "drop unsafe frames",
+    "drop too-short video (<2s)",
+    "quality floor (+ specialness rescue)",
+    "collapse near-duplicates",
+    "best-of-burst dedup",
+    "cluster by place & time",
+    "cap per viewpoint",
+    "rank & budget across days",
+  ],
+  stage_5_judge: [
+    "read every candidate",
+    "match the brief + music mood",
+    "select & order the story",
+    "balance people / landscapes / video",
+    "cover every place, cap per viewpoint",
+  ],
+  stage_6_plan: [
+    "resolve each clip",
+    "snappy 2–3s durations",
+    "cap per viewpoint",
+    "aspect-ratio handling",
+    "beat-snap (music videos)",
+  ],
+  stage_7_render: [
+    "pre-render each clip at 1080p",
+    "concatenate the timeline",
+    "two-pass loudness normalize",
+    "mux the music",
+    "finalize the MP4",
+  ],
+};
+
 // Friendly cost-by-tier names (cost transparency is a feature — kept — but
 // without the raw model IDs as identity; the by-provider split still names
 // Anthropic / Google).
@@ -562,6 +618,31 @@ function TimelineStage({
 
         {showDetails && (
           <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{blurb}</p>
+        )}
+
+        {showDetails &&
+          STAGE_SUBMODULES[stage] &&
+          (state === "running" || state === "completed") && (
+            <ul className="mt-1.5 flex flex-wrap gap-1">
+              {STAGE_SUBMODULES[stage].map((m) => (
+                <li
+                  key={m}
+                  className={
+                    "rounded px-1.5 py-0.5 text-[10px] " +
+                    (state === "running"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-slate-100 text-slate-500")
+                  }
+                >
+                  {state === "completed" ? "✓ " : ""}
+                  {m}
+                </li>
+              ))}
+            </ul>
+          )}
+
+        {state === "completed" && detail && (
+          <p className="mt-1 text-xs text-slate-500">{detail}</p>
         )}
 
         {state === "running" && (progressText || detail) && (
