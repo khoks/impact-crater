@@ -89,6 +89,12 @@ _DEFAULT_SPECIALNESS_RESCUE_THRESHOLD = 0.75
 # A video scene shorter than this is ineligible (S-2.11.1): <2s of footage in
 # the output reads as a jerky flash, so it shouldn't compete for a slot at all.
 _DEFAULT_MIN_VIDEO_MS = 2000.0
+# T-2.11.1.6: cap candidates per ~1km GPS cell so the judge can't over-pick one
+# viewpoint and must fill the target from breadth (it then reaches the full
+# duration across many places instead of being trimmed by the Stage-6 cap).
+# Slightly above the Stage-6 hard cap (3) so the judge has a best-of choice.
+_DEFAULT_VIEWPOINT_CANDIDATE_CAP = 4
+_VIEWPOINT_CELL_DP = 2  # round GPS to 2dp ≈ 1.1km
 # A-017 best-of-burst: cosine ≥ this collapses retakes. Within the time
 # window we trust a moderate threshold; without timestamps we demand a
 # higher one (near-identical visuals) so different scenery never merges.
@@ -183,6 +189,12 @@ def prefilter(
     location_clusters = _location_clusters(after_semantic)
     after_location = _cap_location_clusters(
         after_semantic, location_clusters, _DEFAULT_LOCATION_CLUSTER_CAP, weights, filter_log
+    )
+
+    # Step 3b — per-viewpoint candidate cap (T-2.11.1.6): keep at most N best
+    # per ~1km GPS cell so the judge spreads across places and fills the target.
+    after_location = _cap_gps_viewpoints(
+        after_location, _DEFAULT_VIEWPOINT_CANDIDATE_CAP, weights, filter_log
     )
 
     # Step 4 — rank by combined score; assign placeholder diversity score
@@ -377,6 +389,8 @@ class _Asset:
     embedding: Any = None  # numpy ndarray for semantic dedup (A-017)
     burst_best_of: int = 1  # how many retakes this asset represents
     scene_duration_ms: float = 0.0  # video-scene natural length (S-2.11.1); 0 for photos
+    gps_lat: float | None = None  # T-2.11.1.6 per-viewpoint balance
+    gps_lon: float | None = None
 
     @property
     def key(self) -> str:
@@ -436,6 +450,8 @@ def _make_asset(
         specialness_score=float(metadata_dict.get("specialness_score", 0.5)) if metadata_dict else 0.5,
         obstruction_level=float(metadata_dict.get("obstruction_level", 0.0)) if metadata_dict else 0.0,
         embedding=getattr(s2, "embedding", None) if s2 else None,
+        gps_lat=rec.gps_lat,
+        gps_lon=rec.gps_lon,
     )
 
 
@@ -775,6 +791,41 @@ def _cap_location_clusters(
                     "decision": "drop",
                     "reason": "location_cluster_excess",
                     "bucket": bucket,
+                    "cap": cap,
+                    **_scores(a),
+                }
+            )
+    return [a for a in assets if a.key in keep]
+
+
+def _cap_gps_viewpoints(
+    assets: list[_Asset],
+    cap: int,
+    weights: tuple[float, float, float, float],
+    filter_log: list[dict[str, Any]],
+) -> list[_Asset]:
+    """Keep at most `cap` candidates per ~1km GPS cell (T-2.11.1.6), the best by
+    combined score. Forces the judge to fill the target from many places rather
+    than over-picking one iconic overlook. Assets without GPS (videos) are
+    exempt — they're few and aren't a single viewpoint."""
+    by_cell: dict[tuple[float, float], list[_Asset]] = {}
+    keep: set[str] = set()
+    for a in assets:
+        if a.gps_lat is None or a.gps_lon is None:
+            keep.add(a.key)  # no-GPS exempt
+            continue
+        by_cell.setdefault((round(a.gps_lat, _VIEWPOINT_CELL_DP), round(a.gps_lon, _VIEWPOINT_CELL_DP)), []).append(a)
+    for cell, members in by_cell.items():
+        ranked = sorted(members, key=lambda a: (-_combined_score(a, weights, 1), a.key))
+        for a in ranked[:cap]:
+            keep.add(a.key)
+        for a in ranked[cap:]:
+            filter_log.append(
+                {
+                    "key": a.key,
+                    "decision": "drop",
+                    "reason": "viewpoint_candidate_cap",
+                    "cell": f"{cell[0]},{cell[1]}",
                     "cap": cap,
                     **_scores(a),
                 }

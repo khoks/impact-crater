@@ -14,23 +14,15 @@ Music spec:
   section_to_media (user spec, free-text): {{ music_spec.section_to_media_nl }}
   {% endif %}
 {% endif %}
-{% if mode == "music_video" and music_analysis %}
+{% if music_analysis %}
 
-Music analysis (from {{ music_analysis.analyzer }}):
-  duration_ms: {{ music_analysis.duration_ms }}
-  bpm: {{ "%.1f"|format(music_analysis.bpm) }}
-  bpm_stability: {{ "%.2f"|format(music_analysis.bpm_stability) }}
-  beat_count: {{ music_analysis.beats_ms|length }}
-  downbeat_count: {{ music_analysis.downbeats_ms|length }}
-  sections:
-{% for s in music_analysis.sections %}    - [{{ loop.index0 }}] {{ s.label }} {{ s.start_ms }}ms..{{ s.end_ms }}ms (energy_mean={{ "%.3f"|format(s.energy_mean) }})
+Music ({{ music_analysis.analyzer }}): {{ music_analysis.duration_ms }}ms, {{ "%.0f"|format(music_analysis.bpm) }} bpm. The video runs ~{{ target_duration_seconds }}s, so it plays over roughly the first {{ target_duration_seconds }}s of the song. Sections (with mood):
+{% for s in music_analysis.sections %}  - [{{ loop.index0 }}] {{ s.label }} {{ s.start_ms }}..{{ s.end_ms }}ms · mood={{ s.mood }} (energy {{ "%.3f"|format(s.energy_mean) }})
 {% endfor %}
-
-In music_video mode, populate `section_mapping` in your output: map each
-section *label* (intro/verse/chorus/bridge/outro) to the list of
-selected_item placement_position indices that should land in that
-section. Honor the user's section_to_media spec where the candidate set
-allows; flag in `arc_reasoning` where it doesn't.
+MATCH MOOD TO MUSIC: pace your selection so its emotional energy tracks the song's — calm scenery/landscape shots under `calm` sections, energetic motion/people/action shots under `energetic` sections — and build toward the song's high-energy passages. This applies in BOTH modes.
+{% if mode == "music_video" %}
+Also populate `section_mapping`: map each section label (intro/verse/chorus/bridge/outro) to the selected_item placement_position indices that land in it. Honor the user's section_to_media spec where the candidate set allows; flag in `arc_reasoning` where it doesn't.
+{% endif %}
 {% endif %}
 
 You are given a pre-filtered candidate set of {{ candidates|length }} items. Each candidate is a photo or video scene with its content_hash, optional scene_index, caption, summarized metadata, quality score (0–1), a per-candidate narrative-relevance hint (0–1, computed deterministically by Stage 4 — treat as a hint, not gospel), and (where known) its real capture time.

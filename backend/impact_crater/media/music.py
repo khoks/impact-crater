@@ -39,6 +39,10 @@ class Section(BaseModel):
     end_ms: int = Field(ge=0)
     energy_mean: float
     energy_std: float
+    # S-2.11.6: coarse energy/mood class relative to the rest of the track —
+    # "calm" | "moderate" | "energetic" — so the judge can match clip mood
+    # (calm scenery vs energetic motion/people) to the song's arc.
+    mood: str = "moderate"
 
 
 class MusicAnalysis(BaseModel):
@@ -203,6 +207,7 @@ class LibrosaMusicAnalyzer:
                     energy_std=energy_std,
                 )
             )
+        _assign_section_moods(sections)
         return sections
 
     def _segment_energy(
@@ -226,6 +231,20 @@ def _to_scalar(x: object) -> float:
     if isinstance(x, np.ndarray):
         return float(x.item() if x.ndim == 0 else x.flat[0])
     return float(x)
+
+
+def _assign_section_moods(sections: list[Section]) -> None:
+    """Tag each section calm/moderate/energetic by its energy relative to the
+    track's median section energy (S-2.11.6). Mutates in place."""
+    if not sections:
+        return
+    energies = sorted(s.energy_mean for s in sections)
+    median = energies[len(energies) // 2]
+    if median <= 0:
+        return
+    for s in sections:
+        ratio = s.energy_mean / median
+        s.mood = "energetic" if ratio >= 1.15 else "calm" if ratio <= 0.85 else "moderate"
 
 
 # ---- CutGrid generation ------------------------------------------------

@@ -443,6 +443,31 @@ def test_filter_log_entries_carry_all_three_scores() -> None:
             assert "specialness_score" in e
 
 
+def test_viewpoint_candidate_cap_limits_per_gps_cell() -> None:
+    """T-2.11.1.6: at most 4 candidates survive per ~1km GPS cell, so the judge
+    spreads across places. 8 photos at one overlook → 4 kept; a distinct spot is
+    independent; no-GPS exempt."""
+    media, stage2, stage3 = [], [], []
+    def add(ch, lat, lon, q):
+        m = MediaRecord(content_hash=ch, source_path=f"/tmp/{ch}.jpg", media_type="photo",
+                        file_size=1, quick_stats={"phash": _spread_phash(abs(hash(ch)) % 900), "dhash": "0"},
+                        gps_lat=lat, gps_lon=lon)
+        media.append(m)
+        stage2.append(Stage2AssetOutputs(content_hash=ch, caption=ch, quality_score=q,
+                                         narrative_relevance_score=0.7, embedding_dim=8))
+    for i in range(8):  # 8 at the same overlook
+        add(f"hb{i}", 36.879, -111.510, 0.5 + i * 0.05)
+    add("zion", 37.2, -112.95, 0.9)  # a distinct viewpoint
+    cs = prefilter(media=media, stage2=stage2, stage3=stage3, target_duration_seconds=10,
+                   overrides=PreFilterOverrides(quality_threshold=0.0, target_size=50))
+    kept = {it.content_hash for it in cs.items}
+    hb_kept = sum(1 for k in kept if k.startswith("hb"))
+    assert hb_kept == 4  # capped to 4 candidates at the one overlook
+    assert "zion" in kept  # distinct spot survives
+    capped = [e for e in cs.filter_log if e.get("reason") == "viewpoint_candidate_cap"]
+    assert len(capped) == 4  # the other 4 hb shots dropped
+
+
 def test_short_video_scene_is_ineligible() -> None:
     """S-2.11.1: a video scene under ~2s is a jerky flash — dropped before it
     can win a slot; a >=2s scene from the same video survives."""
