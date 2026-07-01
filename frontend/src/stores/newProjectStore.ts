@@ -16,6 +16,9 @@ export interface NewProjectDraft {
   // M4 music-video toggles
   mode: ProjectMode;
   section_to_media_nl: string;
+  // S-2.11.5 opt-in AI title/splash card
+  add_title_card: boolean;
+  title_text: string;
   // Folder-scan results live here so the effort-level page doesn't re-fetch.
   scanned_media_paths: string[];
   scanned_photo_count: number;

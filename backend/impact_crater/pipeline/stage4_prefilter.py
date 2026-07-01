@@ -17,7 +17,9 @@ Pre-filter steps:
      Each cluster contributes ⌈cluster_size / dedup_factor⌉ representatives.
   3. Time/location clustering via Stage-3 metadata.
      Clusters > 10 items down-sample to 10 representatives.
-  4. Rank by combined_score = α*quality + β*narrative + γ*scene_diversity.
+  4. Rank by combined_score = α*quality + β*narrative + δ*specialness +
+     γ*scene_diversity (S-2.10.2: specialness participates in ranking and every
+     tie-break; a high-specialness shot is also rescued past the quality floor).
   5. Take top `target_size`.
 
 `filter_log` records every drop/keep decision so the cost-transparency UI
@@ -49,6 +51,9 @@ class CandidateSet:
     target_size: int
     floor: int
     ceiling: int
+    # S-2.11.4: dense same-backdrop bursts (each = ordered member asset.keys) that
+    # Stage 6 can collapse into one rapid burst-montage clip. Empty when none.
+    montage_groups: list[list[str]] = field(default_factory=list)
 
 
 @dataclass
@@ -56,14 +61,25 @@ class PreFilterOverrides:
     quality_threshold: float | None = None  # default 0.4
     dedup_factor: int | None = None         # default 3
     target_size: int | None = None          # user override; clamped to [floor, ceiling]
-    weight_quality: float | None = None     # default α=0.3
-    weight_narrative: float | None = None   # default β=0.5
-    weight_diversity: float | None = None   # default γ=0.2
+    weight_quality: float | None = None     # default α=0.25
+    weight_narrative: float | None = None   # default β=0.40
+    weight_specialness: float | None = None  # default δ=0.20 (S-2.10.2)
+    weight_diversity: float | None = None   # default γ=0.15
+    # S-2.10.2: a genuinely memorable shot (high Stage-3 specialness) survives the
+    # quality floor even when slightly soft. None → default 0.75; raise to 1.1
+    # to disable the rescue.
+    specialness_rescue_threshold: float | None = None
     # A-017 best-of-burst semantic dedup. Cosine ≥ threshold within the
     # time window collapses retakes to their best member. None → defaults;
     # set threshold to 1.1 (impossible) to disable.
     semantic_dedup_threshold: float | None = None      # default 0.93
     semantic_dedup_window_seconds: int | None = None   # default 120
+    # S-2.11.4 burst-montage detection knobs. montage_enabled=False is a kill
+    # switch (no montage groups ever produced).
+    montage_enabled: bool | None = None                # default True
+    montage_min_members: int | None = None             # default 6
+    montage_window_seconds: int | None = None          # default 1800
+    montage_phash_hamming: int | None = None           # default 14
 
 
 # ---- Defaults ----------------------------------------------------------
@@ -73,7 +89,27 @@ _DEFAULT_QUALITY_THRESHOLD = 0.4
 _DEFAULT_DEDUP_FACTOR = 3
 _DEFAULT_LOCATION_CLUSTER_CAP = 10
 _DEFAULT_PHASH_HAMMING = 5
-_DEFAULT_WEIGHTS = (0.3, 0.5, 0.2)  # (quality, narrative, diversity)
+# (quality, narrative, specialness, diversity). S-2.10.2: specialness (the richest
+# Stage-3 signal) now participates in ranking + every tie-break so the most
+# memorable member of a burst is the one kept and standout shots aren't ranked
+# out by bland-but-sharp ones. Narrative stays dominant so the brief still steers.
+_DEFAULT_WEIGHTS = (0.25, 0.40, 0.20, 0.15)
+_DEFAULT_SPECIALNESS_RESCUE_THRESHOLD = 0.75
+# A video scene shorter than this is ineligible (S-2.11.1): <2s of footage in
+# the output reads as a jerky flash, so it shouldn't compete for a slot at all.
+_DEFAULT_MIN_VIDEO_MS = 2000.0
+# T-2.11.1.6: cap candidates per ~1km GPS cell so the judge can't over-pick one
+# viewpoint and must fill the target from breadth (it then reaches the full
+# duration across many places instead of being trimmed by the Stage-6 cap).
+# Slightly above the Stage-6 hard cap (3) so the judge has a best-of choice.
+_DEFAULT_VIEWPOINT_CANDIDATE_CAP = 4
+_VIEWPOINT_CELL_DP = 2  # round GPS to 2dp ≈ 1.1km
+# S-2.11.4 burst-montage: a dense same-backdrop cluster (one GPS cell, short
+# window, near-identical framing, many photos) becomes a rapid 0.5s-per-photo
+# montage. Used sparingly — needs >=6 such photos.
+_DEFAULT_MONTAGE_MIN_MEMBERS = 6
+_DEFAULT_MONTAGE_WINDOW_S = 1800  # 30 min
+_DEFAULT_MONTAGE_PHASH_HAMMING = 14  # looser than dedup's 5 = "same backdrop"
 # A-017 best-of-burst: cosine ≥ this collapses retakes. Within the time
 # window we trust a moderate threshold; without timestamps we demand a
 # higher one (near-identical visuals) so different scenery never merges.
@@ -104,7 +140,13 @@ def prefilter(
     weights = (
         overrides.weight_quality if overrides.weight_quality is not None else _DEFAULT_WEIGHTS[0],
         overrides.weight_narrative if overrides.weight_narrative is not None else _DEFAULT_WEIGHTS[1],
-        overrides.weight_diversity if overrides.weight_diversity is not None else _DEFAULT_WEIGHTS[2],
+        overrides.weight_specialness if overrides.weight_specialness is not None else _DEFAULT_WEIGHTS[2],
+        overrides.weight_diversity if overrides.weight_diversity is not None else _DEFAULT_WEIGHTS[3],
+    )
+    rescue_threshold = (
+        overrides.specialness_rescue_threshold
+        if overrides.specialness_rescue_threshold is not None
+        else _DEFAULT_SPECIALNESS_RESCUE_THRESHOLD
     )
     quality_threshold = (
         overrides.quality_threshold
@@ -138,12 +180,18 @@ def prefilter(
     # only "explicit" is removed.
     after_safety = _apply_safety_floor(assets, filter_log)
 
-    # Step 1 — quality floor.
-    after_quality = _apply_quality_floor(after_safety, quality_threshold, filter_log)
+    # Step 0b — min-video floor (S-2.11.1). A video scene under ~2s is a jerky
+    # flash in the output; make it ineligible before it can win a slot.
+    after_safety = _apply_min_video_floor(after_safety, _DEFAULT_MIN_VIDEO_MS, filter_log)
+
+    # Step 1 — quality floor (with S-2.10.2 specialness rescue).
+    after_quality = _apply_quality_floor(
+        after_safety, quality_threshold, rescue_threshold, filter_log
+    )
 
     # Step 2 — dedup clusters via pHash (near-identical pixels).
     dedup_clusters = _phash_clusters(after_quality)
-    after_dedup = _apply_dedup(after_quality, dedup_clusters, dedup_factor, filter_log)
+    after_dedup = _apply_dedup(after_quality, dedup_clusters, dedup_factor, weights, filter_log)
 
     # Step 2b — semantic best-of-burst dedup (A-017): collapse retakes of
     # the same moment (same pose/scene from a slightly different angle)
@@ -155,7 +203,29 @@ def prefilter(
     # Step 3 — location/time clusters.
     location_clusters = _location_clusters(after_semantic)
     after_location = _cap_location_clusters(
-        after_semantic, location_clusters, _DEFAULT_LOCATION_CLUSTER_CAP, filter_log
+        after_semantic, location_clusters, _DEFAULT_LOCATION_CLUSTER_CAP, weights, filter_log
+    )
+
+    # Step 3a — detect dense same-backdrop bursts (S-2.11.4) BEFORE the
+    # per-viewpoint cap, so a >=6-photo burst is found (the cap keeps only 4).
+    montage_enabled = overrides.montage_enabled if overrides.montage_enabled is not None else True
+    montage_groups: list[list[str]] = []
+    if montage_enabled:
+        montage_groups = _detect_montage_groups(
+            after_location,
+            min_members=overrides.montage_min_members or _DEFAULT_MONTAGE_MIN_MEMBERS,
+            window_s=overrides.montage_window_seconds or _DEFAULT_MONTAGE_WINDOW_S,
+            phash_hamming=overrides.montage_phash_hamming or _DEFAULT_MONTAGE_PHASH_HAMMING,
+            filter_log=filter_log,
+        )
+    montage_member_keys = {k for g in montage_groups for k in g}
+
+    # Step 3b — per-viewpoint candidate cap (T-2.11.1.6): keep at most N best
+    # per ~1km GPS cell so the judge spreads across places and fills the target.
+    # Montage members are EXEMPT (the montage represents the whole dense burst).
+    after_location = _cap_gps_viewpoints(
+        after_location, _DEFAULT_VIEWPOINT_CANDIDATE_CAP, weights, filter_log,
+        exempt_keys=montage_member_keys,
     )
 
     # Step 4 — rank by combined score; assign placeholder diversity score
@@ -163,7 +233,7 @@ def prefilter(
     cluster_size_by_asset = _cluster_size_by_asset(after_location, dedup_clusters)
     ranked = sorted(
         after_location,
-        key=lambda a: -_combined_score(a, weights, cluster_size_by_asset.get(a.key, 1)),
+        key=lambda a: (-_combined_score(a, weights, cluster_size_by_asset.get(a.key, 1)), a.key),
     )
 
     # Step 5 — take top `target_size` (already clamped to [floor, ceiling]).
@@ -174,17 +244,26 @@ def prefilter(
                 "key": asset.key,
                 "decision": "drop",
                 "reason": "rank_below_target_size",
+                **_scores(asset),
             }
         )
     for asset in chosen:
-        filter_log.append({"key": asset.key, "decision": "keep"})
+        filter_log.append({"key": asset.key, "decision": "keep", **_scores(asset)})
 
     items = [_to_candidate_ref(a) for a in chosen]
+
+    # Keep only montage groups whose members all survived into `chosen` and
+    # still meet the minimum (S-2.11.4); otherwise those photos render solo.
+    chosen_keys = {a.key for a in chosen}
+    _min_m = overrides.montage_min_members or _DEFAULT_MONTAGE_MIN_MEMBERS
+    montage_groups = [[k for k in g if k in chosen_keys] for g in montage_groups]
+    montage_groups = [g for g in montage_groups if len(g) >= _min_m]
 
     cluster_metadata = {
         "dedup_cluster_count": len(dedup_clusters),
         "location_cluster_count": len(location_clusters),
         "input_count": input_count,
+        "montage_group_count": len(montage_groups),
     }
 
     if not after_quality:
@@ -233,6 +312,7 @@ def prefilter(
         target_size=target_size,
         floor=floor,
         ceiling=ceiling,
+        montage_groups=montage_groups,
     )
 
 
@@ -348,6 +428,9 @@ class _Asset:
     obstruction_level: float = 0.0
     embedding: Any = None  # numpy ndarray for semantic dedup (A-017)
     burst_best_of: int = 1  # how many retakes this asset represents
+    scene_duration_ms: float = 0.0  # video-scene natural length (S-2.11.1); 0 for photos
+    gps_lat: float | None = None  # T-2.11.1.6 per-viewpoint balance
+    gps_lon: float | None = None
 
     @property
     def key(self) -> str:
@@ -371,7 +454,7 @@ def _join_assets(
             out.append(_make_asset(rec, None, s2_by_key, s3_by_key))
         elif rec.media_type == "video" and rec.scenes:
             for scene in rec.scenes:
-                out.append(_make_asset(rec, scene.index, s2_by_key, s3_by_key))
+                out.append(_make_asset(rec, scene.index, s2_by_key, s3_by_key, scene=scene))
     return out
 
 
@@ -380,13 +463,19 @@ def _make_asset(
     scene_index: int | None,
     s2_by_key: dict,
     s3_by_key: dict,
+    *,
+    scene: Any = None,
 ) -> _Asset:
     s2 = s2_by_key.get((rec.content_hash, scene_index))
     s3 = s3_by_key.get((rec.content_hash, scene_index))
     metadata_dict = s3.metadata.model_dump() if s3 else None
+    scene_duration_ms = (
+        max((scene.end_seconds - scene.start_seconds) * 1000.0, 0.0) if scene is not None else 0.0
+    )
     return _Asset(
         content_hash=rec.content_hash,
         scene_index=scene_index,
+        scene_duration_ms=scene_duration_ms,
         quality_score=float(s2.quality_score) if s2 else 0.0,
         narrative_relevance_score=float(s2.narrative_relevance_score) if s2 else 0.0,
         caption=s2.caption if s2 else "",
@@ -401,6 +490,8 @@ def _make_asset(
         specialness_score=float(metadata_dict.get("specialness_score", 0.5)) if metadata_dict else 0.5,
         obstruction_level=float(metadata_dict.get("obstruction_level", 0.0)) if metadata_dict else 0.0,
         embedding=getattr(s2, "embedding", None) if s2 else None,
+        gps_lat=rec.gps_lat,
+        gps_lon=rec.gps_lon,
     )
 
 
@@ -448,6 +539,10 @@ def _summarize_metadata(md: dict[str, Any]) -> str:
         parts.append(f"lighting={light}")
     if scenery := md.get("scenery_description"):
         parts.append(f"scenery={scenery}")
+    # Video scenes carry a scene_summary over the 3 sampled frames — surface it
+    # so the judge reads what MOVES in the clip, not just one frozen frame (F2).
+    if ss := md.get("scene_summary"):
+        parts.append(f"motion_summary={ss}")
     if loc := md.get("location", {}).get("description"):
         parts.append(f"loc={loc}")
     spec = md.get("specialness_score")
@@ -484,12 +579,54 @@ def _apply_safety_floor(
     return out
 
 
-def _apply_quality_floor(
-    assets: list[_Asset], threshold: float, filter_log: list[dict[str, Any]]
+def _apply_min_video_floor(
+    assets: list[_Asset], min_ms: float, filter_log: list[dict[str, Any]]
 ) -> list[_Asset]:
+    """Drop video scenes whose natural length is under `min_ms` (S-2.11.1).
+    Photos (scene_duration_ms == 0) and timing-less scenes always pass."""
     out = []
     for a in assets:
-        if a.quality_score < threshold:
+        if a.scene_index is not None and 0.0 < a.scene_duration_ms < min_ms:
+            filter_log.append(
+                {
+                    "key": a.key,
+                    "decision": "drop",
+                    "reason": "video_too_short",
+                    "scene_duration_ms": a.scene_duration_ms,
+                    "min_ms": min_ms,
+                    **_scores(a),
+                }
+            )
+        else:
+            out.append(a)
+    return out
+
+
+def _apply_quality_floor(
+    assets: list[_Asset],
+    threshold: float,
+    rescue_threshold: float,
+    filter_log: list[dict[str, Any]],
+) -> list[_Asset]:
+    """Drop low-quality assets — but rescue a genuinely memorable one (S-2.10.2):
+    a soft shot with high Stage-3 specialness (a once-in-a-trip moment) is worth
+    keeping over a sharp-but-bland frame the floor would otherwise let through."""
+    out = []
+    for a in assets:
+        if a.quality_score >= threshold:
+            out.append(a)
+        elif a.specialness_score >= rescue_threshold:
+            out.append(a)
+            filter_log.append(
+                {
+                    "key": a.key,
+                    "decision": "keep",
+                    "reason": "specialness_rescue",
+                    "quality_score": a.quality_score,
+                    "specialness_score": a.specialness_score,
+                }
+            )
+        else:
             filter_log.append(
                 {
                     "key": a.key,
@@ -499,8 +636,6 @@ def _apply_quality_floor(
                     "threshold": threshold,
                 }
             )
-        else:
-            out.append(a)
     return out
 
 
@@ -536,14 +671,16 @@ def _apply_dedup(
     assets: list[_Asset],
     clusters: list[list[_Asset]],
     dedup_factor: int,
+    weights: tuple[float, float, float, float],
     filter_log: list[dict[str, Any]],
 ) -> list[_Asset]:
     keep: set[str] = set()
     for cluster in clusters:
-        # Pick best-scoring members; drop the rest.
+        # Pick best-scoring members; drop the rest. Specialness participates
+        # via _combined_score (S-2.10.2), so the most memorable retake is kept.
         cluster_sorted = sorted(
             cluster,
-            key=lambda a: -(_combined_score(a, _DEFAULT_WEIGHTS, len(cluster))),
+            key=lambda a: (-_combined_score(a, weights, len(cluster)), a.key),
         )
         cap = max(1, math.ceil(len(cluster) / max(dedup_factor, 1)))
         for a in cluster_sorted[:cap]:
@@ -556,6 +693,7 @@ def _apply_dedup(
                     "reason": "dedup_cluster_excess",
                     "cluster_size": len(cluster),
                     "dedup_factor": dedup_factor,
+                    **_scores(a),
                 }
             )
     return [a for a in assets if a.key in keep]
@@ -627,6 +765,7 @@ def _apply_semantic_dedup(
                     "reason": "semantic_duplicate",
                     "kept_key": best.key,
                     "cluster_size": len(cluster),
+                    **_scores(loser),
                 }
             )
     return kept
@@ -672,13 +811,16 @@ def _cap_location_clusters(
     assets: list[_Asset],
     clusters: dict[str, list[_Asset]],
     cap: int,
+    weights: tuple[float, float, float, float],
     filter_log: list[dict[str, Any]],
 ) -> list[_Asset]:
     keep: set[str] = set()
     for bucket, members in clusters.items():
+        # S-2.10.2: rank within a location bucket by the full combined score
+        # (incl. specialness) so the cap never discards the standout shot.
         sorted_members = sorted(
             members,
-            key=lambda a: -(a.quality_score * 0.5 + a.narrative_relevance_score * 0.5),
+            key=lambda a: (-_combined_score(a, weights, 1), a.key),
         )
         for a in sorted_members[:cap]:
             keep.add(a.key)
@@ -690,6 +832,109 @@ def _cap_location_clusters(
                     "reason": "location_cluster_excess",
                     "bucket": bucket,
                     "cap": cap,
+                    **_scores(a),
+                }
+            )
+    return [a for a in assets if a.key in keep]
+
+
+def _detect_montage_groups(
+    assets: list[_Asset],
+    *,
+    min_members: int,
+    window_s: int,
+    phash_hamming: int,
+    filter_log: list[dict[str, Any]],
+) -> list[list[str]]:
+    """Find dense same-backdrop photo bursts (S-2.11.4): photos at one ~1km GPS
+    cell, within a short window, with near-identical pHash. Returns groups of
+    asset.key (ordered by capture time). Photos only; GPS required."""
+    cells: dict[tuple[float, float], list[_Asset]] = {}
+    for a in assets:
+        if a.scene_index is not None or a.gps_lat is None or a.gps_lon is None:
+            continue  # photos with GPS only
+        cells.setdefault((round(a.gps_lat, _VIEWPOINT_CELL_DP), round(a.gps_lon, _VIEWPOINT_CELL_DP)), []).append(a)
+    groups: list[list[str]] = []
+    for cell, members in cells.items():
+        if len(members) < min_members:
+            continue
+        for run in _montage_runs(members, window_s, phash_hamming):
+            if len(run) >= min_members:
+                groups.append([a.key for a in run])
+                filter_log.append(
+                    {
+                        "decision": "montage_group",
+                        "reason": "dense_same_backdrop_cluster",
+                        "cell": f"{cell[0]},{cell[1]}",
+                        "member_count": len(run),
+                        "keys": [a.key for a in run],
+                    }
+                )
+    return groups
+
+
+def _montage_runs(
+    members: list[_Asset], window_s: int, phash_hamming: int
+) -> list[list[_Asset]]:
+    """Split a GPS cell's photos into time+backdrop runs: a new run starts when
+    the gap to the run's first member exceeds `window_s` OR the pHash distance to
+    the run anchor exceeds `phash_hamming`."""
+    ordered = sorted(members, key=lambda a: (a.capture_timestamp or "", a.key))
+    runs: list[list[_Asset]] = []
+    cur: list[_Asset] = []
+    for a in ordered:
+        if not cur:
+            cur = [a]
+            continue
+        anchor = cur[0]
+        same_backdrop = (
+            anchor.phash_hex
+            and a.phash_hex
+            and _hamming_hex(a.phash_hex, anchor.phash_hex) <= phash_hamming
+        )
+        if same_backdrop and _within_window(a, anchor, window_s):
+            cur.append(a)
+        else:
+            runs.append(cur)
+            cur = [a]
+    if cur:
+        runs.append(cur)
+    return runs
+
+
+def _cap_gps_viewpoints(
+    assets: list[_Asset],
+    cap: int,
+    weights: tuple[float, float, float, float],
+    filter_log: list[dict[str, Any]],
+    *,
+    exempt_keys: set[str] | None = None,
+) -> list[_Asset]:
+    """Keep at most `cap` candidates per ~1km GPS cell (T-2.11.1.6), the best by
+    combined score. Forces the judge to fill the target from many places rather
+    than over-picking one iconic overlook. Assets without GPS (videos) and any
+    in `exempt_keys` (montage members, S-2.11.4) are kept regardless."""
+    exempt = exempt_keys or set()
+    by_cell: dict[tuple[float, float], list[_Asset]] = {}
+    keep: set[str] = set()
+    for a in assets:
+        if a.gps_lat is None or a.gps_lon is None or a.key in exempt:
+            keep.add(a.key)  # no-GPS / montage members exempt
+            continue
+        by_cell.setdefault((round(a.gps_lat, _VIEWPOINT_CELL_DP), round(a.gps_lon, _VIEWPOINT_CELL_DP)), []).append(a)
+    for cell, members in by_cell.items():
+        ranked = sorted(members, key=lambda a: (-_combined_score(a, weights, 1), a.key))
+        for a in ranked[:cap]:
+            keep.add(a.key)
+        for a in ranked[cap:]:
+            filter_log.append(
+                {
+                    "key": a.key,
+                    "decision": "drop",
+                    "reason": "viewpoint_candidate_cap",
+                    "cell": f"{cell[0]},{cell[1]}",
+                    "cap": cap,
+                    **_scores(a),
                 }
             )
     return [a for a in assets if a.key in keep]
@@ -709,22 +954,38 @@ def _cluster_size_by_asset(
     return out
 
 
+def _scores(asset: _Asset) -> dict[str, float]:
+    """The three AI signals carried onto every keep/drop log entry so the
+    inspect UI can show WHY a borderline item was kept or cut (A-023 F8c)."""
+    return {
+        "quality_score": asset.quality_score,
+        "narrative_relevance": asset.narrative_relevance_score,
+        "specialness_score": asset.specialness_score,
+    }
+
+
 def _combined_score(
     asset: _Asset,
-    weights: tuple[float, float, float],
+    weights: tuple[float, float, float, float],
     cluster_size: int,
 ) -> float:
-    α, β, γ = weights
+    α, β, δ, γ = weights
     diversity = 1.0 / max(cluster_size, 1)
     return (
         α * asset.quality_score
         + β * asset.narrative_relevance_score
+        + δ * asset.specialness_score
         + γ * diversity
     )
 
 
 def _to_candidate_ref(asset: _Asset) -> CandidateRef:
     summary = asset.metadata_summary
+    # Lead with an explicit media tag so the judge never has to infer video
+    # from the `#scene_index` suffix — it was selecting zero video for a
+    # "highlight video" because every candidate read like a still (F2).
+    media_tag = "MOTION(video clip)" if asset.scene_index is not None else "STILL(photo)"
+    summary = f"{media_tag} | {summary}" if summary else media_tag
     if asset.burst_best_of > 1:
         # Tell the judge this frame stands in for N retakes of one moment.
         tag = f"burst_best_of={asset.burst_best_of}"

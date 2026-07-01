@@ -27,8 +27,11 @@ def _ref_parts(ref: str) -> tuple[str, int | None]:
         return head, None
 
 
-def _thumb_url(content_hash: str) -> str:
-    return f"/api/media/{content_hash}/thumb.jpg"
+def _thumb_url(content_hash: str, scene_index: int | None = None) -> str:
+    base = f"/api/media/{content_hash}/thumb.jpg"
+    # Video scenes have no photo thumbnail; ?scene=N serves the Stage-1
+    # representative frame so video keep/drop/select cards are reviewable (F8b).
+    return f"{base}?scene={scene_index}" if scene_index is not None else base
 
 
 # Stable phase order for both the persisted doc and the live stream.
@@ -101,13 +104,24 @@ def _stage4_phase(candidate_set: Any, item_by_key: dict[str, Any]) -> dict[str, 
                 "quality_score": entry.get("quality_score")
                 if "quality_score" in entry
                 else (getattr(it, "quality_score", None) if it else None),
-                "narrative_relevance": getattr(it, "narrative_relevance", None) if it else None,
+                "narrative_relevance": entry.get("narrative_relevance")
+                if "narrative_relevance" in entry
+                else (getattr(it, "narrative_relevance", None) if it else None),
+                "specialness_score": entry.get("specialness_score"),
                 "extra": {
                     k: v
                     for k, v in entry.items()
-                    if k not in ("key", "decision", "reason", "quality_score")
+                    if k
+                    not in (
+                        "key",
+                        "decision",
+                        "reason",
+                        "quality_score",
+                        "narrative_relevance",
+                        "specialness_score",
+                    )
                 },
-                "thumb_url": _thumb_url(ch),
+                "thumb_url": _thumb_url(ch, scene),
             }
         )
     # Stable, useful ordering: drops grouped by reason, then keeps.
@@ -141,7 +155,7 @@ def _stage5_phase(arc_judgment: Any) -> dict[str, Any]:
                 "placement_position": si.placement_position,
                 "intended_duration_ms": si.intended_duration_ms,
                 "notes": si.notes,
-                "thumb_url": _thumb_url(ch),
+                "thumb_url": _thumb_url(ch, scene),
             }
         )
     return {
@@ -173,7 +187,7 @@ def _stage6_phase(plan: Any) -> dict[str, Any]:
                 "role": c.role,
                 "intended_duration_ms": c.intended_duration_ms,
                 "aspect_ratio_action": c.aspect_ratio_action,
-                "thumb_url": _thumb_url(ch),
+                "thumb_url": _thumb_url(ch, scene),
             }
         )
     return {

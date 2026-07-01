@@ -39,6 +39,8 @@ function seedDraft(): void {
       target_duration_seconds: 30,
       mode: "standard",
       section_to_media_nl: "",
+      add_title_card: false,
+      title_text: "",
       scanned_media_paths: ["/tmp/photos/a.jpg", "/tmp/photos/b.jpg"],
       scanned_photo_count: 2,
       scanned_video_count: 0,

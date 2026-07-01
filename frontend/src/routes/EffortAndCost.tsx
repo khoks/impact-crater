@@ -80,6 +80,8 @@ export default function EffortAndCost() {
         section_to_media_nl:
           draft.mode === "music_video" ? draft.section_to_media_nl : null,
         project_name: draft.name,
+        add_title_card: draft.add_title_card,
+        title_text: draft.title_text || null,
       });
       reset();
       navigate(`/jobs/${result.job_id}`, { replace: true });

@@ -14,8 +14,22 @@ from impact_crater.media.music import (
     LibrosaMusicAnalyzer,
     MusicAnalysis,
     Section,
+    _assign_section_moods,
     generate_cut_grid,
 )
+
+
+def test_assign_section_moods_relative_energy() -> None:
+    """S-2.11.6: sections tagged calm/moderate/energetic by energy vs median."""
+    secs = [
+        Section(label="intro", start_ms=0, end_ms=1000, energy_mean=0.04, energy_std=0.0),
+        Section(label="chorus", start_ms=1000, end_ms=2000, energy_mean=0.50, energy_std=0.0),
+        Section(label="verse", start_ms=2000, end_ms=3000, energy_mean=0.10, energy_std=0.0),
+    ]
+    _assign_section_moods(secs)
+    assert secs[0].mood == "calm"
+    assert secs[1].mood == "energetic"
+    assert secs[2].mood == "moderate"
 
 
 def _write_click_wav(path: Path, *, duration_ms: int, bpm: float, sr: int = 22050) -> None:

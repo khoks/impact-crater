@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from impact_crater.pipeline.stage1_ingest import MediaRecord
+from impact_crater.pipeline.stage1_ingest import MediaRecord, SceneRecord
 from impact_crater.pipeline.stage4_prefilter import (
     PreFilterOverrides,
     Stage4EmptyCandidateSet,
@@ -365,6 +365,169 @@ def test_prefilter_default_target_is_30_percent() -> None:
     assert cs.target_size == 300
     # The actual output is bounded by what survives the prior steps.
     assert len(cs.items) <= cs.target_size
+
+
+# ---- A-026 specialness-aware selection -------------------------------------
+
+
+def _one(ch, *, quality, narrative=0.6, specialness=0.5, phash=None, ts=None, loc="spot"):
+    rec = MediaRecord(
+        content_hash=ch, source_path=f"/tmp/{ch}.jpg", media_type="photo", file_size=1,
+        quick_stats={"phash": phash or _spread_phash(abs(hash(ch)) % 1000), "dhash": "0"},
+        capture_timestamp=ts, capture_source="exif" if ts else None,
+    )
+    s2 = Stage2AssetOutputs(content_hash=ch, caption=ch, quality_score=quality,
+                            narrative_relevance_score=narrative, embedding_dim=8)
+    s3 = Stage3AssetOutputs(content_hash=ch, metadata=RichMetadataPhoto(
+        time_of_day="midday", specialness_score=specialness,
+        location={"description": loc}))
+    return rec, s2, s3
+
+
+def test_specialness_rescues_soft_but_memorable_shot() -> None:
+    """A-026: a soft (low-quality) but high-specialness shot survives the
+    quality floor; a soft AND unremarkable one is dropped."""
+    rows = [
+        _one("special", quality=0.2, specialness=0.9),   # rescued
+        _one("dull", quality=0.2, specialness=0.5),       # dropped
+        _one("sharp", quality=0.8, specialness=0.5),      # normal keep
+    ]
+    media, stage2, stage3 = [r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows]
+    cs = prefilter(media=media, stage2=stage2, stage3=stage3, target_duration_seconds=10,
+                   overrides=PreFilterOverrides(target_size=10))
+    kept = {it.content_hash for it in cs.items}
+    assert "special" in kept and "sharp" in kept
+    assert "dull" not in kept
+    rescues = [e for e in cs.filter_log if e.get("reason") == "specialness_rescue"]
+    assert {e["key"] for e in rescues} == {"special"}
+
+
+def test_specialness_wins_semantic_dedup_tiebreak() -> None:
+    """A-026: within a burst, the most SPECIAL member is kept even when a
+    near-duplicate is marginally sharper (the 0.95-specialness case)."""
+    import numpy as np
+
+    emb = np.ones((8,), dtype=np.float32)
+    specs = [
+        ("plain", 0.85, 0.40, "2026-04-05T16:31:21"),    # slightly sharper, dull
+        ("hero", 0.80, 0.95, "2026-04-05T16:31:24"),     # the keeper
+    ]
+    media, stage2, stage3 = [], [], []
+    for i, (ch, q, sp, ts) in enumerate(specs):
+        media.append(MediaRecord(content_hash=ch, source_path=f"/tmp/{ch}.jpg",
+            media_type="photo", file_size=1,
+            quick_stats={"phash": _spread_phash(i), "dhash": "0"},
+            capture_timestamp=ts, capture_source="exif"))
+        stage2.append(Stage2AssetOutputs(content_hash=ch, caption=ch, quality_score=q,
+            narrative_relevance_score=0.6, embedding_dim=8, embedding=emb))
+        stage3.append(Stage3AssetOutputs(content_hash=ch, metadata=RichMetadataPhoto(
+            time_of_day="midday", specialness_score=sp, location={"description": "trail"})))
+    cs = prefilter(media=media, stage2=stage2, stage3=stage3, target_duration_seconds=10,
+                   overrides=PreFilterOverrides(quality_threshold=0.0, target_size=10))
+    kept = {it.content_hash for it in cs.items}
+    assert kept == {"hero"}  # the special one survives the burst, not the sharper-but-dull one
+
+
+def test_filter_log_entries_carry_all_three_scores() -> None:
+    """F8c: keep and rank-drop entries carry quality/narrative/specialness so
+    the inspect UI can show why a borderline item was kept or cut."""
+    media, stage2, stage3 = _records(120)
+    cs = prefilter(media=media, stage2=stage2, stage3=stage3, target_duration_seconds=10,
+                   overrides=PreFilterOverrides(target_size=50))
+    scored = [e for e in cs.filter_log if e.get("decision") in ("keep", "drop")]
+    assert scored, "expected keep/drop entries"
+    for e in scored:
+        if e.get("reason") in (None, "rank_below_target_size") or e["decision"] == "keep":
+            assert "quality_score" in e
+            assert "narrative_relevance" in e
+            assert "specialness_score" in e
+
+
+def test_montage_group_detected_for_dense_same_backdrop_burst() -> None:
+    """S-2.11.4: 7 same-spot, same-backdrop photos within 30 min → one montage
+    group; the per-viewpoint cap exempts them so all survive."""
+    media, stage2, stage3 = [], [], []
+    for i in range(7):
+        ch = f"m{i}"
+        # phashes pairwise Hamming 6 (>5 so dedup keeps them; <=14 so montage groups)
+        ph = f"{(7 << (3 * i)):016x}"
+        media.append(MediaRecord(
+            content_hash=ch, source_path=f"/tmp/{ch}.jpg", media_type="photo", file_size=1,
+            quick_stats={"phash": ph, "dhash": "0"}, gps_lat=36.879, gps_lon=-111.510,
+            capture_timestamp=f"2026-04-06T19:0{i}:00", capture_source="exif"))
+        stage2.append(Stage2AssetOutputs(content_hash=ch, caption=ch, quality_score=0.8,
+                                         narrative_relevance_score=0.7, embedding_dim=8))
+    cs = prefilter(media=media, stage2=stage2, stage3=stage3, target_duration_seconds=10,
+                   overrides=PreFilterOverrides(quality_threshold=0.0, target_size=50))
+    assert len(cs.montage_groups) == 1
+    assert len(cs.montage_groups[0]) >= 6
+    assert {it.content_hash for it in cs.items} >= {f"m{i}" for i in range(6)}
+
+
+def test_no_montage_without_gps_or_too_few() -> None:
+    media, stage2, stage3 = [], [], []
+    for i in range(7):  # same backdrop, but NO gps → no montage
+        ch = f"n{i}"
+        ph = f"{(7 << (3 * i)):016x}"
+        media.append(MediaRecord(content_hash=ch, source_path=f"/tmp/{ch}.jpg", media_type="photo",
+                                 file_size=1, quick_stats={"phash": ph, "dhash": "0"},
+                                 capture_timestamp=f"2026-04-06T19:0{i}:00", capture_source="exif"))
+        stage2.append(Stage2AssetOutputs(content_hash=ch, caption=ch, quality_score=0.8,
+                                         narrative_relevance_score=0.7, embedding_dim=8))
+    cs = prefilter(media=media, stage2=stage2, stage3=stage3, target_duration_seconds=10,
+                   overrides=PreFilterOverrides(quality_threshold=0.0, target_size=50))
+    assert cs.montage_groups == []
+
+
+def test_viewpoint_candidate_cap_limits_per_gps_cell() -> None:
+    """T-2.11.1.6: at most 4 candidates survive per ~1km GPS cell, so the judge
+    spreads across places. 8 photos at one overlook → 4 kept; a distinct spot is
+    independent; no-GPS exempt."""
+    media, stage2, stage3 = [], [], []
+    def add(ch, lat, lon, q):
+        m = MediaRecord(content_hash=ch, source_path=f"/tmp/{ch}.jpg", media_type="photo",
+                        file_size=1, quick_stats={"phash": _spread_phash(abs(hash(ch)) % 900), "dhash": "0"},
+                        gps_lat=lat, gps_lon=lon)
+        media.append(m)
+        stage2.append(Stage2AssetOutputs(content_hash=ch, caption=ch, quality_score=q,
+                                         narrative_relevance_score=0.7, embedding_dim=8))
+    for i in range(8):  # 8 at the same overlook
+        add(f"hb{i}", 36.879, -111.510, 0.5 + i * 0.05)
+    add("zion", 37.2, -112.95, 0.9)  # a distinct viewpoint
+    cs = prefilter(media=media, stage2=stage2, stage3=stage3, target_duration_seconds=10,
+                   overrides=PreFilterOverrides(quality_threshold=0.0, target_size=50))
+    kept = {it.content_hash for it in cs.items}
+    hb_kept = sum(1 for k in kept if k.startswith("hb"))
+    assert hb_kept == 4  # capped to 4 candidates at the one overlook
+    assert "zion" in kept  # distinct spot survives
+    capped = [e for e in cs.filter_log if e.get("reason") == "viewpoint_candidate_cap"]
+    assert len(capped) == 4  # the other 4 hb shots dropped
+
+
+def test_short_video_scene_is_ineligible() -> None:
+    """S-2.11.1: a video scene under ~2s is a jerky flash — dropped before it
+    can win a slot; a >=2s scene from the same video survives."""
+    vid = MediaRecord(
+        content_hash="vid", source_path="/tmp/vid.mp4", media_type="video", file_size=9,
+        quick_stats={"width": 1920, "height": 1080},
+        scenes=[
+            SceneRecord(index=0, start_seconds=0.0, end_seconds=1.2, representative_frame_paths=[]),
+            SceneRecord(index=1, start_seconds=1.2, end_seconds=4.4, representative_frame_paths=[]),
+        ],
+    )
+    stage2 = [
+        Stage2AssetOutputs(content_hash="vid", scene_index=0, caption="flash", quality_score=0.9,
+                           narrative_relevance_score=0.8, embedding_dim=8),
+        Stage2AssetOutputs(content_hash="vid", scene_index=1, caption="clip", quality_score=0.9,
+                           narrative_relevance_score=0.8, embedding_dim=8),
+    ]
+    cs = prefilter(media=[vid], stage2=stage2, stage3=[], target_duration_seconds=10,
+                   overrides=PreFilterOverrides(quality_threshold=0.0, target_size=10))
+    keys = {it.content_hash + (f"#{it.scene_index}" if it.scene_index is not None else "") for it in cs.items}
+    assert "vid#1" in keys
+    assert "vid#0" not in keys
+    dropped = [e for e in cs.filter_log if e.get("reason") == "video_too_short"]
+    assert [e["key"] for e in dropped] == ["vid#0"]
 
 
 # ---- Fail-fast on zero candidates (Bug 3 fix from 2026-05-07 UI test) ----

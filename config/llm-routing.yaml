@@ -99,6 +99,15 @@ operations:
     model_version: latest
     tier: M
     max_tokens: 2048
+  # S-2.11.5 opt-in AI title/splash card background (remote image-gen per D-054).
+  # One call per job, only when the user opts in; fail-soft to a typographic card.
+  generate_title_background:
+    provider: google
+    model: gemini-2.5-flash-image
+    model_version: v1
+    tier: M
+    max_tokens: 1024
+    temperature: 0.6
 
   # ---- Tier-L (heavy reasoning, one-call-per-job) ---------------------
   judge_narrative_arc:
@@ -106,4 +115,6 @@ operations:
     model: claude-opus-4-5
     model_version: latest
     tier: L
-    max_tokens: 4096
+    # 8192: snappy 2-3s clips mean ~40-60 selected_items for a 120s video
+    # (S-2.11.1) — 4096 truncated the tool call at that clip count.
+    max_tokens: 8192

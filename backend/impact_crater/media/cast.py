@@ -38,6 +38,13 @@ FaceVector = NDArray[np.float32]
 # Breadth = distinct capture-days + distinct locations; a lone-but-frequent
 # face at one place/time stays crowd.
 _DEFAULT_GROUP_MIN_BREADTH = 3
+# Breadth alone over-counts: a stranger photographed twice on two days at two
+# places hits breadth=4 and a face-detection false positive that recurs slips
+# in too. The travel party is photographed REPEATEDLY and on MULTIPLE DAYS, so
+# also require a minimum total appearance count and recurrence across distinct
+# days (not just distinct GPS cells within one day).
+_DEFAULT_GROUP_MIN_APPEARANCES = 3
+_DEFAULT_GROUP_MIN_DAYS = 2
 # Crop margin around the detected face box (fraction of box size) — gives
 # the embedder hair/jaw context that improves identity matching.
 _FACE_CROP_MARGIN = 0.4
@@ -129,9 +136,17 @@ def build_cast_inventory(
     *,
     cluster_threshold: float,
     group_min_breadth: int = _DEFAULT_GROUP_MIN_BREADTH,
+    group_min_appearances: int = _DEFAULT_GROUP_MIN_APPEARANCES,
+    group_min_days: int = _DEFAULT_GROUP_MIN_DAYS,
 ) -> CastInventory:
     """Cluster faces into persons and split group vs crowd by recurrence
-    breadth (N-012). Pure/deterministic given the observations."""
+    breadth (N-012). Pure/deterministic given the observations.
+
+    "Group" (the travel party) demands all of: enough total appearances,
+    recurrence across enough distinct DAYS, and enough overall breadth
+    (days+locations). Breadth alone let strangers and face-detection false
+    positives in — a person seen twice across two days at two places hit
+    breadth 4 and was wrongly tagged group."""
     clusters = _cluster_faces(observations, cluster_threshold)
 
     persons: list[Person] = []
@@ -142,9 +157,16 @@ def build_cast_inventory(
         distinct_days = len({_day_key(m.capture_timestamp) for m in members if m.capture_timestamp})
         distinct_locs = len({m.location_key for m in members if m.location_key})
         breadth = distinct_days + distinct_locs
-        # Group when recurrence is broad enough. A single distinct day/loc
-        # with many appearances is NOT enough — that's the tour-guide case.
-        is_group = breadth >= group_min_breadth
+        # Group when recurrence is broad enough AND the person actually
+        # recurs: enough appearances, across enough distinct days. A single
+        # day/loc with many appearances is the tour-guide case (caught by
+        # breadth); two stray appearances across two days is the
+        # passing-stranger / false-positive case (caught by appearances+days).
+        is_group = (
+            len(members) >= group_min_appearances
+            and distinct_days >= group_min_days
+            and breadth >= group_min_breadth
+        )
         persons.append(
             Person(
                 person_id=person_id,

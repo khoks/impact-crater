@@ -9,6 +9,8 @@ export interface SubmitJobRequest {
   section_to_media_nl?: string | null;
   project_id?: string;
   project_name?: string;
+  add_title_card?: boolean;
+  title_text?: string | null;
 }
 
 export interface SubmitJobResponse {

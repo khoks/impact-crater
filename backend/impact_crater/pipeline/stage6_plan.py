@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,13 +32,43 @@ from impact_crater.storage.db import connection
 
 log = logging.getLogger(__name__)
 
+# Per-clip display-duration band (S-2.11.1). The MAX is the real fix — a sparse
+# selection can no longer balloon a photo to 5-7s; the judge aims for 2-3s. The
+# MIN is just a safety floor so an over-packed timeline doesn't flicker (it does
+# not force a short 2-photo video over its target).
+_PHOTO_MIN_MS = 1000
+_PHOTO_MAX_MS = 3000
+_VIDEO_MIN_MS = 2000
+# At most this many clips from one physical viewpoint (~1km GPS cell). A big
+# destination (Grand Canyon rim) spans several cells so it still gets more
+# total; a single overlook (Horseshoe Bend) is held to this. (S-2.11.1)
+_MAX_CLIPS_PER_LOCATION = 3
+_LOCATION_CELL_DP = 2  # round GPS to 2dp ≈ 1.1km
+# Burst-montage (S-2.11.4): N member photos at ~0.4-0.6s each, whole montage 2-4s.
+_MONTAGE_MEMBER_MIN_MS = 400
+_MONTAGE_MEMBER_MAX_MS = 600
+_MONTAGE_TARGET_MS = 3000
+_MONTAGE_MIN_MS = 2000
+_MONTAGE_MAX_MS = 4000
+_MONTAGE_MAX_MEMBERS = 8
+
 
 # ---- Public types ------------------------------------------------------
 
 
 AspectRatioAction = Literal["smart_crop", "letterbox", "pad", "as_is"]
 TransitionType = Literal["cut", "crossfade"]
-ClipKind = Literal["photo", "video_scene"]
+ClipKind = Literal["photo", "video_scene", "burst_montage", "title_card"]
+
+
+class MontageMember(BaseModel):
+    """One photo inside a burst-montage clip (S-2.11.4)."""
+
+    model_config = ConfigDict(extra="ignore")
+    candidate_ref: str
+    source_path: str
+    aspect_ratio_action: AspectRatioAction
+    duration_ms: int  # per-photo micro-duration (~0.4-0.6s)
 
 
 class RenderClip(BaseModel):
@@ -57,6 +86,9 @@ class RenderClip(BaseModel):
     transition_in: TransitionType = "cut"
     role: str = ""
     notes: str = ""
+    # burst_montage only (S-2.11.4): the member photos shown in rapid sequence.
+    # Empty for photo/video_scene. Sum of member durations == intended_duration_ms.
+    members: list[MontageMember] = Field(default_factory=list)
 
 
 class StandardMusicSpec(BaseModel):
@@ -114,6 +146,7 @@ async def compile_plan(
     audio: StandardMusicSpec | None = None,
     parent_snapshot_id: str | None = None,
     candidate_refs: list[str] | None = None,
+    montage_groups: list[list[str]] | None = None,
 ) -> RenderPlan:
     """Compile a `RenderPlan` from an `ArcJudgment` + ingest records.
 
@@ -144,7 +177,17 @@ async def compile_plan(
         assert audio is not None and audio.cut_grid is not None  # narrowed above
         clips = _snap_clips_to_cut_grid(clips, audio.cut_grid, target_ms)
     else:
+        # S-2.11.4: collapse dense same-backdrop bursts into one rapid montage
+        # FIRST (it represents the whole dense viewpoint), then…
+        if montage_groups:
+            clips = _collapse_montage_groups(clips, montage_groups)
+        # S-2.11.1: …cap clips per physical viewpoint (~1km GPS cell) so one
+        # overlook can't dominate, then enforce the snappy per-clip band.
+        clips = _cap_per_location(clips, ingest_records, _MAX_CLIPS_PER_LOCATION)
         clips = _scale_to_target(clips, target_ms)
+        # Keep each montage's member micro-durations in sync with its (possibly
+        # scaled) total so Stage 7's concat length matches the planned length.
+        clips = _resync_montage_members(clips)
 
     snapshot_id = uuid.uuid4().hex[:16]
     plan = RenderPlan(
@@ -234,6 +277,114 @@ def _build_clips(
                 scene_index,
             )
     return clips
+
+
+def _collapse_montage_groups(
+    clips: list[RenderClip], montage_groups: list[list[str]]
+) -> list[RenderClip]:
+    """Replace each dense same-backdrop group (S-2.11.4) with ONE burst_montage
+    clip at the group's first timeline position; drop the other members."""
+    ref_to_group: dict[str, int] = {}
+    for gi, g in enumerate(montage_groups):
+        for ref in g:
+            ref_to_group[ref] = gi
+    group_clips: dict[int, list[RenderClip]] = {}
+    for c in clips:
+        gi = ref_to_group.get(c.candidate_ref)
+        if gi is not None:
+            group_clips.setdefault(gi, []).append(c)
+    anchor_montage: dict[str, RenderClip] = {}
+    drop_refs: set[str] = set()
+    for members in group_clips.values():
+        if len(members) < 2:
+            continue  # degenerate — leave as individual clips
+        anchor_montage[members[0].candidate_ref] = _montage_clip(members)
+        drop_refs.update(m.candidate_ref for m in members[1:])
+    if not anchor_montage:
+        return clips
+    out: list[RenderClip] = []
+    for c in clips:
+        if c.candidate_ref in anchor_montage:
+            out.append(anchor_montage[c.candidate_ref])
+        elif c.candidate_ref not in drop_refs:
+            out.append(c)
+    return out
+
+
+def _montage_clip(members: list[RenderClip]) -> RenderClip:
+    members = members[:_MONTAGE_MAX_MEMBERS]
+    n = len(members)
+    per = min(max(round(_MONTAGE_TARGET_MS / n), _MONTAGE_MEMBER_MIN_MS), _MONTAGE_MEMBER_MAX_MS)
+    return RenderClip(
+        candidate_ref=members[0].candidate_ref,
+        kind="burst_montage",
+        source_path=members[0].source_path,
+        intended_duration_ms=per * n,
+        aspect_ratio_action=members[0].aspect_ratio_action,
+        transition_in="cut",
+        role=members[0].role or "montage",
+        notes=f"burst-montage of {n} photos at one spot",
+        members=[
+            MontageMember(
+                candidate_ref=m.candidate_ref,
+                source_path=m.source_path,
+                aspect_ratio_action=m.aspect_ratio_action,
+                duration_ms=per,
+            )
+            for m in members
+        ],
+    )
+
+
+def _resync_montage_members(clips: list[RenderClip]) -> list[RenderClip]:
+    """After scaling, redistribute a montage clip's total across its members so
+    sum(member.duration_ms) == clip.intended_duration_ms exactly (audio sync)."""
+    out: list[RenderClip] = []
+    for c in clips:
+        if c.kind != "burst_montage" or not c.members:
+            out.append(c)
+            continue
+        n = len(c.members)
+        base, rem = divmod(c.intended_duration_ms, n)
+        out.append(
+            c.model_copy(
+                update={
+                    "members": [
+                        m.model_copy(update={"duration_ms": base + (1 if i < rem else 0)})
+                        for i, m in enumerate(c.members)
+                    ]
+                }
+            )
+        )
+    return out
+
+
+def _cap_per_location(
+    clips: list[RenderClip], ingest_records: list[MediaRecord], max_per_loc: int
+) -> list[RenderClip]:
+    """Drop clips beyond `max_per_loc` from the same ~1km GPS cell, preserving
+    the judge's order (keep the first N at each spot). Videos / no-GPS media are
+    exempt — they're few and not 'one overlook'. (S-2.11.1, feedback #2.)"""
+    by_hash = {r.content_hash: r for r in ingest_records}
+    seen: dict[tuple[float, float], int] = {}
+    out: list[RenderClip] = []
+    for c in clips:
+        if c.kind == "burst_montage":
+            out.append(c)  # the montage IS the dense viewpoint's representation
+            continue
+        rec = by_hash.get(c.candidate_ref.split("#", 1)[0])
+        cell = (
+            (round(rec.gps_lat, _LOCATION_CELL_DP), round(rec.gps_lon, _LOCATION_CELL_DP))
+            if rec is not None and rec.gps_lat is not None and rec.gps_lon is not None
+            else None
+        )
+        if cell is not None:
+            if seen.get(cell, 0) >= max_per_loc:
+                log.info("stage6_capped_viewpoint cell=%s ref=%s", cell, c.candidate_ref)
+                continue
+            seen[cell] = seen.get(cell, 0) + 1
+        out.append(c)
+    return out
 
 
 def _coerce_ref(
@@ -359,9 +510,9 @@ def _snap_clips_to_cut_grid(
     cuts = sorted({c for c in cut_grid.cut_points_ms if 0 <= c <= target_ms})
     if len(cuts) < 2:
         # Degenerate grid — fall back to linear scale.
-        return _scale_to_target(clips, target_ms)
+        return _linear_scale(clips, target_ms)
 
-    scaled = _scale_to_target(clips, target_ms)
+    scaled = _linear_scale(clips, target_ms)
 
     out: list[RenderClip] = []
     prev_ms = 0
@@ -390,21 +541,20 @@ def _nearest_cut(cuts: list[int], t: int, *, floor: int) -> int:
     return min(candidates, key=lambda c: abs(c - t))
 
 
-def _scale_to_target(
+def _linear_scale(
     clips: list[RenderClip], target_ms: int, *, tolerance: float = 0.10
 ) -> list[RenderClip]:
-    """Scale each clip's duration linearly so the sum is within ±tolerance of target.
+    """Legacy proportional scale (photos stretch, video capped at natural).
 
-    Photos can stretch to any duration; video scenes are capped by their natural length.
+    Used ONLY by music-video beat-snapping, where the cut grid — not a per-clip
+    duration band — drives pacing (beats can be far shorter than 1.5s). Standard
+    mode uses _scale_to_target with the S-2.11.1 caps instead.
     """
     total = sum(c.intended_duration_ms for c in clips)
     if total <= 0:
         return clips
-
-    diff_ratio = (total - target_ms) / target_ms
-    if abs(diff_ratio) <= tolerance:
+    if abs((total - target_ms) / target_ms) <= tolerance:
         return clips
-
     factor = target_ms / total
     out: list[RenderClip] = []
     for c in clips:
@@ -413,19 +563,80 @@ def _scale_to_target(
             scene_max = max(int((c.end_seconds - c.start_seconds) * 1000), 250)
             new_ms = min(new_ms, scene_max)
         out.append(c.model_copy(update={"intended_duration_ms": new_ms}))
-
-    # If video-scene caps left us short, distribute the remainder across photos.
-    new_total = sum(c.intended_duration_ms for c in out)
-    deficit = target_ms - new_total
+    deficit = target_ms - sum(c.intended_duration_ms for c in out)
     if deficit > 0:
         photo_idxs = [i for i, c in enumerate(out) if c.kind == "photo"]
         if photo_idxs:
-            extra = math.ceil(deficit / len(photo_idxs))
+            extra = (deficit + len(photo_idxs) - 1) // len(photo_idxs)
             for idx in photo_idxs:
                 out[idx] = out[idx].model_copy(
                     update={"intended_duration_ms": out[idx].intended_duration_ms + extra}
                 )
     return out
+
+
+def _clip_band(c: RenderClip) -> tuple[int, int]:
+    """(min, max) display duration for a clip (S-2.11.1).
+
+    Photos read in ~2-3s; a 5s hold feels frozen. Videos play >=2s at their
+    natural pace (a <2s flash is jerky noise); a video's max is its natural
+    length so it never freezes on a held last frame.
+    """
+    if c.kind == "burst_montage":
+        return (_MONTAGE_MIN_MS, _MONTAGE_MAX_MS)
+    if c.kind == "video_scene":
+        natural = max(int((c.end_seconds - c.start_seconds) * 1000), 0)
+        hi = max(natural, _VIDEO_MIN_MS)
+        return (min(_VIDEO_MIN_MS, hi), hi)
+    return (_PHOTO_MIN_MS, _PHOTO_MAX_MS)
+
+
+def _scale_to_target(
+    clips: list[RenderClip], target_ms: int, *, tolerance: float = 0.10
+) -> list[RenderClip]:
+    """Fit the timeline to the target while keeping every clip inside its
+    per-kind duration band (S-2.11.1): photos 1.5-3s, videos 2s-to-natural.
+
+    Photos no longer stretch to fill a target the judge under-populated — they
+    are hard-capped, so too few clips yield a SHORTER video, not 5-7s photos.
+    The judge is instructed to pick enough 2-3s clips to fill the target.
+    """
+    # 1. Clamp every clip into its band first (hard caps, regardless of judge).
+    capped: list[RenderClip] = []
+    for c in clips:
+        lo, hi = _clip_band(c)
+        capped.append(
+            c.model_copy(update={"intended_duration_ms": min(max(c.intended_duration_ms, lo), hi)})
+        )
+
+    total = sum(c.intended_duration_ms for c in capped)
+    if total <= 0:
+        return capped
+    if abs((total - target_ms) / target_ms) <= tolerance:
+        return capped
+
+    if total > target_ms:
+        # Too long: shrink proportionally toward target, never below each
+        # clip's band floor (slightly over target is fine if all hit floor).
+        factor = target_ms / total
+        out: list[RenderClip] = []
+        for c in capped:
+            lo, _ = _clip_band(c)
+            out.append(
+                c.model_copy(update={"intended_duration_ms": max(int(c.intended_duration_ms * factor), lo)})
+            )
+        return out
+
+    # Under target even at the per-clip caps: accept a shorter video rather than
+    # stretching photos. Surface it so a too-thin selection is visible.
+    log.info(
+        "stage6_under_target capped_total_ms=%d target_ms=%d clips=%d "
+        "(judge selected too few clips to fill the target at 2-3s each)",
+        total,
+        target_ms,
+        len(capped),
+    )
+    return capped
 
 
 # ---- Persistence -------------------------------------------------------

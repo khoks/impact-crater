@@ -42,6 +42,7 @@ from impact_crater.pipeline import (
     stage5_judge,
     stage6_plan,
     stage6_second_guess,
+    stage6_title_card,
     stage7_render,
 )
 from impact_crater.pipeline.stage4_prefilter import CandidateSet, PreFilterOverrides
@@ -343,6 +344,9 @@ class FullJobConfig:
     overrides: PreFilterOverrides | None = None
     enable_cast: bool = True
     cast_backend: str | None = None
+    # S-2.11.5 opt-in AI title/splash card.
+    add_title_card: bool = False
+    title_text: str | None = None
 
 
 @dataclass
@@ -395,19 +399,27 @@ async def run_full_pipeline(
     pool = pool or WorkerPool()
     reporter: ProgressReporter = progress or _NoopReporter()
 
-    # When mode=music_video, run MusicAnalyzer up-front so Stage 5 sees
-    # the analysis + section-to-media NL spec. Sync mode skips this.
+    # Analyze the music up-front so Stage 5 can match clip mood to the song's
+    # sections (S-2.11.6) — in BOTH modes now, not just music_video. The
+    # cut-grid (beat-snap) is only built in music_video mode. Fail-soft: a music
+    # analysis failure must never block a standard render.
     music_analysis = None
     cut_grid = None
-    if config.mode == "music_video":
-        await reporter.stage_started("stage_0_music_analysis", detail="(M4)")
+    if config.audio_path is not None:
+        await reporter.stage_started("stage_0_music_analysis")
         analyzer = music_analyzer or LibrosaMusicAnalyzer()
-        music_analysis = await analyzer.analyze(config.audio_path)
-        cut_grid = generate_cut_grid(music_analysis)
-        await reporter.stage_completed(
-            "stage_0_music_analysis",
-            detail=f"bpm={music_analysis.bpm:.0f}, {len(cut_grid.cut_points_ms)} cuts",
-        )
+        try:
+            music_analysis = await analyzer.analyze(config.audio_path)
+            if config.mode == "music_video":
+                cut_grid = generate_cut_grid(music_analysis)
+            await reporter.stage_completed(
+                "stage_0_music_analysis",
+                detail=f"bpm={music_analysis.bpm:.0f}, {len(music_analysis.sections)} sections",
+            )
+        except Exception as exc:
+            log.warning("music_analysis_failed (proceeding without): %r", str(exc)[:200])
+            music_analysis = None
+            cut_grid = None
 
     # Reuse the M1 runner for Stages 1-5; it already handles the quota
     # check + lifecycle telemetry. Pass the MusicSpec for music_video mode
@@ -467,6 +479,7 @@ async def run_full_pipeline(
         mode=config.mode,
         audio=music,
         candidate_refs=candidate_refs,
+        montage_groups=headless.candidate_set.montage_groups,
     )
 
     # M6 — orchestrator second-guess. Auto-applies high-confidence
@@ -524,6 +537,29 @@ async def run_full_pipeline(
                 len(sg_result.overrides),
                 sg_result.overall_confidence,
             )
+
+    # S-2.11.5 — opt-in AI title/splash card, prepended to the final timeline
+    # (after second-guess so positions are stable). Fail-soft: never blocks.
+    if config.add_title_card:
+        await reporter.stage_started("stage_6_title_card")
+        try:
+            title_clip = await stage6_title_card.build_title_clip(
+                router=sg_router,
+                plan=plan,
+                media=headless.media,
+                cast=headless.cast,
+                brief=config.brief,
+                title_text=config.title_text,
+                snapshot_dir=stage6_plan.snapshot_dir(headless.project_id, plan.snapshot_id),
+            )
+            if title_clip is not None:
+                plan = plan.model_copy(update={"clips": [title_clip, *plan.clips]})
+                (stage6_plan.snapshot_dir(headless.project_id, plan.snapshot_id) / "plan.json").write_text(
+                    plan.model_dump_json(indent=2), encoding="utf-8"
+                )
+        except Exception as exc:
+            log.warning("title_card_step_failed (proceeding without): %r", str(exc)[:200])
+        await reporter.stage_completed("stage_6_title_card")
 
     # A-018 coverage report: are all group members represented in the cut?
     if headless.cast is not None:

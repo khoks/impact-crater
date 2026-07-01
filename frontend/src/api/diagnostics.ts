@@ -11,6 +11,7 @@ export interface DiagnosticDecision {
   caption?: string | null;
   quality_score?: number | null;
   narrative_relevance?: number | null;
+  specialness_score?: number | null;
   role?: string;
   placement_position?: number;
   position?: number;
@@ -67,15 +68,26 @@ export interface FeedbackPayload {
 // Capture the whole page as a PNG data URL (best-effort). Excludes any node
 // tagged data-ic-skip-capture (the feedback modal itself). Returns undefined
 // if capture fails — feedback submission must never depend on it.
-export async function capturePageScreenshot(): Promise<string | undefined> {
+//
+// Hardened against a hang that left the modal stuck at "Saving…" forever:
+// `cacheBust` re-fetched every resource (including a stalled <video> src and
+// any web font), and toPng has no internal timeout, so a single stalled fetch
+// blocked submission indefinitely. We now drop cacheBust, skip <video>
+// elements (a stalled media element can never rasterize), and race the whole
+// capture against a hard timeout so feedback ALWAYS posts.
+export async function capturePageScreenshot(timeoutMs = 4000): Promise<string | undefined> {
   try {
     const { toPng } = await import("html-to-image");
-    return await toPng(document.body, {
-      cacheBust: true,
+    const capture = toPng(document.body, {
       pixelRatio: 1,
       filter: (node) =>
-        !(node instanceof HTMLElement && node.dataset.icSkipCapture === "true"),
+        !(node instanceof HTMLElement && node.dataset.icSkipCapture === "true") &&
+        !(node instanceof HTMLVideoElement),
     });
+    const timeout = new Promise<undefined>((resolve) =>
+      setTimeout(() => resolve(undefined), timeoutMs),
+    );
+    return await Promise.race([capture, timeout]);
   } catch {
     return undefined;
   }
