@@ -47,6 +47,7 @@ export default function EffortAndCost() {
       fetchCostPreview({
         media_count: draft.scanned_media_paths.length,
         target_duration_seconds: draft.target_duration_seconds,
+        add_title_card: draft.add_title_card,
       }),
     ])
       .then(([lvls, p]) => {

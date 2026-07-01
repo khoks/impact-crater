@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from impact_crater.llm_clients.router import LLMRouter
+from impact_crater.media import image_embed
 from impact_crater.pipeline.stage1_ingest import MediaRecord
 from impact_crater.pipeline.types import Stage2AssetOutputs
 from impact_crater.workers import WorkerPool, default_pool
@@ -42,6 +43,7 @@ async def run_stage2(
     media: list[MediaRecord],
     brief: str,
     pool: WorkerPool | None = None,
+    image_embedder: Any = None,
 ) -> list[Stage2AssetOutputs]:
     """Run embed + caption + score over every photo + every scene.
 
@@ -85,7 +87,7 @@ async def run_stage2(
     raw = await pool.submit_many_tolerant(
         "network",
         work_items,
-        lambda item: _run_for_asset(router, item, brief, brief_hash),
+        lambda item: _run_for_asset(router, item, brief, brief_hash, image_embedder),
         on_error=_on_error,
     )
     results = [r for r in raw if r is not None]
@@ -112,6 +114,7 @@ async def _run_for_asset(
     asset: _Asset,
     brief: str,
     brief_hash: str,
+    image_embedder: Any = None,
 ) -> Stage2AssetOutputs:
     image_bytes = await asyncio.to_thread(asset.path.read_bytes)
     cache_hash = asset.cache_hash
@@ -130,7 +133,10 @@ async def _run_for_asset(
         prompt_vars={"brief": brief},
         cache_extra={"brief_hash": brief_hash},
     )
-    embed_task = router.embed_image(image_bytes, content_hash=cache_hash)
+    # S-2.10.8: the pluggable embedder (default None → router op, byte-identical).
+    embed_task = image_embed.embed_with_fallback(
+        image_embedder, router, image_bytes, content_hash=cache_hash
+    )
 
     results = await asyncio.gather(
         caption_task, quality_task, narrative_task, embed_task,

@@ -136,6 +136,12 @@ def _stage4_phase(candidate_set: Any, item_by_key: dict[str, Any]) -> dict[str, 
             "floor": candidate_set.floor,
             "ceiling": candidate_set.ceiling,
             "target_size": candidate_set.target_size,
+            # S-2.10.5 (T-2.10.5.6): which named destinations were matched/reserved/absent.
+            "destination_coverage": (
+                candidate_set.coverage_plan.to_prompt_vars()
+                if getattr(candidate_set, "coverage_plan", None) is not None
+                else []
+            ),
         },
         "decisions": decisions,
     }

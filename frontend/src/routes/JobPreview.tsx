@@ -259,21 +259,31 @@ export default function JobPreview() {
           )}
           {refineResult && (
             <div className="mt-3 rounded bg-slate-50 p-3 text-xs">
-              <p className="font-semibold text-slate-700">
-                Strategy: <span className="font-mono">{refineResult.strategy}</span>
-              </p>
-              <p className="mt-1 text-slate-600">{refineResult.rationale}</p>
-              {refineResult.explanation && (
-                <p className="mt-2 text-slate-700">{refineResult.explanation}</p>
-              )}
-              {refineResult.brief_addendum && (
-                <p className="mt-2 text-slate-700">
-                  Brief addendum: <em>{refineResult.brief_addendum}</em>
+              <p className="text-slate-700">{refineResult.interpretation}</p>
+              {refineResult.reserve_destinations.length > 0 && (
+                <p className="mt-1 text-slate-600">
+                  Guaranteeing coverage of:{" "}
+                  <span className="font-medium">{refineResult.reserve_destinations.join(", ")}</span>
                 </p>
               )}
-              {refineResult.new_arc_judgment && (
-                <p className="mt-2 text-emerald-700">
-                  New arc generated. Re-rendering with the updated plan ships at v1.
+              {refineResult.brief_addendum && (
+                <p className="mt-1 text-slate-600">
+                  Story steer: <em>{refineResult.brief_addendum}</em>
+                </p>
+              )}
+              {refineResult.explanation && (
+                <p className="mt-2 text-amber-700">{refineResult.explanation}</p>
+              )}
+              {refineResult.rendered && refineResult.new_snapshot_id ? (
+                <a
+                  href={`/snapshots/${refineResult.new_snapshot_id}/inspect?project=${snapshot.project_id}`}
+                  className="mt-2 inline-block font-medium text-emerald-700 hover:underline"
+                >
+                  ✓ Re-rendered — view the updated video →
+                </a>
+              ) : refineResult.explanation ? null : (
+                <p className="mt-2 text-slate-500">
+                  Interpreted, but nothing to re-render (no source media available for this snapshot).
                 </p>
               )}
             </div>

@@ -136,6 +136,8 @@ class CostPreviewRequest(BaseModel):
     media_count: int = Field(ge=0)
     target_duration_seconds: int = Field(ge=1)
     level_id: str | None = None
+    # S-2.11.5b: include the opt-in AI title-card image-gen in the estimate.
+    add_title_card: bool = False
 
 
 class CostPreviewResponse(BaseModel):
@@ -145,6 +147,13 @@ class CostPreviewResponse(BaseModel):
     today_remaining_usd: float | None
     fits_today_budget: bool
     blocking_reason: str | None
+    # S-2.11.5b: the opt-in title-card image-gen line-item (None when not requested).
+    title_card_cost_usd: float | None = None
+
+
+# One remote Gemini image-gen call per job when the title card is opted in.
+# ~1024px image out; a fixed per-image estimate (sub-$0.05, no rate card yet).
+_TITLE_CARD_COST_USD = 0.04
 
 
 @router.post("/cost-preview", response_model=CostPreviewResponse)
@@ -161,6 +170,9 @@ async def post_cost_preview(req: CostPreviewRequest) -> CostPreviewResponse:
         "L": 0.50,  # 1 Tier-L narrative judgment per job
         "embedding": 0.0001 * n,
     }
+    title_card_cost = _TITLE_CARD_COST_USD if req.add_title_card else None
+    if title_card_cost is not None:
+        tier_estimate["title_card"] = title_card_cost
     estimate_total = sum(tier_estimate.values())
     # Build a low/high range: low = estimate_total, high = 1.6× as a buffer
     # for token-usage variance.
@@ -189,6 +201,7 @@ async def post_cost_preview(req: CostPreviewRequest) -> CostPreviewResponse:
         today_remaining_usd=remaining,
         fits_today_budget=fits,
         blocking_reason=blocking,
+        title_card_cost_usd=round(title_card_cost, 4) if title_card_cost is not None else None,
     )
 
 

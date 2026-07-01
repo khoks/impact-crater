@@ -45,6 +45,9 @@ _DEFAULT_GROUP_MIN_BREADTH = 3
 # days (not just distinct GPS cells within one day).
 _DEFAULT_GROUP_MIN_APPEARANCES = 3
 _DEFAULT_GROUP_MIN_DAYS = 2
+# S-2.10.4: a centroid-level second pass fuses over-split identities. Tighter
+# than the per-crop cluster threshold so only genuinely-close clusters merge.
+_DEFAULT_CLUSTER_MERGE_THRESHOLD = 0.92
 # Crop margin around the detected face box (fraction of box size) — gives
 # the embedder hair/jaw context that improves identity matching.
 _FACE_CROP_MARGIN = 0.4
@@ -138,6 +141,8 @@ def build_cast_inventory(
     group_min_breadth: int = _DEFAULT_GROUP_MIN_BREADTH,
     group_min_appearances: int = _DEFAULT_GROUP_MIN_APPEARANCES,
     group_min_days: int = _DEFAULT_GROUP_MIN_DAYS,
+    merge_oversplit: bool = True,
+    cluster_merge_threshold: float = _DEFAULT_CLUSTER_MERGE_THRESHOLD,
 ) -> CastInventory:
     """Cluster faces into persons and split group vs crowd by recurrence
     breadth (N-012). Pure/deterministic given the observations.
@@ -148,6 +153,11 @@ def build_cast_inventory(
     positives in — a person seen twice across two days at two places hit
     breadth 4 and was wrongly tagged group."""
     clusters = _cluster_faces(observations, cluster_threshold)
+    if merge_oversplit:
+        before = len(clusters)
+        clusters = _merge_oversplit_clusters(clusters, cluster_merge_threshold)
+        if len(clusters) != before:
+            log.info("cast_merge before=%d after=%d", before, len(clusters))
 
     persons: list[Person] = []
     group_by_hash: dict[str, list[str]] = {}
@@ -225,6 +235,50 @@ def _cluster_faces(
         else:
             clusters.append([obs])
             centroids.append(vec)
+    return clusters
+
+
+def _cluster_centroid(members: list[FaceObservation]) -> "FaceVector | None":
+    embs = [m.embedding for m in members if m.embedding is not None]
+    if not embs:
+        return None
+    mean = np.mean(embs, axis=0)
+    n = float(np.linalg.norm(mean))
+    return mean / n if n else None
+
+
+def _merge_oversplit_clusters(
+    clusters: list[list[FaceObservation]], merge_threshold: float
+) -> list[list[FaceObservation]]:
+    """S-2.10.4: fuse clusters the greedy single-pass clusterer over-split.
+
+    The order-dependent single pass in `_cluster_faces` can split one person into
+    two clusters when their early crops are off-angle; a centroid-level second
+    pass repairs that BEFORE the group/crowd recurrence math, so a split party
+    member isn't wrongly demoted to crowd. Guards against false merges: clusters
+    without embeddings never merge, and two clusters that share a photo are never
+    merged (the same person rarely appears twice in one frame)."""
+    clusters = [list(c) for c in clusters]
+    centroids = [_cluster_centroid(c) for c in clusters]
+    hashes = [{m.content_hash for m in c} for c in clusters]
+    merged = True
+    while merged:
+        merged = False
+        for i in range(len(clusters)):
+            if centroids[i] is None:
+                continue
+            for j in range(i + 1, len(clusters)):
+                if centroids[j] is None or (hashes[i] & hashes[j]):
+                    continue
+                if float(np.dot(centroids[i], centroids[j])) >= merge_threshold:
+                    clusters[i].extend(clusters[j])
+                    hashes[i] |= hashes[j]
+                    centroids[i] = _cluster_centroid(clusters[i])
+                    del clusters[j], centroids[j], hashes[j]
+                    merged = True
+                    break
+            if merged:
+                break
     return clusters
 
 

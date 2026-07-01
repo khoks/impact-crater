@@ -70,43 +70,43 @@ operations:
   # ---- Tier-M (structured output, agentic prose) ----------------------
   extract_metadata_image:
     provider: anthropic
-    model: claude-sonnet-4-5
+    model: claude-sonnet-4-6
     model_version: latest
     tier: M
     max_tokens: 2048
   extract_metadata_video_scene:
     provider: anthropic
-    model: claude-sonnet-4-5
+    model: claude-sonnet-4-6
     model_version: latest
     tier: M
     max_tokens: 2048
   parse_user_brief:
     provider: anthropic
-    model: claude-sonnet-4-5
+    model: claude-sonnet-4-6
     model_version: latest
     tier: M
     max_tokens: 1024
   recommend_effort_level:
     provider: anthropic
-    model: claude-sonnet-4-5
+    model: claude-sonnet-4-6
     model_version: latest
     tier: M
     max_tokens: 1024
   explain_cost:
     provider: anthropic
-    model: claude-sonnet-4-5
+    model: claude-sonnet-4-6
     model_version: latest
     tier: M
     max_tokens: 1024
   explain_upgrade_path:
     provider: anthropic
-    model: claude-sonnet-4-5
+    model: claude-sonnet-4-6
     model_version: latest
     tier: M
     max_tokens: 1024
   orchestrator_reasoning:
     provider: anthropic
-    model: claude-sonnet-4-5
+    model: claude-sonnet-4-6
     model_version: latest
     tier: M
     max_tokens: 2048
@@ -123,7 +123,7 @@ operations:
   # ---- Tier-L (heavy reasoning, one-call-per-job) ---------------------
   judge_narrative_arc:
     provider: anthropic
-    model: claude-opus-4-5
+    model: claude-opus-4-8
     model_version: latest
     tier: L
     # 8192: snappy 2-3s clips mean ~40-60 selected_items for a 120s video

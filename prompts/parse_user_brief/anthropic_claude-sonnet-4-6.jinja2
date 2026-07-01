@@ -19,6 +19,8 @@ Important guidance:
 - `theme`: a short noun phrase capturing the dominant subject (e.g. "alpine hiking trip", "kitchen renovation", "graduation weekend").
 - `mood_keywords`: 3–6 short adjectives matching the desired feel (e.g. ["energetic", "warm", "celebratory"]).
 - `must_include`: explicit things the user said must appear (people, locations, moments). Empty list when not mentioned.
+- `named_destinations`: every distinct place / person / subject / event the user NAMES as something the video should cover (e.g. "our trip through Zion, Bryce, Horseshoe Bend, Grand Canyon, and Las Vegas" → five destinations). For each give: `name` (canonical, e.g. "Las Vegas"), `aliases` (lowercase strings the captions/metadata might use, e.g. Las Vegas → ["vegas", "the strip", "hoover dam", "fremont"]; Grand Canyon → ["grand canyon", "south rim"]), a `kind` ("place" | "person" | "subject" | "event"), and a 0-based `chronological_hint` when the brief lists them in order. Empty list ONLY when the user names no specific places/subjects.
+- `chronological`: true when the user asks for chronological / in-order / "building from arrival" / day-by-day sequencing.
 - `must_exclude`: explicit things the user said must NOT appear. Empty list when not mentioned.
 - `narrative_intent`: one sentence describing the arc the user wants ("a chronological recap with a quiet ending", "a high-energy montage building to a peak").
 - `audience`: who the video is for ("family", "friends", "youtube_subscribers", "professional_portfolio", etc.). Default "general" if unclear.

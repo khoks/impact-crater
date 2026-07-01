@@ -29,6 +29,14 @@ from tenacity import (
 
 log = logging.getLogger(__name__)
 
+# Models that deprecated the `temperature` sampling parameter and reject any
+# request that includes it (400 invalid_request_error). Extend as new models land.
+_TEMPERATURE_UNSUPPORTED_MODELS = frozenset({"claude-opus-4-8"})
+
+
+def _supports_temperature(model: str) -> bool:
+    return model not in _TEMPERATURE_UNSUPPORTED_MODELS
+
 from impact_crater.llm_clients.base import (
     ArcJudgment,
     CallParams,
@@ -355,9 +363,12 @@ class AnthropicLLMClient:
         kwargs: dict[str, Any] = {
             "model": params.model,
             "max_tokens": params.max_tokens,
-            "temperature": params.temperature,
             "messages": messages,
         }
+        # Some newer models (e.g. Opus 4.8) deprecated `temperature` and reject
+        # the request outright when it is present. Only send it where supported.
+        if _supports_temperature(params.model):
+            kwargs["temperature"] = params.temperature
         if system:
             kwargs["system"] = system
         if tools:

@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from impact_crater import paths
 from impact_crater.llm_clients.base import ArcJudgment, SelectedItem
 from impact_crater.media.music import CutGrid, MusicAnalysis
+from impact_crater.pipeline.plan_directive import DEFAULT_DIRECTIVE, PlanDirective
 from impact_crater.pipeline.stage1_ingest import MediaRecord, SceneRecord
 from impact_crater.storage.db import connection
 
@@ -86,6 +87,9 @@ class RenderClip(BaseModel):
     transition_in: TransitionType = "cut"
     role: str = ""
     notes: str = ""
+    # ADR-0019: a positional emphasis (e.g. "hold the opener 2s longer") can raise
+    # this clip's effective duration cap above the normal band. 0 = normal band.
+    emphasis_ms: int = 0
     # burst_montage only (S-2.11.4): the member photos shown in rapid sequence.
     # Empty for photo/video_scene. Sum of member durations == intended_duration_ms.
     members: list[MontageMember] = Field(default_factory=list)
@@ -116,7 +120,9 @@ class RenderPlan(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    schema_version: int = 1
+    # v2 (ADR-0019): carries the PlanDirective. Old plans lacking it load with
+    # DEFAULT_DIRECTIVE via the field default, so load_plan stays tolerant.
+    schema_version: int = 2
     project_id: str
     snapshot_id: str
     parent_snapshot_id: str | None = None
@@ -128,6 +134,12 @@ class RenderPlan(BaseModel):
     output_fps: int = 30
     clips: list[RenderClip] = Field(default_factory=list)
     music: StandardMusicSpec | None = None
+    # ADR-0019: the duration/positional/tempo shaping that produced these clips;
+    # the merge base for the next refinement.
+    directive: PlanDirective = Field(default_factory=PlanDirective)
+    # The brief this plan was built from — persisted so Stage 9 refinement can
+    # reload it (and append to it) without a side channel.
+    brief: str = ""
     arc_reasoning: str = ""
     arc_confidence: float = 0.0
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -147,6 +159,8 @@ async def compile_plan(
     parent_snapshot_id: str | None = None,
     candidate_refs: list[str] | None = None,
     montage_groups: list[list[str]] | None = None,
+    directive: PlanDirective | None = None,
+    brief: str = "",
 ) -> RenderPlan:
     """Compile a `RenderPlan` from an `ArcJudgment` + ingest records.
 
@@ -166,6 +180,7 @@ async def compile_plan(
                 "(populated by the runner via MusicAnalyzer.analyze)"
             )
 
+    directive = directive or DEFAULT_DIRECTIVE
     target_ms = max(target_duration_seconds, 1) * 1000
     clips = _build_clips(
         arc_judgment.selected_items, ingest_records, candidate_refs=candidate_refs
@@ -177,17 +192,23 @@ async def compile_plan(
         assert audio is not None and audio.cut_grid is not None  # narrowed above
         clips = _snap_clips_to_cut_grid(clips, audio.cut_grid, target_ms)
     else:
+        # Standard-mode shaping, applied in a FIXED order (ADR-0019) so the
+        # levers compose deterministically and refinement reproduces it exactly:
         # S-2.11.4: collapse dense same-backdrop bursts into one rapid montage
         # FIRST (it represents the whole dense viewpoint), then…
         if montage_groups:
             clips = _collapse_montage_groups(clips, montage_groups)
-        # S-2.11.1: …cap clips per physical viewpoint (~1km GPS cell) so one
-        # overlook can't dominate, then enforce the snappy per-clip band.
-        clips = _cap_per_location(clips, ingest_records, _MAX_CLIPS_PER_LOCATION)
-        clips = _scale_to_target(clips, target_ms)
+        # S-2.11.1: …cap clips per physical viewpoint (~1km GPS cell), then apply
+        # the directive's positional + tempo shaping (no-ops by default), then
+        # enforce the snappy per-clip band and fit the target.
+        clips = _cap_per_location(clips, ingest_records, directive.max_clips_per_location)
+        clips = _apply_positional(clips, directive, target_ms)
+        clips = _apply_tempo_profile(clips, directive, target_ms)
+        clips = _scale_to_target(clips, target_ms, directive=directive)
         # Keep each montage's member micro-durations in sync with its (possibly
         # scaled) total so Stage 7's concat length matches the planned length.
         clips = _resync_montage_members(clips)
+        clips = _soft_align_boundaries(clips, directive)
 
     snapshot_id = uuid.uuid4().hex[:16]
     plan = RenderPlan(
@@ -198,6 +219,7 @@ async def compile_plan(
         target_duration_ms=target_ms,
         clips=clips,
         music=audio,
+        directive=directive.model_copy(deep=True),
         arc_reasoning=arc_judgment.arc_reasoning,
         arc_confidence=arc_judgment.confidence,
     )
@@ -575,24 +597,127 @@ def _linear_scale(
     return out
 
 
-def _clip_band(c: RenderClip) -> tuple[int, int]:
-    """(min, max) display duration for a clip (S-2.11.1).
+def _clip_centers(clips: list[RenderClip]) -> list[float]:
+    """Each clip's center as a fraction (0..1) of the current timeline total."""
+    total = sum(c.intended_duration_ms for c in clips) or 1
+    centers: list[float] = []
+    acc = 0
+    for c in clips:
+        centers.append((acc + c.intended_duration_ms / 2) / total)
+        acc += c.intended_duration_ms
+    return centers
+
+
+def _apply_positional(
+    clips: list[RenderClip], directive: PlanDirective, target_ms: int
+) -> list[RenderClip]:
+    """Lever (a): per-region duration multipliers + deltas with a neighbour
+    shoulder. No-op when there are no positional rules (default)."""
+    if not directive.positional_rules or not clips:
+        return clips
+    centers = _clip_centers(clips)
+    out = list(clips)
+    for rule in directive.positional_rules:
+        lo, hi = rule.region
+        n_lo = max(0.0, lo - rule.neighbor_span)
+        n_hi = min(1.0, hi + rule.neighbor_span)
+        for i, c in enumerate(out):
+            if c.kind == "title_card":
+                continue
+            frac = centers[i]
+            in_region = lo <= frac <= hi
+            in_neighbor = (not in_region) and (n_lo <= frac <= n_hi)
+            if not (in_region or in_neighbor):
+                continue
+            mult = rule.multiplier if in_region else rule.neighbor_multiplier
+            delta = rule.delta_ms if in_region else rule.neighbor_delta_ms
+            new_ms = max(int(c.intended_duration_ms * mult) + delta, 250)
+            update: dict = {"intended_duration_ms": new_ms}
+            # An emphasis that pushes a clip above its band records emphasis_ms so
+            # _band_for lets it exceed the cap; a shrink stays within the band.
+            if in_region and rule.raises_band and new_ms > c.emphasis_ms:
+                update["emphasis_ms"] = new_ms
+            out[i] = c.model_copy(update=update)
+    return out
+
+
+def _apply_tempo_profile(
+    clips: list[RenderClip], directive: PlanDirective, target_ms: int
+) -> list[RenderClip]:
+    """Lever (b): scale each clip's duration by its song-slice tempo band.
+    Duration-only in this cut (density shaping gated off). No-op when empty."""
+    bands = directive.tempo.bands
+    if not bands or not clips:
+        return clips
+    centers = _clip_centers(clips)
+    out = list(clips)
+    for i, c in enumerate(out):
+        if c.kind == "title_card":
+            continue
+        frac = centers[i]
+        band = next((b for b in bands if b.start_frac <= frac < b.end_frac), None)
+        if band is None or band.duration_multiplier == 1.0:
+            continue
+        new_ms = max(int(c.intended_duration_ms * band.duration_multiplier), 250)
+        out[i] = c.model_copy(update={"intended_duration_ms": new_ms})
+    return out
+
+
+def _soft_align_boundaries(
+    clips: list[RenderClip], directive: PlanDirective
+) -> list[RenderClip]:
+    """Lever (c) / S-2.11.6: nudge each cumulative clip boundary onto the nearest
+    section start within the window (standard mode only). No-op when disabled."""
+    spec = directive.soft_align
+    if not spec.enabled or not spec.section_starts_ms or len(clips) < 2:
+        return clips
+    starts = sorted(spec.section_starts_ms)
+    out: list[RenderClip] = []
+    prev = 0
+    for i, c in enumerate(clips):
+        boundary = prev + c.intended_duration_ms
+        if i < len(clips) - 1:  # never move the final boundary (total length)
+            nearest = min(starts, key=lambda s: abs(s - boundary))
+            if abs(nearest - boundary) <= spec.window_ms:
+                boundary = nearest
+        new_ms = max(boundary - prev, 250)
+        out.append(c.model_copy(update={"intended_duration_ms": new_ms}))
+        prev += new_ms
+    return out
+
+
+def _band_for(c: RenderClip, directive: PlanDirective) -> tuple[int, int]:
+    """The clip's duration band, widened to admit a recorded positional emphasis."""
+    lo, hi = _clip_band(c, directive)
+    if c.emphasis_ms > hi:
+        hi = c.emphasis_ms
+    return (lo, hi)
+
+
+def _clip_band(c: RenderClip, directive: PlanDirective = DEFAULT_DIRECTIVE) -> tuple[int, int]:
+    """(min, max) display duration for a clip (S-2.11.1), from the directive's
+    bands (defaults reproduce the former module constants).
 
     Photos read in ~2-3s; a 5s hold feels frozen. Videos play >=2s at their
     natural pace (a <2s flash is jerky noise); a video's max is its natural
     length so it never freezes on a held last frame.
     """
+    b = directive.bands
     if c.kind == "burst_montage":
-        return (_MONTAGE_MIN_MS, _MONTAGE_MAX_MS)
+        return (b.montage_min_ms, b.montage_max_ms)
     if c.kind == "video_scene":
         natural = max(int((c.end_seconds - c.start_seconds) * 1000), 0)
-        hi = max(natural, _VIDEO_MIN_MS)
-        return (min(_VIDEO_MIN_MS, hi), hi)
-    return (_PHOTO_MIN_MS, _PHOTO_MAX_MS)
+        hi = max(natural, b.video_min_ms)
+        return (min(b.video_min_ms, hi), hi)
+    return (b.photo_min_ms, b.photo_max_ms)
 
 
 def _scale_to_target(
-    clips: list[RenderClip], target_ms: int, *, tolerance: float = 0.10
+    clips: list[RenderClip],
+    target_ms: int,
+    *,
+    tolerance: float = 0.10,
+    directive: PlanDirective = DEFAULT_DIRECTIVE,
 ) -> list[RenderClip]:
     """Fit the timeline to the target while keeping every clip inside its
     per-kind duration band (S-2.11.1): photos 1.5-3s, videos 2s-to-natural.
@@ -602,9 +727,11 @@ def _scale_to_target(
     The judge is instructed to pick enough 2-3s clips to fill the target.
     """
     # 1. Clamp every clip into its band first (hard caps, regardless of judge).
+    #    A positional rule that raises the band for its region is honoured via
+    #    the per-clip _band_override stamped by _apply_positional.
     capped: list[RenderClip] = []
     for c in clips:
-        lo, hi = _clip_band(c)
+        lo, hi = _band_for(c, directive)
         capped.append(
             c.model_copy(update={"intended_duration_ms": min(max(c.intended_duration_ms, lo), hi)})
         )
@@ -621,7 +748,7 @@ def _scale_to_target(
         factor = target_ms / total
         out: list[RenderClip] = []
         for c in capped:
-            lo, _ = _clip_band(c)
+            lo, _ = _band_for(c, directive)
             out.append(
                 c.model_copy(update={"intended_duration_ms": max(int(c.intended_duration_ms * factor), lo)})
             )

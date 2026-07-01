@@ -32,6 +32,8 @@ from impact_crater.media.music import (
     MusicAnalyzer,
     generate_cut_grid,
 )
+from impact_crater.pipeline import brief_intent as brief_intent_mod
+from impact_crater.pipeline import plan_directive as plan_directive_mod
 from impact_crater.pipeline import (
     cast_builder,
     diagnostics,
@@ -263,6 +265,20 @@ async def run_headless_pipeline(
                 )
                 cast_inventory = None
 
+        # Stage 0.5 — brief intent (S-2.10.5). Fail-soft: an empty intent leaves
+        # Stage 4 behaviour unchanged. Parsed here (after ingest) so the named
+        # destinations can be reserved through the pre-filter.
+        try:
+            brief_intent = await brief_intent_mod.parse_brief(
+                router,
+                config.brief,
+                media_count=len(media),
+                target_duration_seconds=config.target_duration_seconds,
+            )
+        except Exception as exc:  # noqa: BLE001 — never block a job on brief-parse
+            log.warning("brief_intent_failed error=%r — proceeding without", str(exc)[:200])
+            brief_intent = brief_intent_mod.BriefIntent()
+
         # Stage 4
         await reporter.stage_started("stage_4_prefilter")
         candidate_set = stage4_prefilter.prefilter(
@@ -272,6 +288,7 @@ async def run_headless_pipeline(
             target_duration_seconds=config.target_duration_seconds,
             overrides=config.overrides,
             cast=cast_inventory,
+            brief_intent=brief_intent,
         )
         await reporter.stage_completed(
             "stage_4_prefilter",
@@ -289,6 +306,8 @@ async def run_headless_pipeline(
             mode=config.mode,
             music_spec=config.music_spec,
             music_analysis=music_analysis,
+            coverage_plan=candidate_set.coverage_plan,
+            chronological=brief_intent.chronological,
         )
         await reporter.stage_completed(
             "stage_5_judge",
@@ -347,6 +366,9 @@ class FullJobConfig:
     # S-2.11.5 opt-in AI title/splash card.
     add_title_card: bool = False
     title_text: str | None = None
+    # ADR-0019 / S-2.12.2: optional explicit shaping directive (e.g. a
+    # brief-derived positional rule). None → derived from music / default no-op.
+    plan_directive: Any = None
 
 
 @dataclass
@@ -480,6 +502,8 @@ async def run_full_pipeline(
         audio=music,
         candidate_refs=candidate_refs,
         montage_groups=headless.candidate_set.montage_groups,
+        directive=_planning_directive(config, music_analysis),
+        brief=config.brief,
     )
 
     # M6 — orchestrator second-guess. Auto-applies high-confidence
@@ -651,6 +675,26 @@ def _persist_cast(project_id: str, cast: Any) -> None:
         (proj_dir / "cast.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
     except Exception as exc:
         log.warning("cast_persist_failed project_id=%s error=%r", project_id, str(exc)[:200])
+
+
+def _planning_directive(config: Any, music_analysis: Any) -> Any:
+    """The Stage-6 shaping directive for initial planning (ADR-0019 / S-2.12.2).
+
+    Standard mode with a music track derives tempo-aware pacing (photos snappier
+    under the louder half); otherwise the no-op default. An explicit
+    config.plan_directive (e.g. a brief-derived positional rule) wins.
+    """
+    explicit = getattr(config, "plan_directive", None)
+    if explicit is not None:
+        return explicit
+    if getattr(config, "mode", "standard") == "standard" and music_analysis is not None:
+        try:
+            return plan_directive_mod.build_directive_from_music(
+                music_analysis, target_ms=config.target_duration_seconds * 1000
+            )
+        except Exception as exc:  # noqa: BLE001 — never block planning on shaping
+            log.warning("planning_directive_failed error=%r — using default", str(exc)[:200])
+    return plan_directive_mod.DEFAULT_DIRECTIVE
 
 
 def _write_coverage(project_id: str, snapshot_id: str, cast: Any, plan: Any) -> None:
