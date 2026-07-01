@@ -554,3 +554,48 @@ async def _persist(project_id: str, record: MediaRecord) -> None:
             (project_id, record.content_hash),
         )
         await db.commit()
+
+
+def load_media_records(project_id: str) -> list["MediaRecord"]:
+    """Reconstruct all MediaRecords for a project from its source sidecars.
+
+    Used by the refinement layer (Stage 9) to re-run curation without a full
+    re-ingest — the sidecars carry everything Stage 4/6 need (Stage 2/3 come from
+    the LLM cache). Returns an empty list if the project has no sidecars.
+    """
+    sources_dir = paths.projects_dir() / project_id / "sources"
+    if not sources_dir.is_dir():
+        return []
+    out: list[MediaRecord] = []
+    for path in sorted(sources_dir.glob("*.json")):
+        try:
+            d = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        scenes = [
+            SceneRecord(
+                index=int(s["index"]),
+                start_seconds=float(s["start_seconds"]),
+                end_seconds=float(s["end_seconds"]),
+                representative_frame_paths=list(s.get("representative_frame_paths") or []),
+            )
+            for s in (d.get("scenes") or [])
+        ] or None
+        out.append(
+            MediaRecord(
+                content_hash=d["content_hash"],
+                source_path=d["source_path"],
+                media_type=d["media_type"],
+                file_size=int(d.get("file_size") or 0),
+                quick_stats=d.get("quick_stats") or {},
+                thumb_256_path=d.get("thumb_256_path"),
+                thumb_1024_path=d.get("thumb_1024_path"),
+                capture_timestamp=d.get("capture_timestamp"),
+                capture_source=d.get("capture_source"),
+                capture_confidence=float(d.get("capture_confidence") or 0.0),
+                gps_lat=d.get("gps_lat"),
+                gps_lon=d.get("gps_lon"),
+                scenes=scenes,
+            )
+        )
+    return out

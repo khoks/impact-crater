@@ -137,6 +137,9 @@ class RenderPlan(BaseModel):
     # ADR-0019: the duration/positional/tempo shaping that produced these clips;
     # the merge base for the next refinement.
     directive: PlanDirective = Field(default_factory=PlanDirective)
+    # The brief this plan was built from — persisted so Stage 9 refinement can
+    # reload it (and append to it) without a side channel.
+    brief: str = ""
     arc_reasoning: str = ""
     arc_confidence: float = 0.0
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -157,6 +160,7 @@ async def compile_plan(
     candidate_refs: list[str] | None = None,
     montage_groups: list[list[str]] | None = None,
     directive: PlanDirective | None = None,
+    brief: str = "",
 ) -> RenderPlan:
     """Compile a `RenderPlan` from an `ArcJudgment` + ingest records.
 

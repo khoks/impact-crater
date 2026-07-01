@@ -220,12 +220,13 @@ async function safeDetail(r: Response): Promise<string> {
 // ---- Refine (M6) ----
 
 export interface RefineResponse {
-  strategy: string;
-  rationale: string;
+  interpretation: string;
   explanation: string | null;
+  new_snapshot_id: string | null;
+  rendered: boolean;
+  reserve_destinations: string[];
+  has_directive_patch: boolean;
   brief_addendum: string | null;
-  new_arc_judgment: Record<string, unknown> | null;
-  turns_used: number;
 }
 
 export async function postRefine(

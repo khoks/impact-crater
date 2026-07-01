@@ -1,147 +1,110 @@
-"""Tests for the Stage 9 N-009 agentic refinement loop."""
+"""Tests for the open-ended agentic refinement planner (E-2.12)."""
 
 from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
-import pytest
+from impact_crater.pipeline import stage9_refine as sr
+from impact_crater.pipeline.stage6_plan import MontageMember, RenderClip, RenderPlan
+from impact_crater.pipeline.stage9_refine import (
+    RefinementOutcome,
+    _arc_from_plan,
+    _montage_groups_from_plan,
+    _outcome_from_raw,
+    _reservations_from_outcome,
+    plan_refinement,
+)
 
-from impact_crater.llm_clients.base import ArcJudgment, CandidateRef, SelectedItem
-from impact_crater.pipeline.stage4_prefilter import CandidateSet
-from impact_crater.pipeline.stage9_refine import refine, RefinementPlan
 
-
-def _arc(reasoning: str = "warm to cool") -> ArcJudgment:
-    return ArcJudgment(
-        selected_items=[
-            SelectedItem(candidate_ref="a", placement_position=0, intended_duration_ms=2000, role="opener")
+def _plan() -> RenderPlan:
+    return RenderPlan(
+        project_id="p", snapshot_id="s0", target_duration_ms=10_000, brief="a zion trip",
+        arc_reasoning="warm to cool", arc_confidence=0.8,
+        clips=[
+            RenderClip(candidate_ref="a", kind="photo", source_path="/tmp/a.jpg",
+                       intended_duration_ms=2000, aspect_ratio_action="as_is", role="opener"),
+            RenderClip(candidate_ref="b", kind="photo", source_path="/tmp/b.jpg",
+                       intended_duration_ms=2000, aspect_ratio_action="as_is"),
         ],
-        arc_reasoning=reasoning,
-        confidence=0.7,
     )
 
 
-def _candidate_set() -> CandidateSet:
-    return CandidateSet(
-        items=[CandidateRef(content_hash="a", quality_score=0.9, narrative_relevance=0.8)],
-        cluster_metadata={"input_count": 1},
-        filter_log=[],
-        target_size=1,
-        floor=1,
-        ceiling=1,
-    )
+def test_outcome_pure_pacing_from_directive_patch() -> None:
+    outcome = _outcome_from_raw({
+        "interpretation": "hold the opener longer",
+        "directive_patch": {"positional_rules": [{"region": [0.0, 0.2], "delta_ms": 2000, "raises_band": True}]},
+    })
+    assert outcome.directive_patch is not None
+    assert outcome.is_pure_pacing is True
+    assert outcome.needs_rejudge is False
+    assert outcome.directive_patch.positional_rules[0].delta_ms == 2000
 
 
-# ---- Tests -------------------------------------------------------------
+def test_outcome_reserve_destination_needs_rejudge() -> None:
+    outcome = _outcome_from_raw({"interpretation": "keep vegas", "reserve_destinations": ["Las Vegas"]})
+    assert outcome.needs_rejudge is True
+    assert outcome.is_pure_pacing is False
+    assert outcome.reserve_destinations == ["Las Vegas"]
 
 
-async def test_refine_partial_fix_runs_stage_5_with_addendum() -> None:
+def test_outcome_empty_directive_patch_is_ignored() -> None:
+    outcome = _outcome_from_raw({"interpretation": "x", "directive_patch": {"positional_rules": []}})
+    assert outcome.directive_patch is None
+    assert outcome.is_actionable is False
+
+
+def test_outcome_explanation_only() -> None:
+    outcome = _outcome_from_raw({"interpretation": "can't", "explanation": "no snow in the media"})
+    assert outcome.is_actionable is False
+    assert outcome.explanation == "no snow in the media"
+
+
+async def test_plan_refinement_calls_router_and_parses() -> None:
     router = AsyncMock()
-    # First call: thinking step picks partial_fix_via_plan_edit.
-    # Second call: parse_user_brief is reused by stage5 (no — Stage 5
-    # uses judge_narrative_arc which is router.judge_narrative_arc).
-    router.parse_user_brief = AsyncMock(
-        return_value={
-            "strategy": "partial_fix_via_plan_edit",
-            "rationale": "the candidate set has enough landscape items",
-            "brief_addendum": "Add 30% more landscape shots; reduce face shots.",
-        }
+    router.parse_user_brief.return_value = {
+        "interpretation": "shorten the intro",
+        "directive_patch": {"positional_rules": [{"region": [0.0, 0.2], "multiplier": 0.7}]},
+    }
+    outcome = await plan_refinement(
+        router, refinement_message="snappier intro", brief="b",
+        plan_summary="2 clips", destinations_available="", music_summary="",
     )
-    new_arc = _arc(reasoning="more landscape")
-    router.judge_narrative_arc = AsyncMock(return_value=new_arc)
-
-    result = await refine(
-        router=router,
-        prior_arc=_arc(),
-        candidate_set=_candidate_set(),
-        refinement_message="more landscape",
-        brief="hike",
-        target_duration_seconds=10,
-    )
-    assert result.plan.strategy == "partial_fix_via_plan_edit"
-    assert result.arc_judgment is new_arc
-    assert result.turns_used == 2
-
-    # The new judge call should have received the addendum-extended brief.
-    call = router.judge_narrative_arc.await_args
-    assert "Refinement addendum" in call.kwargs["brief"]
-    assert "30% more landscape" in call.kwargs["brief"]
+    assert outcome.is_pure_pacing
+    assert router.parse_user_brief.await_count == 1
+    sent_prompt = router.parse_user_brief.await_args.args[0]
+    assert "snappier intro" in sent_prompt  # the request reached the prompt
 
 
-async def test_refine_explain_when_thinking_picks_it() -> None:
-    router = AsyncMock()
-    router.parse_user_brief = AsyncMock(
-        return_value={
-            "strategy": "explain_why_not_possible",
-            "rationale": "no landscape in candidate set",
-            "explanation": "The pre-filter dropped all landscape shots because their quality scores were too low.",
-        }
-    )
-    result = await refine(
-        router=router,
-        prior_arc=_arc(),
-        candidate_set=_candidate_set(),
-        refinement_message="more landscape",
-        brief="hike",
-        target_duration_seconds=10,
-    )
-    assert result.plan.strategy == "explain_why_not_possible"
-    assert result.plan.explanation is not None
-    assert result.arc_judgment is None
-    assert router.judge_narrative_arc.await_count == 0
+def test_arc_from_plan_skips_title_card() -> None:
+    plan = _plan()
+    plan.clips.insert(0, RenderClip(candidate_ref="__title__", kind="title_card",
+                                   source_path="/t.png", intended_duration_ms=3000, aspect_ratio_action="as_is"))
+    arc = _arc_from_plan(plan)
+    refs = [i.candidate_ref for i in arc.selected_items]
+    assert "__title__" not in refs
+    assert refs == ["a", "b"]
 
 
-async def test_refine_v1_strategies_fall_back_to_explain() -> None:
-    """M6 doesn't execute full_reprocess; falls back gracefully."""
-    router = AsyncMock()
-    router.parse_user_brief = AsyncMock(
-        return_value={
-            "strategy": "full_reprocess",
-            "rationale": "needs a fresh look",
-        }
-    )
-    result = await refine(
-        router=router,
-        prior_arc=_arc(),
-        candidate_set=_candidate_set(),
-        refinement_message="x",
-        brief="b",
-        target_duration_seconds=10,
-    )
-    assert result.plan.strategy == "explain_why_not_possible"
-    assert "v1" in (result.plan.explanation or "")
+def test_reservations_from_outcome_refs() -> None:
+    res = _reservations_from_outcome(RefinementOutcome(reserve_refs=["a", "b"]))
+    assert res is not None
+    assert res.keys == frozenset({"a", "b"})
+    assert res.source == "refinement"
+    assert _reservations_from_outcome(RefinementOutcome()) is None
 
 
-async def test_refine_empty_message_raises() -> None:
-    router = AsyncMock()
-    with pytest.raises(ValueError, match="empty"):
-        await refine(
-            router=router,
-            prior_arc=_arc(),
-            candidate_set=_candidate_set(),
-            refinement_message="   ",
-            brief="b",
-            target_duration_seconds=10,
-        )
-    # Thinking call never made.
-    router.parse_user_brief.assert_not_called()
+def test_montage_groups_from_plan() -> None:
+    plan = _plan()
+    plan.clips.append(RenderClip(
+        candidate_ref="m", kind="burst_montage", source_path="/m.jpg",
+        intended_duration_ms=3000, aspect_ratio_action="as_is",
+        members=[MontageMember(candidate_ref="m1", source_path="/m1.jpg", aspect_ratio_action="as_is", duration_ms=500),
+                 MontageMember(candidate_ref="m2", source_path="/m2.jpg", aspect_ratio_action="as_is", duration_ms=500)],
+    ))
+    assert _montage_groups_from_plan(plan) == [["m1", "m2"]]
 
 
-async def test_refine_returns_typed_plan() -> None:
-    router = AsyncMock()
-    router.parse_user_brief = AsyncMock(
-        return_value={
-            "strategy": "explain_why_not_possible",
-            "rationale": "x",
-            "explanation": "y",
-        }
-    )
-    result = await refine(
-        router=router,
-        prior_arc=_arc(),
-        candidate_set=_candidate_set(),
-        refinement_message="x",
-        brief="b",
-        target_duration_seconds=10,
-    )
-    assert isinstance(result.plan, RefinementPlan)
+def test_summarize_plan_lists_clips() -> None:
+    summary = sr._summarize_plan(_plan())
+    assert "2 clips" in summary
+    assert "ref=a" in summary
