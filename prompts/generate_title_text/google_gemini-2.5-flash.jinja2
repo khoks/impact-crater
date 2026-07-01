@@ -1,0 +1,21 @@
+{# Turn the user's free-text brief into a short, human title for the opening splash card (S-2.11.7). #}
+You are titling a short highlight video for the person who shot it.
+
+Their brief (free-text):
+"""
+{{ brief }}
+"""
+{% if year %}
+The footage is from {{ year }}.
+{% endif %}
+
+Write ONE evocative title for the video's opening splash card.
+
+Rules:
+- 2 to 5 words. Shorter is punchier.
+- Capture the spirit of the trip or event. Real place names from the brief are great — pick the standout one or two, don't list them all.
+- Fix obvious misspellings of place names (e.g. "horseshow bend" → "Horseshoe Bend").
+- Natural Title Case. No emoji, no quotes, no trailing punctuation, and do not put the year in the title.
+- Do not echo filler like "a highlight video of" or "our trip through" — just the title.
+
+Return the title in the JSON `title` field.
