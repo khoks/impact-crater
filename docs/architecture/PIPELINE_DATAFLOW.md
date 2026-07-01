@@ -178,14 +178,16 @@ Surrounding all stages: a pre-job **quota check**, **telemetry context** setup, 
 
 ### Stage 6 — Compile Plan (deterministic, M2)
 
-**Flow.** Walks `selected_items` by `placement_position`, resolving each `candidate_ref` back to a `MediaRecord` (photo or specific video scene; a `candidate_refs` fallback list recovers Opus's occasional short-integer refs). For each clip it derives `kind`, `source_path`, video `start/end_seconds`, `intended_duration_ms`, and `aspect_ratio_action` (photos: within ±10% of 16:9 → `as_is` else `smart_crop`; videos: ≈16:9 `as_is`, narrower `letterbox`, wider `pad`). Durations are then scaled: **standard mode** enforces a hard per-clip band (S-2.11.1: photos 1–3s — never stretched to fill an under-populated target, so the old 5–8s held photos are gone — videos clamped to [2s, natural]); **music-video mode** keeps the legacy linear scale (photos stretch) then snaps every clip boundary to the nearest `CutGrid` cut ≥ floor (prev+250ms), since beats — not a per-clip band — drive its pacing. The `snapshot_id` is minted here and the plan is written to `plan.json` + DB.
+**Flow.** Walks `selected_items` by `placement_position`, resolving each `candidate_ref` back to a `MediaRecord` (photo or specific video scene; a `candidate_refs` fallback list recovers Opus's occasional short-integer refs). For each clip it derives `kind` (`photo`/`video_scene`/`burst_montage`/`title_card`), `source_path`, video `start/end_seconds`, `intended_duration_ms`, and `aspect_ratio_action` (photos: within ±10% of 16:9 → `as_is` else `smart_crop`; videos: ≈16:9 `as_is`, narrower `letterbox`, wider `pad`). In standard mode it then: **collapses** any Stage-4 `montage_groups` whose members survived into one `burst_montage` RenderClip (`_collapse_montage_groups`: members ~0.4–0.6s, 2–4s total, ≤8 members); **caps per location** (≤3 clips per ~1km GPS cell, `burst_montage` exempt); and **scales** durations into a hard per-clip band (S-2.11.1: photos 1–3s — never stretched to fill an under-populated target, so the old 5–8s held photos are gone — videos clamped to [2s, natural]), resyncing montage members after. **Music-video mode** keeps the legacy linear scale (photos stretch) then snaps every clip boundary to the nearest `CutGrid` cut ≥ floor (prev+250ms), since beats — not a per-clip band — drive its pacing. The `snapshot_id` is minted here and the plan is written to `plan.json` + DB.
 
 | Step | Module / function (file) | Kind | Model / Prompt | In → Out | Cache / Cost |
 |---|---|---|---|---|---|
 | Compile | `compile_plan` (stage6_plan.py) | deterministic | — | ArcJudgment+records → RenderPlan | snapshot_id minted, no cache |
 | Build clips | `_build_clips` | deterministic | — | selected+records → RenderClip[] | ref coercion fallback |
+| Montage collapse | `_collapse_montage_groups` | deterministic | — | clips+montage_groups → clips (burst_montage) | standard mode, S-2.11.4 |
+| Per-location cap | `_cap_per_location` | deterministic | ≤3/~1km cell, montage exempt | clips → clips | standard mode |
 | Beat-snap | `_snap_clips_to_cut_grid` | deterministic | CutGrid, ≥prev+250ms | clips+grid → clips | music_video only |
-| Linear scale | `_scale_to_target` | deterministic | ±10% tol | clips+target → clips | standard mode |
+| Duration band | `_scale_to_target` | deterministic | photos 1–3s / videos ≥2s, no over-stretch | clips+target → clips | standard mode, S-2.11.1 |
 | Persist | `_persist` | io | aiosqlite + json | RenderPlan → plan.json + DB | render_status='pending' |
 | Music spec assembly | `run_full_pipeline` (runner.py) | orchestration | ffmpeg probe | analysis+nl → StandardMusicSpec | — |
 | Candidate refs list | `run_full_pipeline` (runner.py) | orchestration | — | CandidateSet → list[str] | Opus ref recovery |
@@ -201,9 +203,18 @@ Surrounding all stages: a pre-job **quota check**, **telemetry context** setup, 
 | Coverage report | `compute_coverage` (runner.py:528) | deterministic | — | cast+plan → coverage.json | A-018 fail-soft |
 | Diagnostics | `build_diagnostics` (runner.py:532) | deterministic | — | all phases → diagnostics.json | streamed to WS (A-023) |
 
+### Stage 6.x — Title/Splash Card (opt-in, AI-image, fail-soft, S-2.11.5)
+
+**Flow.** Only when the job opted in (`add_title_card`). Runs after second-guess so timeline positions are stable. `build_title_clip` derives the year (modal capture year), the title (user `title_text` or a short derivation from the brief), and a "spirit" prompt, then calls the router's **`generate_title_background`** op (remote image-gen, **Gemini 2.5 Flash Image**, D-054) for a painterly background — *only the text prompt is sent, never the photos*. It composites, locally with PIL: a cover-fit background + scrim, circular face thumbnails of the top group members (A-018 cast, faces re-cropped transiently via `detect_and_crop_faces`), and a shrink-to-fit title + year. The resulting `title_card` RenderClip (3s) is **prepended** as clip 0 and `plan.json` rewritten. Fail-soft at every step: image-gen failure → typographic card over a representative photo; no background at all → no card; any exception → render proceeds unchanged.
+
+| Step | Module / function (file) | Kind | Model / Prompt | In → Out | Cache / Cost |
+|---|---|---|---|---|---|
+| Build title clip | `build_title_clip` (stage6_title_card.py) | AI-image + deterministic | `generate_title_background` (Gemini 2.5 Flash Image), temp 0.6 | plan+media+cast+brief → title_card RenderClip | uncached (fresh image each run) |
+| Composite | PIL (`_cover`/`_add_scrim`/`_paste_faces`/`_draw_title`) | deterministic | — | bg+faces+text → title_card.png | local only |
+
 ### Stage 7 — Render MP4 (external-tool: ffmpeg)
 
-**Flow.** Purely deterministic. Loads `plan.json`, sets `render_status='in_progress'`, then **pre-renders each clip sequentially** to a 1920×1080 H.264 segment (photos: `-loop 1 -t dur`; videos: `-ss start -t dur`; aspect filter chosen per `aspect_ratio_action`). Segments are **concatenated** via the concat demuxer (`-c copy`). If music is present, audio is normalized in **two loudnorm passes** (pass 1 measures, pass 2 applies measured values + fades + trim), then **muxed** (`-shortest -movflags +faststart`); without music the concat is copied. A `RenderEvent` is emitted and `render_status='success'` set, returning a `RenderResult`. ffmpeg is invoked through an async subprocess wrapper supporting SIGTERM→SIGKILL cancellation; the binary is resolved via env override → PATH → Windows winget path.
+**Flow.** Purely deterministic. Loads `plan.json`, sets `render_status='in_progress'`, then **pre-renders each clip sequentially** to a 1920×1080 H.264 segment (photos + `title_card`: `-loop 1 -t dur` over the static image; videos: `-ss start -t dur`; `burst_montage`: each member rendered as its own tiny segment then concatenated `-c copy` into one segment via `_prerender_montage`; aspect filter chosen per `aspect_ratio_action`). Segments are **concatenated** via the concat demuxer (`-c copy`). If music is present, audio is normalized in **two loudnorm passes** (pass 1 measures, pass 2 applies measured values + fades + trim), then **muxed** (`-shortest -movflags +faststart`); without music the concat is copied. A `RenderEvent` is emitted and `render_status='success'` set, returning a `RenderResult`. ffmpeg is invoked through an async subprocess wrapper supporting SIGTERM→SIGKILL cancellation; the binary is resolved via env override → PATH → Windows winget path.
 
 | Step | Module / function (file) | Kind | Model / Prompt | In → Out | Cache / Cost |
 |---|---|---|---|---|---|
