@@ -98,6 +98,17 @@ videos from their own media without spending hours in an editor.
   - **Music-video** — the cuts are synchronized to the beat of your song, and
     you can describe which parts of the song should map to which kinds of footage
     ("the build-up over the climb, the chorus on the summit") in plain language.
+  - **Optional title card** — you can opt in to an opening splash screen that
+    captures the video's spirit: an AI-generated background with the trip's main
+    people, a fitting title, and the year. If image generation isn't available it
+    falls back to a clean typographic card, so it never blocks your video.
+  - **Snappy, fully-covering pacing** — the cut favours many short moments
+    (roughly two to three seconds each) over a few long-held photos, aims to touch
+    every distinct place and time in the trip rather than dwelling on one
+    viewpoint, and can occasionally use a rapid **burst-montage** — several
+    same-place photos flashed in a two-to-four-second sequence — when a spot has a
+    lot of similar shots. The music's mood and section structure inform which
+    footage lands where.
 
 **On the roadmap** (described in §13)
 
@@ -213,10 +224,15 @@ flowchart TD
     (live while a job runs, or afterward) and mark any individual decision —
     a kept/dropped shot, a selection, a person classification — as correct,
     incorrect, or "should be different," with a note and an automatic screenshot
-    of what you were seeing. This feedback is stored so the product's behavior
-    can be improved against your taste over time. Separately, the system keeps a
-    learning profile across all your projects so its defaults adapt to how you
-    like things.
+    of what you were seeing. You can also react at a higher level: on the **whole
+    video** ("great pacing," "too short") or on an **entire phase** ("over-covered
+    one spot"), not only on single decisions. While a job runs, the live view
+    breaks each phase into the individual modules working — fingerprinting,
+    reading capture times and GPS, scoring shots, picking keepers, composing the
+    story — so you can see and trust what the AI is doing. All of this feedback is
+    stored so the product's behavior can be improved against your taste over time.
+    Separately, the system keeps a learning profile across all your projects so
+    its defaults adapt to how you like things.
 
 ---
 
