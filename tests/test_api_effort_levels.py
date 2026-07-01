@@ -88,6 +88,18 @@ async def test_cost_preview_under_budget(client: httpx.AsyncClient) -> None:
     assert "M" in body["cost_by_tier_usd"]
 
 
+async def test_cost_preview_title_card_line_item(client: httpx.AsyncClient) -> None:
+    await settings_store.set_value(settings_store.KEY_TOTAL_CAP_USD, "100.00")
+    base = (await client.post("/api/cost-preview",
+            json={"media_count": 50, "target_duration_seconds": 60})).json()
+    withcard = (await client.post("/api/cost-preview",
+                json={"media_count": 50, "target_duration_seconds": 60, "add_title_card": True})).json()
+    assert base["title_card_cost_usd"] is None
+    assert withcard["title_card_cost_usd"] == 0.04
+    assert "title_card" in withcard["cost_by_tier_usd"]
+    assert withcard["estimated_cost_usd_high"] > base["estimated_cost_usd_high"]
+
+
 async def test_cost_preview_blocked_when_no_cap(
     client: httpx.AsyncClient,
 ) -> None:

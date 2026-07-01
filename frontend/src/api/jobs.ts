@@ -152,6 +152,7 @@ export interface CostPreviewRequest {
   media_count: number;
   target_duration_seconds: number;
   level_id?: string | null;
+  add_title_card?: boolean;
 }
 
 export interface CostPreviewResponse {
@@ -161,6 +162,7 @@ export interface CostPreviewResponse {
   today_remaining_usd: number | null;
   fits_today_budget: boolean;
   blocking_reason: string | null;
+  title_card_cost_usd?: number | null;
 }
 
 export async function fetchCostPreview(
