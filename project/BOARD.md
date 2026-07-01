@@ -45,6 +45,7 @@
 | ID | Title | Type | Done |
 |---|---|---|---|
 | **[E-2.12](./epics/E-2.12-open-ended-refinement-and-shared-curation-levers.md)** | **Open-ended refinement + shared curation levers — PlanDirective + ReservationSet + agentic refinement loop; renders a child snapshot [D-056, ADR-0019/0020]** | Epic | 2026-07-01 |
+| **[S-2.12.4](./stories/S-2.12.4-title-card-refinement.md)** | **Refine the title card — text / image / placement / appearance in plain language + re-inject the card on every refine (live-verified)** | Story | 2026-07-01 |
 | **[S-2.12.3](./stories/S-2.12.3-agentic-refinement-loop.md)** | **Agentic refinement loop — interprets arbitrary NL → pacing/coverage/content levers → child snapshot (live-verified)** | Story | 2026-07-01 |
 | **[S-2.10.5](./stories/S-2.10.5-named-destination-coverage-guarantee.md)** | **Named-destination coverage — the Vegas fix + shared ReservationSet (brief-parse → reserve through Stage 4 → instruct judge)** | Story | 2026-07-01 |
 | **[S-2.12.1](./stories/S-2.12.1-plan-directive-shaping-model.md)–[S-2.12.2](./stories/S-2.12.2-positional-tempo-softalign-levers.md)** | **PlanDirective shaping model + positional/tempo/soft-align levers wired into planning [ADR-0019]** | Stories | 2026-07-01 |

@@ -40,7 +40,7 @@ The pipeline runs through **7 numbered stages** plus three side/extension steps.
 | **6** | Compile Plan | deterministic | ArcJudgment → RenderPlan (durations, aspect, beat-snap) |
 | **6.5** | Second-Guess | AI (Tier-M Claude Sonnet) | Sanity-check overrides, fail-soft |
 | **7** | Render | external-tool (ffmpeg) | Pre-render → concat → loudnorm → mux → MP4 |
-| **9** | Refine | AI (Tier-M/L Claude) | User feedback → strategy → re-judge (new snapshot) |
+| **9** | Refine | AI (Tier-M/L Claude) | Free-text request → RefinementOutcome → the right lever (pacing directive / destination reservation / re-judge / title-card edit) → child snapshot (E-2.12) |
 
 Surrounding all stages: a pre-job **quota check**, **telemetry context** setup, per-phase **diagnostics** (A-023), a cast **coverage report** (A-018), and post-job **cost aggregation**.
 
