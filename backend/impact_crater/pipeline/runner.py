@@ -33,7 +33,6 @@ from impact_crater.media.music import (
     generate_cut_grid,
 )
 from impact_crater.pipeline import brief_intent as brief_intent_mod
-from impact_crater.pipeline import plan_directive as plan_directive_mod
 from impact_crater.pipeline import (
     cast_builder,
     diagnostics,
@@ -47,6 +46,7 @@ from impact_crater.pipeline import (
     stage6_title_card,
     stage7_render,
 )
+from impact_crater.pipeline import plan_directive as plan_directive_mod
 from impact_crater.pipeline.stage4_prefilter import CandidateSet, PreFilterOverrides
 from impact_crater.pipeline.stage6_plan import StandardMusicSpec
 from impact_crater.storage import settings as settings_store
@@ -275,7 +275,7 @@ async def run_headless_pipeline(
                 media_count=len(media),
                 target_duration_seconds=config.target_duration_seconds,
             )
-        except Exception as exc:  # noqa: BLE001 — never block a job on brief-parse
+        except Exception as exc:
             log.warning("brief_intent_failed error=%r — proceeding without", str(exc)[:200])
             brief_intent = brief_intent_mod.BriefIntent()
 
@@ -567,17 +567,21 @@ async def run_full_pipeline(
     if config.add_title_card:
         await reporter.stage_started("stage_6_title_card")
         try:
+            title_spec = stage6_plan.TitleCardSpec(
+                enabled=True, title_text=config.title_text
+            )
             title_clip = await stage6_title_card.build_title_clip(
                 router=sg_router,
                 plan=plan,
                 media=headless.media,
                 cast=headless.cast,
                 brief=config.brief,
-                title_text=config.title_text,
+                spec=title_spec,
                 snapshot_dir=stage6_plan.snapshot_dir(headless.project_id, plan.snapshot_id),
             )
             if title_clip is not None:
-                plan = plan.model_copy(update={"clips": [title_clip, *plan.clips]})
+                # Persist the spec so refinement can re-inject + edit the card.
+                plan = plan.model_copy(update={"clips": [title_clip, *plan.clips], "title_card_spec": title_spec})
                 (stage6_plan.snapshot_dir(headless.project_id, plan.snapshot_id) / "plan.json").write_text(
                     plan.model_dump_json(indent=2), encoding="utf-8"
                 )
@@ -692,7 +696,7 @@ def _planning_directive(config: Any, music_analysis: Any) -> Any:
             return plan_directive_mod.build_directive_from_music(
                 music_analysis, target_ms=config.target_duration_seconds * 1000
             )
-        except Exception as exc:  # noqa: BLE001 — never block planning on shaping
+        except Exception as exc:
             log.warning("planning_directive_failed error=%r — using default", str(exc)[:200])
     return plan_directive_mod.DEFAULT_DIRECTIVE
 

@@ -61,7 +61,7 @@ def _photo(tmp: Path, ch: str = "p0") -> MediaRecord:
 async def test_title_card_with_ai_background(tmp_path: Path) -> None:
     clip = await tc.build_title_clip(
         router=_OkRouter(), plan=_Plan(), media=[_photo(tmp_path)], cast=None,
-        brief="A highlight video of our Zion trip", title_text=None, snapshot_dir=tmp_path,
+        brief="A highlight video of our Zion trip", spec=tc.TitleCardSpec(enabled=True), snapshot_dir=tmp_path,
     )
     assert clip is not None
     assert clip.kind == "title_card" and clip.candidate_ref == "__title__"
@@ -72,7 +72,7 @@ async def test_title_card_with_ai_background(tmp_path: Path) -> None:
 async def test_title_card_falls_back_to_photo_when_image_gen_fails(tmp_path: Path) -> None:
     clip = await tc.build_title_clip(
         router=_FailRouter(), plan=_Plan(), media=[_photo(tmp_path)], cast=None,
-        brief="Zion trip", title_text="My Trip", snapshot_dir=tmp_path,
+        brief="Zion trip", spec=tc.TitleCardSpec(enabled=True, title_text="My Trip"), snapshot_dir=tmp_path,
     )
     assert clip is not None and clip.kind == "title_card"  # typographic fallback over a photo
     assert Path(clip.source_path).is_file()
@@ -81,7 +81,7 @@ async def test_title_card_falls_back_to_photo_when_image_gen_fails(tmp_path: Pat
 async def test_title_card_none_when_no_background_available(tmp_path: Path) -> None:
     clip = await tc.build_title_clip(
         router=_FailRouter(), plan=_Plan(), media=[], cast=None,
-        brief="x", title_text=None, snapshot_dir=tmp_path,
+        brief="x", spec=tc.TitleCardSpec(enabled=True), snapshot_dir=tmp_path,
     )
     assert clip is None
 
@@ -163,7 +163,7 @@ async def test_title_card_uses_llm_title_and_skips_it_when_title_given(tmp_path:
     clip = await tc.build_title_clip(
         router=router, plan=_Plan(), media=[_photo(tmp_path)], cast=None,
         brief="A highlight video of our trip through zion and bryce",
-        title_text=None, snapshot_dir=tmp_path,
+        spec=tc.TitleCardSpec(enabled=True), snapshot_dir=tmp_path,
     )
     assert clip is not None and clip.kind == "title_card"
     assert router.title_calls  # the LLM title op was consulted
@@ -171,7 +171,7 @@ async def test_title_card_uses_llm_title_and_skips_it_when_title_given(tmp_path:
     router2 = _TitleRouter("Should Not Be Used")
     clip2 = await tc.build_title_clip(
         router=router2, plan=_Plan(), media=[_photo(tmp_path, "p1")], cast=None,
-        brief="whatever", title_text="My Explicit Title", snapshot_dir=tmp_path,
+        brief="whatever", spec=tc.TitleCardSpec(enabled=True, title_text="My Explicit Title"), snapshot_dir=tmp_path,
     )
     assert clip2 is not None
     assert router2.title_calls == []  # an explicit title short-circuits the LLM call
@@ -182,6 +182,42 @@ def test_clean_title_sanitizes_llm_output() -> None:
     assert tc._clean_title("—Zion—") == "Zion"
     assert tc._clean_title("   ") is None
     assert tc._clean_title(None) is None
+
+
+class _NoImageRouter:
+    def __init__(self) -> None:
+        self.bg_called = False
+
+    async def generate_title_background(self, *, spirit_prompt: str, aspect: str = "16:9") -> bytes:
+        self.bg_called = True
+        raise RuntimeError("generate_title_background should not be called when a bg is reused")
+
+    async def generate_title_text(self, *, brief: str, year: str) -> str | None:
+        return None
+
+
+async def test_title_card_reuses_background_and_persists_raw_bg(tmp_path: Path) -> None:
+    raw_bg = tmp_path / "reuse_bg.png"
+    Image.new("RGB", (1280, 720), (20, 30, 40)).save(raw_bg)
+    router = _NoImageRouter()
+    spec = tc.TitleCardSpec(
+        enabled=True, title_text="Top Title", title_position="top",
+        text_color="gold", show_year=False, show_faces=False,
+    )
+    clip = await tc.build_title_clip(
+        router=router, plan=_Plan(), media=[_photo(tmp_path)], cast=None,
+        brief="x", spec=spec, snapshot_dir=tmp_path, background_path=str(raw_bg),
+    )
+    assert clip is not None and clip.kind == "title_card"
+    assert router.bg_called is False  # reused the provided background — no image-gen
+    assert (tmp_path / "title_card_bg.png").is_file()  # raw bg persisted for the next refine
+
+
+def test_placement_and_color_helpers() -> None:
+    assert tc._parse_color("gold") == (255, 215, 0)
+    assert tc._parse_color("#0a141e") == (10, 20, 30)
+    assert tc._parse_color("nonsense") == (255, 255, 255)
+    assert tc._placement_cy("top") < tc._placement_cy("center") < tc._placement_cy("bottom")
 
 
 def test_derive_year_modal() -> None:
