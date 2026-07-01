@@ -32,6 +32,7 @@ from impact_crater.media.music import (
     MusicAnalyzer,
     generate_cut_grid,
 )
+from impact_crater.pipeline import brief_intent as brief_intent_mod
 from impact_crater.pipeline import (
     cast_builder,
     diagnostics,
@@ -263,6 +264,20 @@ async def run_headless_pipeline(
                 )
                 cast_inventory = None
 
+        # Stage 0.5 — brief intent (S-2.10.5). Fail-soft: an empty intent leaves
+        # Stage 4 behaviour unchanged. Parsed here (after ingest) so the named
+        # destinations can be reserved through the pre-filter.
+        try:
+            brief_intent = await brief_intent_mod.parse_brief(
+                router,
+                config.brief,
+                media_count=len(media),
+                target_duration_seconds=config.target_duration_seconds,
+            )
+        except Exception as exc:  # noqa: BLE001 — never block a job on brief-parse
+            log.warning("brief_intent_failed error=%r — proceeding without", str(exc)[:200])
+            brief_intent = brief_intent_mod.BriefIntent()
+
         # Stage 4
         await reporter.stage_started("stage_4_prefilter")
         candidate_set = stage4_prefilter.prefilter(
@@ -272,6 +287,7 @@ async def run_headless_pipeline(
             target_duration_seconds=config.target_duration_seconds,
             overrides=config.overrides,
             cast=cast_inventory,
+            brief_intent=brief_intent,
         )
         await reporter.stage_completed(
             "stage_4_prefilter",
@@ -289,6 +305,8 @@ async def run_headless_pipeline(
             mode=config.mode,
             music_spec=config.music_spec,
             music_analysis=music_analysis,
+            coverage_plan=candidate_set.coverage_plan,
+            chronological=brief_intent.chronological,
         )
         await reporter.stage_completed(
             "stage_5_judge",

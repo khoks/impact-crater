@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import pytest
+from impact_crater.pipeline.brief_intent import BriefIntent, NamedDestination
+from impact_crater.pipeline.destinations import ReservationSet
 from impact_crater.pipeline.stage1_ingest import MediaRecord, SceneRecord
 from impact_crater.pipeline.stage4_prefilter import (
     PreFilterOverrides,
@@ -15,6 +17,64 @@ from impact_crater.pipeline.types import (
     Stage2AssetOutputs,
     Stage3AssetOutputs,
 )
+
+# ---- S-2.10.5 destination reservation (the Vegas fix) -----------------
+
+
+def _vegas_scenario() -> tuple:
+    """12 sharp distractors + 1 low-quality shot captioned 'las vegas strip'.
+    The Vegas shot ranks below target_size and would be dropped without a
+    reservation."""
+    media: list[MediaRecord] = []
+    stage2: list[Stage2AssetOutputs] = []
+    stage3: list[Stage3AssetOutputs] = []
+    specs = [(f"good{i:02d}", 0.95, f"a sharp landscape {i}", f"loc-{i}") for i in range(12)]
+    specs.append(("vegas", 0.20, "the las vegas strip at night", "vegas"))
+    for i, (ch, q, cap, loc) in enumerate(specs):
+        phash = _spread_phash(i)
+        media.append(MediaRecord(content_hash=ch, source_path=f"/tmp/{ch}.jpg", media_type="photo",
+                                 file_size=1, quick_stats={"phash": phash, "dhash": phash}))
+        stage2.append(Stage2AssetOutputs(content_hash=ch, caption=cap, quality_score=q,
+                                        narrative_relevance_score=0.5, embedding_dim=8))
+        stage3.append(Stage3AssetOutputs(content_hash=ch,
+                     metadata=RichMetadataPhoto(time_of_day="midday", location={"description": loc})))
+    return media, stage2, stage3
+
+
+def test_named_destination_survives_low_quality(monkeypatch) -> None:
+    media, stage2, stage3 = _vegas_scenario()
+    intent = BriefIntent(named_destinations=[NamedDestination(name="Las Vegas", aliases=["vegas"])])
+    cs = prefilter(media=media, stage2=stage2, stage3=stage3, target_duration_seconds=10,
+                   overrides=PreFilterOverrides(target_size=8), brief_intent=intent)
+    assert "vegas" in {it.content_hash for it in cs.items}  # reserved past the quality floor
+    assert cs.cluster_metadata["must_keep_satisfied"] >= 1
+    # The judge is told which candidate covers the destination.
+    vegas_ref = next(it for it in cs.items if it.content_hash == "vegas")
+    assert "dest:Las Vegas" in (vegas_ref.metadata_summary or "")
+    # Coverage plan records the match for diagnostics.
+    assert cs.coverage_plan is not None
+    assert cs.coverage_plan.named_destinations[0].basis == "matched"
+
+
+def test_refinement_reservation_reuses_the_same_mechanism() -> None:
+    """The refinement layer passes a ReservationSet directly (no brief) — same
+    force-keep, proving the shared lever."""
+    media, stage2, stage3 = _vegas_scenario()
+    res = ReservationSet(keys=frozenset({"vegas"}), reason_by_key={"vegas": "refine:keep vegas"},
+                         source="refinement")
+    cs = prefilter(media=media, stage2=stage2, stage3=stage3, target_duration_seconds=10,
+                   overrides=PreFilterOverrides(target_size=8), reservations=res)
+    assert "vegas" in {it.content_hash for it in cs.items}
+
+
+def test_reservation_none_is_unchanged() -> None:
+    """Regression guard: no brief_intent / reservations → the low-quality Vegas
+    shot is dropped exactly as before."""
+    media, stage2, stage3 = _vegas_scenario()
+    cs = prefilter(media=media, stage2=stage2, stage3=stage3, target_duration_seconds=10,
+                   overrides=PreFilterOverrides(target_size=8, quality_threshold=0.4))
+    assert "vegas" not in {it.content_hash for it in cs.items}  # quality floor drops it
+
 
 # ---- Envelope math ----------------------------------------------------
 

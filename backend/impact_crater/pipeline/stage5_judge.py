@@ -32,16 +32,28 @@ async def judge_narrative_arc(
     mode: Literal["standard", "music_video"] = "standard",
     music_spec: MusicSpec | None = None,
     music_analysis: MusicAnalysis | None = None,
+    coverage_plan: Any = None,
+    chronological: bool = False,
 ) -> ArcJudgment:
     """Run the Stage 5 judgment over `candidate_set`.
 
     `music_analysis` (M4 music-video mode) is forwarded to the prompt
     template via `extra_prompt_vars` so the Opus call sees the section
     structure + beats and can populate `ArcJudgment.section_mapping`.
+
+    `coverage_plan` (S-2.10.5) names the brief's destinations so the prompt's
+    HARD-coverage block asks the judge to represent each; `chronological` gates
+    the strict-forward-after-opener guidance. Both flow into the judge cache key
+    via extra_prompt_vars, so a coverage change correctly re-runs the judge.
     """
-    extra: dict[str, Any] | None = None
+    extra: dict[str, Any] = {}
     if music_analysis is not None:
-        extra = {"music_analysis": music_analysis}
+        extra["music_analysis"] = music_analysis
+    if coverage_plan is not None and getattr(coverage_plan, "named_destinations", None):
+        extra["named_destinations"] = coverage_plan.to_prompt_vars()
+    if chronological:
+        extra["chronological"] = True
+    extra_arg = extra or None
 
     log.info(
         "stage5_judge_start mode=%s candidate_count=%d target_duration_s=%d "
@@ -59,7 +71,7 @@ async def judge_narrative_arc(
             target_duration=target_duration_seconds,
             mode=mode,
             music_spec=music_spec,
-            extra_prompt_vars=extra,
+            extra_prompt_vars=extra_arg,
         )
     except Exception as exc:
         log.error(

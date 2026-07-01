@@ -34,6 +34,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from impact_crater.llm_clients.base import CandidateRef
+from impact_crater.pipeline.brief_intent import BriefIntent
+from impact_crater.pipeline.destinations import CoveragePlan, ReservationSet, map_destinations
 from impact_crater.pipeline.stage1_ingest import MediaRecord
 from impact_crater.pipeline.types import Stage2AssetOutputs, Stage3AssetOutputs
 
@@ -54,6 +56,9 @@ class CandidateSet:
     # S-2.11.4: dense same-backdrop bursts (each = ordered member asset.keys) that
     # Stage 6 can collapse into one rapid burst-montage clip. Empty when none.
     montage_groups: list[list[str]] = field(default_factory=list)
+    # S-2.10.5: named-destination coverage — which brief-named places were matched/
+    # reserved/absent. The judge reads it (extra_prompt_vars); diagnostics renders it.
+    coverage_plan: CoveragePlan | None = None
 
 
 @dataclass
@@ -129,12 +134,19 @@ def prefilter(
     target_duration_seconds: int,
     overrides: PreFilterOverrides | None = None,
     cast: Any = None,
+    brief_intent: BriefIntent | None = None,
+    reservations: ReservationSet | None = None,
 ) -> CandidateSet:
     """Run the deterministic Stage 4 pre-filter.
 
     `cast` (optional A-018 CastInventory): when present, each asset's
     metadata summary is annotated with the group members visible in it so
     the Stage 5 judge can curate cast-aware ("don't leave anyone out").
+
+    `brief_intent` (S-2.10.5): named destinations from the brief get a coverage
+    reservation so a sparse/low-impact place (e.g. Las Vegas) is never fully
+    dropped before the judge sees it. `reservations` is the same mechanism passed
+    directly by the refinement layer's force-include tools (source-agnostic).
     """
     overrides = overrides or PreFilterOverrides()
     weights = (
@@ -173,6 +185,21 @@ def prefilter(
     floor, ceiling = compute_envelope(input_count, target_duration_seconds)
     target_size = _resolve_target_size(input_count, floor, ceiling, overrides.target_size)
 
+    # S-2.10.5 — destination reservation. Build the must-keep key set from the
+    # brief's named destinations (coverage) merged with any direct reservations
+    # (refinement/feedback), capped so it can't crowd out the ranked selection.
+    coverage_plan: CoveragePlan | None = None
+    effective_res = reservations
+    if brief_intent is not None and brief_intent.named_destinations:
+        coverage_plan, dest_res = map_destinations(
+            assets, brief_intent.named_destinations, per_dest=2
+        )
+        effective_res = dest_res.merged_with(reservations)
+    assets_by_key = {a.key: a for a in assets}
+    must_keep = _cap_reservations(effective_res, assets_by_key, target_size)
+    if must_keep and effective_res is not None:
+        _annotate_destinations(assets, effective_res, must_keep)
+
     filter_log: list[dict[str, Any]] = []
 
     # Step 0 — safety floor (A-022). Drop explicit frames before anything
@@ -184,9 +211,10 @@ def prefilter(
     # flash in the output; make it ineligible before it can win a slot.
     after_safety = _apply_min_video_floor(after_safety, _DEFAULT_MIN_VIDEO_MS, filter_log)
 
-    # Step 1 — quality floor (with S-2.10.2 specialness rescue).
+    # Step 1 — quality floor (with S-2.10.2 specialness rescue; S-2.10.5 keeps
+    # reserved destination coverage past the floor).
     after_quality = _apply_quality_floor(
-        after_safety, quality_threshold, rescue_threshold, filter_log
+        after_safety, quality_threshold, rescue_threshold, filter_log, exempt=must_keep
     )
 
     # Step 2 — dedup clusters via pHash (near-identical pixels).
@@ -203,7 +231,8 @@ def prefilter(
     # Step 3 — location/time clusters.
     location_clusters = _location_clusters(after_semantic)
     after_location = _cap_location_clusters(
-        after_semantic, location_clusters, _DEFAULT_LOCATION_CLUSTER_CAP, weights, filter_log
+        after_semantic, location_clusters, _DEFAULT_LOCATION_CLUSTER_CAP, weights, filter_log,
+        exempt=must_keep,
     )
 
     # Step 3a — detect dense same-backdrop bursts (S-2.11.4) BEFORE the
@@ -225,7 +254,7 @@ def prefilter(
     # Montage members are EXEMPT (the montage represents the whole dense burst).
     after_location = _cap_gps_viewpoints(
         after_location, _DEFAULT_VIEWPOINT_CANDIDATE_CAP, weights, filter_log,
-        exempt_keys=montage_member_keys,
+        exempt_keys=montage_member_keys | set(must_keep),
     )
 
     # Step 4 — rank by combined score; assign placeholder diversity score
@@ -236,9 +265,25 @@ def prefilter(
         key=lambda a: (-_combined_score(a, weights, cluster_size_by_asset.get(a.key, 1)), a.key),
     )
 
-    # Step 5 — take top `target_size` (already clamped to [floor, ceiling]).
-    chosen = ranked[:target_size]
-    for asset in ranked[target_size:]:
+    # Step 5 — reserve seats for must-keeps, then fill the rest by rank (S-2.10.5).
+    # Reserved destinations that survived to the ranking come first; any reserved
+    # asset dropped upstream despite the exemptions (e.g. by semantic dedup) is
+    # force-appended from the originals so a sparse named place ALWAYS reaches the
+    # judge (the structural Vegas fix).
+    reserved = [a for a in ranked if a.key in must_keep]
+    reserved_keys = {a.key for a in reserved}
+    for k in must_keep:
+        if k not in reserved_keys and k in assets_by_key:
+            forced = assets_by_key[k]
+            reserved.append(forced)
+            reserved_keys.add(k)
+            filter_log.append(
+                {"key": k, "decision": "keep", "reason": "must_keep_forced", **_scores(forced)}
+            )
+    remainder = [a for a in ranked if a.key not in reserved_keys]
+    fill_n = max(target_size - len(reserved), 0)
+    chosen = reserved + remainder[:fill_n]
+    for asset in remainder[fill_n:]:
         filter_log.append(
             {
                 "key": asset.key,
@@ -259,11 +304,14 @@ def prefilter(
     montage_groups = [[k for k in g if k in chosen_keys] for g in montage_groups]
     montage_groups = [g for g in montage_groups if len(g) >= _min_m]
 
+    chosen_key_set = {a.key for a in chosen}
     cluster_metadata = {
         "dedup_cluster_count": len(dedup_clusters),
         "location_cluster_count": len(location_clusters),
         "input_count": input_count,
         "montage_group_count": len(montage_groups),
+        "must_keep_satisfied": sum(1 for k in must_keep if k in chosen_key_set),
+        "must_keep_total": len(must_keep),
     }
 
     if not after_quality:
@@ -313,6 +361,7 @@ def prefilter(
         floor=floor,
         ceiling=ceiling,
         montage_groups=montage_groups,
+        coverage_plan=coverage_plan,
     )
 
 
@@ -456,6 +505,42 @@ def _join_assets(
             for scene in rec.scenes:
                 out.append(_make_asset(rec, scene.index, s2_by_key, s3_by_key, scene=scene))
     return out
+
+
+def _cap_reservations(
+    reservations: ReservationSet | None,
+    assets_by_key: dict[str, _Asset],
+    target_size: int,
+) -> frozenset[str]:
+    """Keep only reservations that name a real asset, capped at ~25% of the
+    target so coverage guarantees never crowd out the ranked selection."""
+    if reservations is None or not reservations.keys:
+        return frozenset()
+    valid = [k for k in reservations.keys if k in assets_by_key]
+    cap = max(1, target_size // 4)
+    if len(valid) > cap:
+        # Prefer the higher-ranking reserved assets when over the cap.
+        valid.sort(key=lambda k: (-_rank_of(assets_by_key[k]), k))
+        log.info("stage4_reservation_capped from=%d to=%d target=%d", len(valid), cap, target_size)
+        valid = valid[:cap]
+    return frozenset(valid)
+
+
+def _rank_of(a: _Asset) -> float:
+    return max(a.specialness_score, a.quality_score)
+
+
+def _annotate_destinations(
+    assets: list[_Asset], reservations: ReservationSet, must_keep: frozenset[str]
+) -> None:
+    """Tag each reserved asset's metadata summary with its destination so the
+    judge sees which candidates satisfy a named-destination coverage requirement."""
+    for a in assets:
+        if a.key not in must_keep:
+            continue
+        reason = reservations.reason_by_key.get(a.key, "reserved")
+        tag = reason if reason.startswith("dest:") else f"reserved={reason}"
+        a.metadata_summary = f"{a.metadata_summary} | {tag}" if a.metadata_summary else tag
 
 
 def _make_asset(
@@ -607,14 +692,22 @@ def _apply_quality_floor(
     threshold: float,
     rescue_threshold: float,
     filter_log: list[dict[str, Any]],
+    exempt: frozenset[str] = frozenset(),
 ) -> list[_Asset]:
     """Drop low-quality assets — but rescue a genuinely memorable one (S-2.10.2):
     a soft shot with high Stage-3 specialness (a once-in-a-trip moment) is worth
-    keeping over a sharp-but-bland frame the floor would otherwise let through."""
+    keeping over a sharp-but-bland frame the floor would otherwise let through.
+    A reserved must-keep (S-2.10.5 destination coverage) also survives the floor."""
     out = []
     for a in assets:
         if a.quality_score >= threshold:
             out.append(a)
+        elif a.key in exempt:
+            out.append(a)
+            filter_log.append(
+                {"key": a.key, "decision": "keep", "reason": "must_keep_destination_coverage",
+                 **_scores(a)}
+            )
         elif a.specialness_score >= rescue_threshold:
             out.append(a)
             filter_log.append(
@@ -813,6 +906,7 @@ def _cap_location_clusters(
     cap: int,
     weights: tuple[float, float, float, float],
     filter_log: list[dict[str, Any]],
+    exempt: frozenset[str] = frozenset(),
 ) -> list[_Asset]:
     keep: set[str] = set()
     for bucket, members in clusters.items():
@@ -825,6 +919,9 @@ def _cap_location_clusters(
         for a in sorted_members[:cap]:
             keep.add(a.key)
         for a in sorted_members[cap:]:
+            if a.key in exempt:  # S-2.10.5 reserved destination coverage
+                keep.add(a.key)
+                continue
             filter_log.append(
                 {
                     "key": a.key,
