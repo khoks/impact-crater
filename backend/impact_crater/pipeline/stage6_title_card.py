@@ -22,11 +22,13 @@ from typing import Any
 from PIL import Image, ImageDraw, ImageFont
 
 from impact_crater.media import cast as cast_mod
-from impact_crater.pipeline.stage6_plan import RenderClip
+from impact_crater.pipeline.stage6_plan import RenderClip, TitleCardSpec
 
 log = logging.getLogger(__name__)
 
 _W, _H = 1920, 1080
+
+
 _TITLE_MS = 3000
 _MAX_FACES = 4
 _FACE_PX = 200
@@ -42,35 +44,48 @@ async def build_title_clip(
     media: list[Any],
     cast: Any,
     brief: str,
-    title_text: str | None,
+    spec: TitleCardSpec,
     snapshot_dir: Path,
+    background_path: str | None = None,
 ) -> RenderClip | None:
-    """Build a `title_card` RenderClip, or None if no card could be made."""
+    """Build a `title_card` RenderClip from a `TitleCardSpec`, or None.
+
+    `background_path` (S-2.12.4): when given, reuse that raw AI background instead
+    of generating a new one — so a refinement that only changes the text or
+    placement doesn't pay for a fresh image. The raw background is always
+    persisted to `title_card_bg.png` so the next refine can reuse it.
+    """
     try:
         media_by_hash = {m.content_hash: m for m in media}
         year = _derive_year(media)
-        title = (title_text or "").strip() or await _title_from_brief(router, brief, year) or "Our Trip"
-        spirit = _spirit_prompt(brief, year)
+        title = (spec.title_text or "").strip() or await _title_from_brief(router, brief, year) or "Our Trip"
 
-        bg = None
-        try:
-            raw = await router.generate_title_background(spirit_prompt=spirit)
-            bg = Image.open(io.BytesIO(raw)).convert("RGB")
-        except Exception as exc:
-            log.warning("title_card_image_gen_failed (fallback to photo): %r", str(exc)[:200])
+        bg = _open_path(background_path) if background_path else None
+        if bg is None:
+            spirit = spec.spirit_prompt or _spirit_prompt(brief, year, style=spec.style)
+            try:
+                raw = await router.generate_title_background(spirit_prompt=spirit)
+                bg = Image.open(io.BytesIO(raw)).convert("RGB")
+            except Exception as exc:
+                log.warning("title_card_image_gen_failed (fallback to photo): %r", str(exc)[:200])
         if bg is None:
             bg = _fallback_background(plan, media_by_hash)
         if bg is None:
             log.warning("title_card_no_background; skipping card")
             return None
 
+        out_dir = Path(snapshot_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        # Persist the raw background so a later text/placement refine can reuse it.
+        _cover(bg, _W, _H).save(out_dir / "title_card_bg.png", format="PNG")
+
         canvas = _cover(bg, _W, _H)
         _add_scrim(canvas)
-        _paste_faces(canvas, _collect_faces(cast, media_by_hash))
-        _draw_title(canvas, title, year)
+        if spec.show_faces:
+            _paste_faces(canvas, _collect_faces(cast, media_by_hash))
+        _draw_title(canvas, title, year if spec.show_year else "", spec)
 
-        out = Path(snapshot_dir) / "title_card.png"
-        out.parent.mkdir(parents=True, exist_ok=True)
+        out = out_dir / "title_card.png"
         canvas.save(out, format="PNG")
         return RenderClip(
             candidate_ref="__title__",
@@ -135,9 +150,13 @@ def _derive_title(brief: str) -> str | None:
     return " ".join(words[:5]).strip(" .,").title() or None
 
 
-def _spirit_prompt(brief: str, year: str) -> str:
+def _spirit_prompt(brief: str, year: str, *, style: str | None = None) -> str:
     base = (brief or "a travel highlight video").strip()[:240]
-    return f"{base}{(' (' + year + ')') if year else ''}"
+    parts = [base]
+    if style:
+        parts.append(f"visual style: {style.strip()[:120]}")
+    body = "; ".join(parts)
+    return f"{body}{(' (' + year + ')') if year else ''}"
 
 
 # ---- Background --------------------------------------------------------
@@ -244,14 +263,43 @@ def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
         return ImageFont.load_default()
 
 
-def _draw_title(canvas: Image.Image, title: str, year: str) -> None:
+_NAMED_COLORS = {
+    "white": (255, 255, 255), "black": (0, 0, 0), "gold": (255, 215, 0),
+    "cream": (250, 240, 220), "red": (220, 60, 60), "blue": (70, 130, 220),
+    "green": (70, 190, 120), "amber": (255, 190, 90),
+}
+
+
+def _parse_color(name: str) -> tuple[int, int, int]:
+    c = (name or "white").strip().lower()
+    if c.startswith("#") and len(c) == 7:
+        try:
+            return (int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16))
+        except ValueError:
+            pass
+    return _NAMED_COLORS.get(c, (255, 255, 255))
+
+
+def _placement_cy(position: str) -> int:
+    return {
+        "top": int(_H * 0.08),
+        "upper-third": int(_H * 0.22),
+        "center": _H // 2 - 60,
+        "lower-third": _H - _FACE_PX - 150 - 120,  # default: above the face row
+        "bottom": int(_H * 0.80),
+    }.get(position, _H - _FACE_PX - 150 - 120)
+
+
+def _draw_title(canvas: Image.Image, title: str, year: str, spec: TitleCardSpec) -> None:
     d = ImageDraw.Draw(canvas)
-    title_font = _fit_font(d, title, 96, _SAFE_W)
-    year_font = _font(44)
-    cy = _H - _FACE_PX - 150 - 120  # above the face row
-    _centered(d, title, title_font, cy, fill=(255, 255, 255))
+    scale = max(0.5, min(2.0, spec.text_size_scale))
+    title_font = _fit_font(d, title, int(96 * scale), _SAFE_W)
+    year_font = _font(int(44 * scale))
+    color = _parse_color(spec.text_color)
+    cy = _placement_cy(spec.title_position)
+    _centered(d, title, title_font, cy, fill=color)
     if year:
-        _centered(d, year, year_font, cy + 110, fill=(230, 230, 230))
+        _centered(d, year, year_font, cy + int(110 * scale), fill=color)
 
 
 def _fit_font(

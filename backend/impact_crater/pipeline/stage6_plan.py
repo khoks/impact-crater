@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -115,6 +115,29 @@ class StandardMusicSpec(BaseModel):
     section_to_media_nl: str | None = None
 
 
+TitlePosition = Literal["center", "lower-third", "upper-third", "top", "bottom"]
+
+
+class TitleCardSpec(BaseModel):
+    """The editable configuration of the opt-in title card (S-2.12.4).
+
+    Persisted on the RenderPlan so refinement can reload + patch it — the user
+    can refine the title's text, the background image's style, where the title
+    sits, and its appearance, all in plain language.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+    enabled: bool = False
+    title_text: str | None = None          # explicit title; None → derived from brief
+    style: str | None = None               # image style hint ("painterly sunset", "vintage film")
+    spirit_prompt: str | None = None       # full override of the AI image prompt (advanced)
+    title_position: TitlePosition = "lower-third"
+    text_color: str = "white"              # name ("white"/"black"/"gold"/…) or "#RRGGBB"
+    text_size_scale: float = 1.0           # multiplies the fitted title size
+    show_year: bool = True
+    show_faces: bool = True
+
+
 class RenderPlan(BaseModel):
     """The final compiled plan that Stage 7 executes against."""
 
@@ -140,9 +163,12 @@ class RenderPlan(BaseModel):
     # The brief this plan was built from — persisted so Stage 9 refinement can
     # reload it (and append to it) without a side channel.
     brief: str = ""
+    # S-2.12.4: the opt-in title card's editable spec (None when no title card),
+    # so refinement can re-inject + edit it.
+    title_card_spec: TitleCardSpec | None = None
     arc_reasoning: str = ""
     arc_confidence: float = 0.0
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 # ---- Public API --------------------------------------------------------

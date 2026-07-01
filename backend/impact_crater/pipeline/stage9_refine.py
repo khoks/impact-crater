@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -38,12 +39,13 @@ from impact_crater.pipeline import (
     stage4_prefilter,
     stage5_judge,
     stage6_plan,
+    stage6_title_card,
     stage7_render,
 )
 from impact_crater.pipeline.brief_intent import BriefIntent, NamedDestination, parse_brief
 from impact_crater.pipeline.destinations import ReservationSet
 from impact_crater.pipeline.plan_directive import PlanDirective, merge_directive
-from impact_crater.pipeline.stage6_plan import RenderPlan
+from impact_crater.pipeline.stage6_plan import RenderClip, RenderPlan, TitleCardSpec
 from impact_crater.workers import WorkerPool
 
 log = logging.getLogger(__name__)
@@ -64,6 +66,9 @@ class RefinementOutcome(BaseModel):
     reserve_refs: list[str] = Field(default_factory=list)
     # Content lever — a steer appended to the brief for a re-judge.
     brief_addendum: str | None = None
+    # Title-card lever (S-2.12.4) — a partial TitleCardSpec: text / style (image) /
+    # title_position / text_color / text_size_scale / show_year / show_faces.
+    title_card_patch: dict[str, Any] | None = None
     # When the request can't be honoured with the current media.
     explanation: str | None = None
 
@@ -72,12 +77,14 @@ class RefinementOutcome(BaseModel):
         return bool(self.reserve_destinations or self.reserve_refs or self.brief_addendum)
 
     @property
-    def is_pure_pacing(self) -> bool:
-        return self.directive_patch is not None and not self.needs_rejudge
+    def is_light(self) -> bool:
+        """A cheap edit that re-runs Stage 6 only (pacing and/or title-card), no
+        re-judge."""
+        return (self.directive_patch is not None or bool(self.title_card_patch)) and not self.needs_rejudge
 
     @property
     def is_actionable(self) -> bool:
-        return self.directive_patch is not None or self.needs_rejudge
+        return self.directive_patch is not None or bool(self.title_card_patch) or self.needs_rejudge
 
 
 class RefinementResult(BaseModel):
@@ -133,6 +140,18 @@ _REFINE_SCHEMA = {
         "reserve_destinations": {"type": "array", "items": {"type": "string"}},
         "reserve_refs": {"type": "array", "items": {"type": "string"}},
         "brief_addendum": {"type": ["string", "null"]},
+        "title_card_patch": {
+            "type": ["object", "null"],
+            "properties": {
+                "title_text": {"type": ["string", "null"]},
+                "style": {"type": ["string", "null"]},
+                "title_position": {"enum": ["center", "lower-third", "upper-third", "top", "bottom"]},
+                "text_color": {"type": "string"},
+                "text_size_scale": {"type": "number"},
+                "show_year": {"type": "boolean"},
+                "show_faces": {"type": "boolean"},
+            },
+        },
         "explanation": {"type": ["string", "null"]},
     },
 }
@@ -168,14 +187,18 @@ def _outcome_from_raw(raw: dict[str, Any]) -> RefinementOutcome:
     if isinstance(patch, dict) and any(patch.get(k) for k in ("positional_rules", "tempo", "bands")):
         try:
             directive_patch = PlanDirective.model_validate({**patch, "provenance": "refine"})
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.warning("refine directive_patch invalid (ignored): %r", str(exc)[:200])
+    tc_patch = raw.get("title_card_patch")
+    if not isinstance(tc_patch, dict) or not tc_patch:
+        tc_patch = None
     return RefinementOutcome(
         interpretation=str(raw.get("interpretation") or ""),
         directive_patch=directive_patch,
         reserve_destinations=[str(x) for x in (raw.get("reserve_destinations") or [])],
         reserve_refs=[str(x) for x in (raw.get("reserve_refs") or [])],
         brief_addendum=raw.get("brief_addendum") or None,
+        title_card_patch=tc_patch,
         explanation=raw.get("explanation") or None,
     )
 
@@ -228,7 +251,19 @@ You have these levers — use any combination (or none + an explanation):
    faces", "focus on the kids", "less driving footage". A short (<=200 word)
    steer appended to the brief; the narrative is re-judged.
 
-4. explanation: if the request cannot be honoured with the available media (e.g.
+4. title_card_patch (TITLE / SPLASH CARD). Use ONLY when the video has an opening
+   title card and the user wants to change IT — its wording, its background image,
+   where the title sits, or how it looks. Set only the fields they mention:
+   - title_text: the exact words ("call it 'Desert Wandering'").
+   - style: how the background IMAGE should look ("a painterly sunset", "vintage
+     film", "minimal dark", "watercolor") — this regenerates the image.
+   - title_position: one of center | lower-third | upper-third | top | bottom
+     ("put the title at the top").
+   - text_color: a colour name ("white", "gold", "black") or #RRGGBB.
+   - text_size_scale: >1 bigger, <1 smaller ("make the title bigger" → ~1.3).
+   - show_year / show_faces: false to drop the year or the people ("no year").
+
+5. explanation: if the request cannot be honoured with the available media (e.g.
    "add snow" when there is none), leave the levers empty and explain why.
 
 Prefer the NARROWEST lever(s) that satisfy the request: pure timing → only
@@ -278,10 +313,15 @@ async def execute_refinement(
     pool = WorkerPool()
     target_seconds = max(prior_plan.target_duration_ms // 1000, 1)
 
-    if outcome.is_pure_pacing:
-        # SAME clips, new timing — re-run Stage 6 only from the prior arc.
+    if outcome.is_light:
+        # SAME clips, new timing / title only — re-run Stage 6 from the prior arc,
+        # no re-judge (pacing edits and/or title-card edits).
         arc = _arc_from_plan(prior_plan)
-        merged = merge_directive(prior_plan.directive, outcome.directive_patch)  # type: ignore[arg-type]
+        merged = (
+            merge_directive(prior_plan.directive, outcome.directive_patch)
+            if outcome.directive_patch is not None
+            else prior_plan.directive
+        )
         montage_groups = _montage_groups_from_plan(prior_plan)
         new_plan = await stage6_plan.compile_plan(
             arc_judgment=arc,
@@ -326,8 +366,90 @@ async def execute_refinement(
             directive=merged, brief=brief, parent_snapshot_id=prior_plan.snapshot_id,
         )
 
+    # Re-inject the title card (S-2.12.4): refinement re-plans from the arc, which
+    # drops the post-plan title card — preserve it, or rebuild it if the user
+    # asked to change it.
+    new_plan = await _reinject_title_card(router, project_id, prior_plan, new_plan, media, outcome, brief)
+
     await stage7_render.render_plan(new_plan, correlation_id=f"refine-{new_plan.snapshot_id}", pool=pool)
     return RefinementResult(outcome=outcome, new_snapshot_id=new_plan.snapshot_id, rendered=True)
+
+
+async def _reinject_title_card(
+    router: LLMRouter, project_id: str, prior_plan: RenderPlan, new_plan: RenderPlan,
+    media: list[Any], outcome: RefinementOutcome, brief: str,
+) -> RenderPlan:
+    """Preserve (or rebuild, if patched) the opt-in title card as clip 0 of the
+    refined plan. Fail-soft: on any error the plan is returned unchanged."""
+    prior_had = (prior_plan.title_card_spec is not None and prior_plan.title_card_spec.enabled) or (
+        bool(prior_plan.clips) and prior_plan.clips[0].kind == "title_card"
+    )
+    if not prior_had:
+        return new_plan
+    base_spec = prior_plan.title_card_spec or TitleCardSpec(enabled=True)
+    patch = outcome.title_card_patch
+    child_dir = stage6_plan.snapshot_dir(new_plan.project_id, new_plan.snapshot_id)
+    parent_dir = stage6_plan.snapshot_dir(prior_plan.project_id, prior_plan.snapshot_id)
+    try:
+        if patch:
+            spec = _apply_title_patch(base_spec, patch)
+            reuse_bg = None if _title_patch_touches_image(patch) else str(parent_dir / "title_card_bg.png")
+            if reuse_bg is not None and not Path(reuse_bg).is_file():
+                reuse_bg = None
+            title_clip = await stage6_title_card.build_title_clip(
+                router=router, plan=new_plan, media=media, cast=_load_cast(project_id),
+                brief=brief, spec=spec, snapshot_dir=child_dir, background_path=reuse_bg,
+            )
+            if title_clip is None:
+                return new_plan
+        else:
+            # No title change — preserve the parent's rendered card.
+            spec = base_spec
+            parent_png = parent_dir / "title_card.png"
+            prior_clip = prior_plan.clips[0] if prior_plan.clips and prior_plan.clips[0].kind == "title_card" else None
+            src = str(parent_png) if parent_png.is_file() else (prior_clip.source_path if prior_clip else None)
+            if not src or not Path(src).is_file():
+                return new_plan
+            title_clip = RenderClip(
+                candidate_ref="__title__", kind="title_card", source_path=src,
+                intended_duration_ms=prior_clip.intended_duration_ms if prior_clip else 3000,
+                aspect_ratio_action="as_is", role="title", notes="title card (preserved on refine)",
+            )
+    except Exception as exc:
+        log.warning("title_card_reinject_failed (proceeding without): %r", str(exc)[:200])
+        return new_plan
+    new_plan = new_plan.model_copy(update={"clips": [title_clip, *new_plan.clips], "title_card_spec": spec})
+    (child_dir / "plan.json").write_text(new_plan.model_dump_json(indent=2), encoding="utf-8")
+    return new_plan
+
+
+def _apply_title_patch(base: TitleCardSpec, patch: dict[str, Any]) -> TitleCardSpec:
+    out = base.model_copy(deep=True)
+    for k, v in patch.items():
+        if k in TitleCardSpec.model_fields and v is not None:
+            setattr(out, k, v)
+    return out
+
+
+def _title_patch_touches_image(patch: dict[str, Any]) -> bool:
+    return any(patch.get(k) for k in ("style", "spirit_prompt"))
+
+
+def _load_cast(project_id: str) -> Any:
+    """Reconstruct the CastInventory from the persisted cast.json (for face
+    thumbnails when rebuilding the title card). None if absent."""
+    from impact_crater import paths
+    from impact_crater.media.cast import CastInventory, Person
+
+    p = paths.projects_dir() / project_id / "cast.json"
+    if not p.is_file():
+        return None
+    try:
+        d = json.loads(p.read_text(encoding="utf-8"))
+        persons = [Person(**pp) for pp in d.get("persons", [])]
+        return CastInventory(persons=persons, group_persons_by_hash=d.get("group_persons_by_hash", {}))
+    except Exception:
+        return None
 
 
 # ---- Reservation + context helpers -------------------------------------
@@ -338,7 +460,7 @@ def _reservations_from_outcome(outcome: RefinementOutcome) -> ReservationSet | N
     brief_intent so they resolve to real candidate keys)."""
     if not outcome.reserve_refs:
         return None
-    reasons = {r: "refine:forced" for r in outcome.reserve_refs}
+    reasons = dict.fromkeys(outcome.reserve_refs, "refine:forced")
     return ReservationSet(keys=frozenset(outcome.reserve_refs), reason_by_key=reasons, source="refinement")
 
 
@@ -392,7 +514,7 @@ async def _summarize_destinations(router: LLMRouter, brief: str, media: list[Any
         return ""
     try:
         intent = await parse_brief(router, brief, media_count=len(media))
-    except Exception:  # noqa: BLE001
+    except Exception:
         return ""
     if not intent.named_destinations:
         return ""
