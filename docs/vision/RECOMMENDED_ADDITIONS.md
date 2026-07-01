@@ -453,3 +453,11 @@ Internally, the AI plans the package per N-013 — a planning layer ABOVE the ex
 - **Why it matters:** Multi-hour jobs + restarts are common; losing the job view — and nearly losing access to give feedback — is a real UX hit, and in-memory-only is a robustness/scaling ceiling.
 - **Status:** proposed.
 - **Linked items:** S-2.9.16, S-2.9.19.
+
+### A-026 — Feed explicit top-locations into the splash-card title prompt (2026-06-30)
+
+- **Source:** session 2026-06-30, from Claude (follow-on while building S-2.11.7).
+- **Idea:** The `generate_title_text` op (S-2.11.7) currently reads only the brief + year, relying on the brief to name the trip's places. Once named-destination parsing / GPS reverse-geocoding exists (S-2.10.5 / S-2.10.8), pass the actual top-visited locations (by shot count) into the title prompt so the auto-title reflects where the trip really centred — even when the brief is vague or omits place names.
+- **Why it matters:** Makes auto-titles accurate for briefs that don't enumerate destinations, and grounds them in the real media distribution rather than the user's phrasing.
+- **Status:** proposed.
+- **Linked items:** S-2.11.7, S-2.10.5, S-2.10.8, D-055.
