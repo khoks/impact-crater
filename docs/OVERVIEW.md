@@ -214,10 +214,16 @@ flowchart TD
     **Approve** (which then uploads to your connected platform after one final
     confirmation of the visibility setting) or **Refine**.
 
-11. **Refine.** Tell it what to change in plain language ("punchier opener,"
-    "more landscape, fewer faces"). It decides the smartest way to honor that —
-    re-judge the story, re-analyze specific shots, or explain why a request
-    isn't possible with the current media — and produces a new version. Re-runs
+11. **Refine.** Tell it what to change in plain language — anything, not from a
+    fixed menu: "insert more photos of Las Vegas," "don't drop Las Vegas even if
+    those shots are lower quality," "make the clips at the beginning 50% longer and
+    shrink the photos around them," "hold photos longer as the music builds," "more
+    landscape, fewer faces." It *interprets* the request against the analysis it
+    already has (and re-examines specific media only if it needs to), then pulls the
+    right levers: **re-time** the same clips (pacing/emphasis, no re-judge — fast),
+    **guarantee coverage** of a place it under-showed, or **re-tell** the story with
+    a new emphasis — and renders a new version you can compare against the last. It
+    explains what it did, or why a request isn't possible with your media. Re-runs
     reuse cached analysis, so refinement is fast and cheap.
 
 12. **Feedback & learning.** At any point you can open per-phase diagnostics
