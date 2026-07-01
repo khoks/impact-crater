@@ -55,6 +55,17 @@ operations:
     # suffix is supposed to suppress it but doesn't reliably. Give the model
     # enough headroom to recover with the JSON even after a short preamble.
     max_tokens: 256
+  # S-2.11.7 — clean 2–5 word splash-card title from the brief + year. One
+  # cheap call per title-card job; the stage falls back to a heuristic on any
+  # failure (missing key, quota-denied, empty output). Slight temperature for
+  # a touch of flair without drifting off the brief.
+  generate_title_text:
+    provider: google
+    model: gemini-2.5-flash
+    model_version: v1
+    tier: S
+    max_tokens: 64
+    temperature: 0.5
 
   # ---- Tier-M (structured output, agentic prose) ----------------------
   extract_metadata_image:

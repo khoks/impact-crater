@@ -511,6 +511,60 @@ class LLMRouter:
         await self._record_call(route, cache_hit=False, params=params, result_bytes_hash=content_hash)
         return result
 
+    async def generate_title_text(self, *, brief: str, year: str = "") -> str:
+        """A short, human title for the splash card from the brief + year (S-2.11.7).
+
+        Cheap Tier-S text call reusing the structured-text primitive
+        (`parse_user_brief` → JSON `{title}`). Keyed on (brief, year); callers
+        fall back to a heuristic if this raises or returns empty. Returns the
+        stripped title string ("" if the model gave nothing usable)."""
+        op = "generate_title_text"
+        route = self.route_for(op)
+        client = self._client_for(route)
+        prompt = prompts.load(op, route.provider, route.model)
+        rendered = prompts.render(prompt, brief=brief, year=year)
+        params = self._params(route)
+        schema = {
+            "type": "object",
+            "required": ["title"],
+            "properties": {"title": {"type": "string"}},
+        }
+
+        content_hash = hashlib.sha256(f"{brief}\n{year}".encode()).hexdigest()
+        params_canonical = cache.canonicalize_params({})
+        cached = await cache.get(
+            content_hash=content_hash,
+            provider=route.provider,
+            model=route.model,
+            model_version=route.model_version,
+            operation=op,
+            prompt_version=prompt.prompt_version,
+            params_canonical=params_canonical,
+        )
+        if cached is not None:
+            await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
+            return str(cached)
+
+        result = await client.parse_user_brief(
+            brief, prompt_template=rendered, schema=schema, params=params
+        )
+        title = str(result.get("title", "")).strip()
+        # Only cache a usable title — an empty result should re-try next run
+        # rather than pin the heuristic fallback forever.
+        if title:
+            await cache.put(
+                title,
+                content_hash=content_hash,
+                provider=route.provider,
+                model=route.model,
+                model_version=route.model_version,
+                operation=op,
+                prompt_version=prompt.prompt_version,
+                params_canonical=params_canonical,
+            )
+        await self._record_call(route, cache_hit=False, params=params, result_bytes_hash=content_hash)
+        return title
+
     # -- Internal helpers -----------------------------------------------
 
     async def _record_call(
