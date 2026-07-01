@@ -85,6 +85,11 @@ class PreFilterOverrides:
     montage_min_members: int | None = None             # default 6
     montage_window_seconds: int | None = None          # default 1800
     montage_phash_hamming: int | None = None           # default 14
+    # S-2.10.6 capture-day stratified budget (A/B-gated). None → False (global
+    # top-K, unchanged). When True, the final selection is allocated across
+    # capture-days with a per-day floor so a long trip's later days aren't starved.
+    stratify_by_capture_day: bool | None = None        # default False
+    stratified_min_per_day: int | None = None          # default 3
 
 
 # ---- Defaults ----------------------------------------------------------
@@ -175,6 +180,10 @@ def prefilter(
         overrides.semantic_dedup_window_seconds
         if overrides.semantic_dedup_window_seconds is not None
         else _DEFAULT_SEMANTIC_DEDUP_WINDOW_S
+    )
+    stratify = bool(overrides.stratify_by_capture_day)
+    stratified_min_per_day = (
+        overrides.stratified_min_per_day if overrides.stratified_min_per_day is not None else 3
     )
 
     # Build per-asset records: one per photo, one per video scene.
@@ -282,13 +291,24 @@ def prefilter(
             )
     remainder = [a for a in ranked if a.key not in reserved_keys]
     fill_n = max(target_size - len(reserved), 0)
-    chosen = reserved + remainder[:fill_n]
-    for asset in remainder[fill_n:]:
+    if stratify:
+        # S-2.10.6: allocate the remaining budget across capture-days so later
+        # trip days aren't starved by a global top-K. Reservations were taken
+        # first (one budget owner — no second reserve here).
+        fill = _stratified_take(remainder, fill_n, stratified_min_per_day)
+    else:
+        fill = remainder[:fill_n]
+    chosen = reserved + fill
+    fill_keys = {a.key for a in fill}
+    for asset in remainder:
+        if asset.key in fill_keys:
+            continue
         filter_log.append(
             {
                 "key": asset.key,
                 "decision": "drop",
-                "reason": "rank_below_target_size",
+                "reason": "stratified_day_budget" if stratify else "rank_below_target_size",
+                "day": _day_key_iso(asset.capture_timestamp) if stratify else None,
                 **_scores(asset),
             }
         )
@@ -528,6 +548,54 @@ def _cap_reservations(
 
 def _rank_of(a: _Asset) -> float:
     return max(a.specialness_score, a.quality_score)
+
+
+def _day_key_iso(iso: str | None) -> str:
+    from datetime import datetime
+
+    if not iso:
+        return "?"
+    try:
+        return datetime.fromisoformat(iso).strftime("%Y-%m-%d")
+    except (TypeError, ValueError):
+        return iso[:10] if len(iso) >= 10 else "?"
+
+
+def _stratified_take(ranked: list[_Asset], budget: int, min_per_day: int) -> list[_Asset]:
+    """S-2.10.6: choose `budget` assets spread across capture-days.
+
+    Each non-empty day gets a floor of `min_per_day` (best-effort), the rest is
+    distributed round-robin across days with spare capacity, and the result is
+    returned in the original rank order. Returns exactly `min(budget, len)` assets
+    so the envelope contract holds."""
+    if budget <= 0 or not ranked:
+        return []
+    budget = min(budget, len(ranked))
+    buckets: dict[str, list[_Asset]] = {}
+    order: list[str] = []
+    for a in ranked:
+        d = _day_key_iso(a.capture_timestamp)
+        if d not in buckets:
+            buckets[d] = []
+            order.append(d)
+        buckets[d].append(a)
+    take = {d: 0 for d in order}
+    remaining = budget
+    for d in order:  # floor per day
+        if remaining <= 0:
+            break
+        g = min(min_per_day, len(buckets[d]), remaining)
+        take[d] = g
+        remaining -= g
+    while remaining > 0 and any(take[d] < len(buckets[d]) for d in order):  # spread the rest
+        for d in order:
+            if remaining <= 0:
+                break
+            if take[d] < len(buckets[d]):
+                take[d] += 1
+                remaining -= 1
+    chosen_keys = {a.key for d in order for a in buckets[d][: take[d]]}
+    return [a for a in ranked if a.key in chosen_keys]
 
 
 def _annotate_destinations(

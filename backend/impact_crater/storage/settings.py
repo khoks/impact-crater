@@ -25,6 +25,9 @@ KEY_GOOGLE_CAP_USD = "spend_cap_google_usd"          # plain numeric string (or 
 # default) | "insightface" (optional local upgrade for capable machines).
 KEY_CAST_ANALYSIS_ENABLED = "cast_analysis_enabled"  # "true" | "false"
 KEY_CAST_BACKEND = "cast_backend"                    # "gemini" | "insightface"
+# S-2.10.8 pluggable image embedder: "router" (default, caption-then-embed) |
+# "local_clip" (opt-in local CLIP/SigLIP; needs weights — stub until then).
+KEY_IMAGE_EMBED_BACKEND = "image_embed_backend"
 
 
 async def set_value(key: str, value: str, *, encrypted: bool = False) -> None:
