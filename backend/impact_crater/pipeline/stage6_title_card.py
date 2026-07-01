@@ -49,7 +49,7 @@ async def build_title_clip(
     try:
         media_by_hash = {m.content_hash: m for m in media}
         year = _derive_year(media)
-        title = (title_text or "").strip() or _derive_title(brief) or "Our Trip"
+        title = (title_text or "").strip() or await _title_from_brief(router, brief, year) or "Our Trip"
         spirit = _spirit_prompt(brief, year)
 
         bg = None
@@ -101,6 +101,27 @@ def _derive_year(media: list[Any]) -> str:
     if not years:
         return ""
     return str(collections.Counter(years).most_common(1)[0][0])
+
+
+async def _title_from_brief(router: Any, brief: str, year: str) -> str | None:
+    """Prefer a clean, LLM-written 2-5 word title; fall back to the heuristic.
+
+    Fail-soft: any router error (missing op, quota-denied, non-JSON) drops to
+    the deterministic heuristic so the card is never blocked."""
+    llm_title: str | None = None
+    try:
+        llm_title = await router.generate_title_text(brief=brief, year=year)
+    except Exception as exc:
+        log.warning("title_text_gen_failed (fallback to heuristic): %r", str(exc)[:200])
+    return _clean_title(llm_title) or _derive_title(brief)
+
+
+def _clean_title(title: str | None) -> str | None:
+    """Sanitize an LLM title: strip wrapping quotes + edge punctuation. None if empty."""
+    if not title:
+        return None
+    cleaned = " ".join(title.split()).strip().strip("\"'").strip(" .,;:—-")
+    return cleaned or None
 
 
 def _derive_title(brief: str) -> str | None:

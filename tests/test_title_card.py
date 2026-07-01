@@ -23,6 +23,28 @@ class _FailRouter:
         raise RuntimeError("image-gen unavailable")
 
 
+class _TitleRouter:
+    """Router with a working AI background + a stubbed generate_title_text (S-2.11.7)."""
+
+    def __init__(self, title: str) -> None:
+        self._title = title
+        self.title_calls: list[tuple[str, str]] = []
+
+    async def generate_title_background(self, *, spirit_prompt: str, aspect: str = "16:9") -> bytes:
+        buf = io.BytesIO()
+        Image.new("RGB", (1280, 720), (40, 80, 120)).save(buf, format="PNG")
+        return buf.getvalue()
+
+    async def generate_title_text(self, *, brief: str, year: str = "") -> str:
+        self.title_calls.append((brief, year))
+        return self._title
+
+
+class _RaisingTitleRouter(_TitleRouter):
+    async def generate_title_text(self, *, brief: str, year: str = "") -> str:
+        raise RuntimeError("no api key")
+
+
 class _Plan:
     clips: list = []
 
@@ -107,6 +129,59 @@ def test_long_title_is_shrunk_to_fit_frame() -> None:
     font = tc._fit_font(d, long_title, 96, tc._SAFE_W)
     width = d.textbbox((0, 0), long_title, font=font)[2]
     assert width <= tc._SAFE_W  # never runs past the safe margin
+
+
+async def test_title_from_brief_prefers_clean_llm_title() -> None:
+    router = _TitleRouter('  "Horseshoe Bend & Zion"  ')  # quoted + padded like real model output
+    brief = (
+        "A highlight video of our early-April trip through zion, bryce, "
+        "horseshow bend, grand canyon, and las vegas"
+    )
+    title = await tc._title_from_brief(router, brief, "2026")
+    assert title == "Horseshoe Bend & Zion"  # cleaned, and the user's "horseshow" typo is gone
+    assert router.title_calls == [(brief, "2026")]
+
+
+async def test_title_from_brief_falls_back_to_heuristic_on_error() -> None:
+    # A raising router (missing key / quota) must drop to the deterministic heuristic.
+    title = await tc._title_from_brief(_RaisingTitleRouter("unused"), "Our Zion trip", "2026")
+    assert title == "Zion"  # heuristic drops filler "Our"/"trip"
+
+
+async def test_title_from_brief_falls_back_when_router_lacks_op() -> None:
+    title = await tc._title_from_brief(_Plan(), "Bryce Canyon getaway", "")  # no generate_title_text
+    assert title == "Bryce Canyon Getaway"
+
+
+async def test_title_from_brief_falls_back_on_empty_llm_title() -> None:
+    title = await tc._title_from_brief(_TitleRouter("   "), "Grand Canyon sunrise", "")
+    assert title == "Grand Canyon Sunrise"
+
+
+async def test_title_card_uses_llm_title_and_skips_it_when_title_given(tmp_path: Path) -> None:
+    router = _TitleRouter("Zion & Bryce")
+    clip = await tc.build_title_clip(
+        router=router, plan=_Plan(), media=[_photo(tmp_path)], cast=None,
+        brief="A highlight video of our trip through zion and bryce",
+        title_text=None, snapshot_dir=tmp_path,
+    )
+    assert clip is not None and clip.kind == "title_card"
+    assert router.title_calls  # the LLM title op was consulted
+
+    router2 = _TitleRouter("Should Not Be Used")
+    clip2 = await tc.build_title_clip(
+        router=router2, plan=_Plan(), media=[_photo(tmp_path, "p1")], cast=None,
+        brief="whatever", title_text="My Explicit Title", snapshot_dir=tmp_path,
+    )
+    assert clip2 is not None
+    assert router2.title_calls == []  # an explicit title short-circuits the LLM call
+
+
+def test_clean_title_sanitizes_llm_output() -> None:
+    assert tc._clean_title('  "Grand Canyon Sunrise."  ') == "Grand Canyon Sunrise"
+    assert tc._clean_title("—Zion—") == "Zion"
+    assert tc._clean_title("   ") is None
+    assert tc._clean_title(None) is None
 
 
 def test_derive_year_modal() -> None:

@@ -43,6 +43,7 @@
 
 | ID | Title | Type | Done |
 |---|---|---|---|
+| **[S-2.11.7](./stories/S-2.11.7-ai-title-text-from-brief.md)** | **AI-written splash-card title from the brief — cheap Tier-S `generate_title_text` op (clean 2–5 words, typo-fixing) + heuristic fallback; P3 polish on S-2.11.5** | Story | 2026-06-30 |
 | **[E-2.11](./epics/E-2.11-snappier-edits-output-polish-observability.md)** | **Round-2 output feedback — snappier edits + montage + AI title card + richer feedback/observability (6 stories + T-2.11.1.6) [PR #67, D-054]** | Epic | 2026-06-30 |
 | **[S-2.11.5](./stories/S-2.11.5-ai-title-splash-card.md)** | **Opt-in AI title/splash card — remote image-gen bg + cast faces + title/year, fail-soft; verified live in-app [#7]** | Story | 2026-06-30 |
 | **[S-2.11.4](./stories/S-2.11.4-burst-montage-clip-type.md)** | **Burst-montage clip type — dense same-backdrop bursts → one ~0.5s-per-member sequence (Stage 4 detect → 6 collapse → 7 render) [#5]** | Story | 2026-06-30 |
