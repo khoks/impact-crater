@@ -40,10 +40,12 @@ def test_stratified_take_zero_budget() -> None:
     assert _stratified_take([_A("a", "2026-04-01T10:00:00")], 0, 3) == []
 
 
-def _photo(ch: str, day: str, q: float):
+def _photo(ch: str, day: str, q: float, idx: int):
     from tests.test_stage4_prefilter import _spread_phash
+    # Deterministic pHash spread — hash(str) is salted per process and could
+    # collide two assets within the dedup Hamming radius on some seeds.
     media = MediaRecord(content_hash=ch, source_path=f"/tmp/{ch}.jpg", media_type="photo",
-                        file_size=1, quick_stats={"phash": _spread_phash(hash(ch) % 1000), "dhash": "00"},
+                        file_size=1, quick_stats={"phash": _spread_phash(idx), "dhash": "00"},
                         capture_timestamp=f"{day}T10:00:00")
     s2 = Stage2AssetOutputs(content_hash=ch, caption=ch, quality_score=q,
                             narrative_relevance_score=0.5, embedding_dim=8)
@@ -60,7 +62,7 @@ def test_stratified_flag_gives_late_days_representation() -> None:
     for i in range(70):
         day = "2026-04-01" if i < 60 else "2026-04-05"
         q = 0.9 if i < 60 else 0.5  # day-5 survives the floor but ranks last
-        m, s2, s3 = _photo(f"h{i:02d}", day, q)
+        m, s2, s3 = _photo(f"h{i:02d}", day, q, i)
         media.append(m); stage2.append(s2); stage3.append(s3)
     base = prefilter(media=media, stage2=stage2, stage3=stage3, target_duration_seconds=10)
     strat = prefilter(media=media, stage2=stage2, stage3=stage3, target_duration_seconds=10,

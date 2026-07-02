@@ -184,6 +184,13 @@ def test_clean_title_sanitizes_llm_output() -> None:
     assert tc._clean_title(None) is None
 
 
+def test_clean_title_folds_typographic_glyphs_the_font_cannot_draw() -> None:
+    # Interior em-dash tofu'd on a real card ("Zion □ Best"); fold to ASCII.
+    assert tc._clean_title("Short Early-April Zion — Best") == "Short Early-April Zion - Best"
+    assert tc._clean_title("Zion’s “Golden” Hour…") == "Zion's \"Golden\" Hour"  # edge ellipsis stripped
+    assert tc._clean_title("Café Zürich") == "Cafe Zurich"  # accents fold, not vanish
+
+
 class _NoImageRouter:
     def __init__(self) -> None:
         self.bg_called = False
