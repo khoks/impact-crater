@@ -131,11 +131,22 @@ async def _title_from_brief(router: Any, brief: str, year: str) -> str | None:
     return _clean_title(llm_title) or _derive_title(brief)
 
 
+# The bundled PIL default font lacks typographic glyphs (— " " …) — they render
+# as tofu boxes on the card. Map them to ASCII, then NFKD-fold the rest.
+_PUNCT_MAP = str.maketrans({"—": "-", "–": "-", "‒": "-", "“": '"', "”": '"',
+                            "‘": "'", "’": "'", "…": "..."})
+
+
 def _clean_title(title: str | None) -> str | None:
-    """Sanitize an LLM title: strip wrapping quotes + edge punctuation. None if empty."""
+    """Sanitize an LLM title: normalize typographic punctuation to ASCII (the
+    default font can't draw it), strip wrapping quotes + edge punctuation."""
     if not title:
         return None
-    cleaned = " ".join(title.split()).strip().strip("\"'").strip(" .,;:—-")
+    import unicodedata
+
+    folded = unicodedata.normalize("NFKD", title.translate(_PUNCT_MAP))
+    ascii_only = folded.encode("ascii", "ignore").decode("ascii")
+    cleaned = " ".join(ascii_only.split()).strip().strip("\"'").strip(" .,;:-")
     return cleaned or None
 
 
