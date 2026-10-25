@@ -7,7 +7,7 @@ priority: P0
 phase: mvp
 tags: [mvp, story-video, youtube]
 created: 2026-05-03
-updated: 2026-05-03
+updated: 2026-10-24
 ---
 
 ## North-star outcome
@@ -95,3 +95,4 @@ All E-1.3 architecture ADRs (ADR-0005..0016) and all E-1.2/E-1.3 D-NNN entries (
 - 2026-05-04 — **E-2.2 done.** All 8 stories closed in one session. The full headless pipeline (ingest → bulk ops → rich metadata → pre-filter → narrative-arc judgment) returns a structured ArcJudgment via `POST /api/jobs/headless` in ~19s on a 4-photo real-API smoke test. 139/139 tests green. **E-2.3 (M2 render + standard mode) is now Up Next.**
 - 2026-05-04 — **E-2.3 done.** All 4 stories closed in the same session. The full M2 pipeline (Stages 1-7) returns a rendered MP4 via `POST /api/jobs/render` against real Anthropic Opus + Google Flash + ffmpeg in ~22s on a 3-photo + 4s-tone smoke test. ffmpeg 8.1 installed via winget on dev. 169/169 tests green. **E-2.4 (M3 UI MVP loop closed) is now Up Next.**
 - 2026-05-05 — **E-2.4 done.** All 5 stories closed. The full UI loop (Wizard → Dashboard → New Project → Effort+Cost → In-Progress → Preview) is wired against an async-jobs API with WebSocket progress events. Settings panel ships in the same epic. M3 also piggybacked an M1 follow-up: per-call LLMCallEvent telemetry + ProgressSink in the router, so JobCostSummary actually populates and the live-spend panel updates in real time. **218 tests green** (185 backend unit + 26 frontend unit + 7 backend integration). **E-2.5 (M4 music-video) and E-2.6 (M5 person library + privacy) are now Up Next — parallelizable.**
+- 2026-10-24 — **Restart audit** (docs/roadmap/LANDSCAPE-AND-PLAN-2026-10-24.md). After ~4 idle months: the curate→preview half of D-014 stands (1,663 assets, 60 min warm after a 2h55m cold run, ~$50 total); the publish half has never executed (audit table 0 rows; in-app OAuth never built; dry-run default). E-2.13 filed as Phase 0 (honest close-out + hygiene) and S-2.10.9 (model-lineup bump) as the first Phase 1 story. I-2 stays in-progress until S-2.13.2 records D-057 and Phase 1 lands the real publish. Children list is stale (rewritten in S-2.13.1).
