@@ -103,12 +103,13 @@ def is_dry_run_enabled() -> bool:
     """Read the env flag. Default: True (safe-by-default per v1 plan).
 
     User explicitly sets `IC_PUBLISH_DRY_RUN=0` to enable real posting.
-    Anything else (unset, 1, true, yes) keeps dry-run on.
+    Anything else (unset, empty, 1, true, yes) keeps dry-run on — an empty value
+    must never switch live posting on (D-060).
     """
     import os
 
     raw = os.environ.get("IC_PUBLISH_DRY_RUN", "1").strip().lower()
-    return raw not in ("0", "false", "no", "off", "")
+    return raw not in ("0", "false", "no", "off")
 
 
 def wrap_if_dry_run(connector: Connector) -> Connector:

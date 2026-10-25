@@ -153,7 +153,7 @@ Per ADR-0013, the audit log includes `external_url` + minimal metadata. No raw i
 
 ### Profile + feedback log privacy
 
-Per ADR-0014, the cross-project user profile sees abstracted patterns (e.g., `bias_toward_landscape_vs_people`) derived from candidate-set composition, not identities. Feedback events reference content hashes for traceability but never embed image data. The profile is read into Tier-M LLM calls (Anthropic / Google at MVP per ADR-0009 `orchestrator_reasoning`); this is acceptable because:
+Per ADR-0014, the cross-project user profile sees abstracted patterns (e.g., `bias_toward_landscape_vs_people`) derived from candidate-set composition, not identities. Feedback events reference content hashes for traceability but never embed image data. The profile is read into Tier-M LLM calls (Anthropic / Google at MVP per ADR-0009 `orchestrator_reasoning`) *(amended 2026-10-25: `orchestrator_reasoning` was deleted in S-2.13.7; the profile has no emitters and is read by no LLM call today — ADR-0021)*; this is acceptable because:
 
 - The profile contains aggregated patterns, not personally-identifiable information beyond what a curation user implicitly shares.
 - Anthropic and Google have "API data not used for training" guarantees for paid API usage.

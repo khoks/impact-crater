@@ -10,7 +10,8 @@ Pipeline:
      `letterbox`, `pad`) become specific scale/crop/pad filter chains.
   2. Concatenate segments via the concat demuxer.
   3. Two-pass loudnorm on the user's audio (target -16 LUFS / TP -1.5 dB),
-     atrim to target_duration, afade-in 1.5s / afade-out 1.5s.
+     atrim to the actual clip timeline, afade per plan.music.fade_in_ms /
+     fade_out_ms.
   4. Final mux: video + normalized audio → render.mp4 with faststart.
 
 The worker pool's `register_subprocess` is used so `cancel()` can SIGTERM

@@ -27,6 +27,7 @@ None of that was built. What shipped between M1 (2026-05-04) and E-2.12 (2026-07
 | 0.5 Brief intent | `pipeline/brief_intent.py` | Tier-M (`parse_user_brief`) | ADR-0017, cached, fail-soft |
 | 4 Pre-filter | `pipeline/stage4_prefilter.py` | deterministic | quality floor, dedup, caps, `ReservationSet` must-keeps (S-2.10.5) |
 | 5 Judge | `pipeline/stage5_judge.py` | Tier-L | `judge_narrative_arc`, one forced-tool call per job |
+| 0 Music analysis | `media/music.py` (`LibrosaMusicAnalyzer`) + `generate_cut_grid` | deterministic (librosa) | runs at the start of `run_full_pipeline` when audio is supplied; fail-soft; recomputed every job (no cache) |
 | 6 Plan | `pipeline/stage6_plan.py` | deterministic | `PlanDirective` (ADR-0019), music grid, montage |
 | 6.5 Second-guess | `pipeline/stage6_second_guess.py` | Tier-M (`parse_user_brief`) | fail-soft; applied internally, no user reconfirm |
 | 6.x Title card | `pipeline/stage6_title_card.py` | Tier-S text + optional image | opt-in |
@@ -59,7 +60,7 @@ The never-called `LLMClient.tool_call` and `stream_chat` (both providers) and th
 - **No mid-job quota check.** `quota.check_quota` runs once before Stage 1. → S-3.11.1.
 - **No continue / abandon / restart UX.** A failed job is reported as failed; the user re-submits or refines the last good snapshot.
 - **Refinement is not a job** (no progress stream, no cancel). → S-3.5.5.
-- **Cancellation** exists at the worker-pool level (`workers.py`, SIGTERM then SIGKILL for ffmpeg) and the job level (`JobRegistry.cancel`), not as a per-turn check.
+- **Cancellation** exists at the worker-pool level (`workers.py`, SIGTERM then SIGKILL for ffmpeg) and the job level (`JobRegistry.cancel_job`), not as a per-turn check.
 
 ## Alternatives considered
 
