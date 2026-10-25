@@ -58,7 +58,7 @@ For each photo and each video scene, in parallel (worker-pool concurrency per AD
 - `score_image` (quality dimension) → quality score cached as `score-quality.json`.
 - `score_image` (narrative-value dimension, brief-aware) → narrative-relevance score cached as `score-narrative-{brief_hash}.json`. **Brief-aware** because the same image scores differently against different briefs ("family vacation" vs "summit attempt").
 
-For video scenes, the same operations run on the scene's representative frames; the scene-level outputs are aggregated (e.g., scene caption = LLM-summarized aggregate of the 3 frame captions; the aggregation itself is a Tier-S call).
+For video scenes, the same operations run on the scene's representative frames; the scene-level outputs are aggregated (e.g., scene caption = LLM-summarized aggregate of the 3 frame captions; the aggregation itself is a Tier-S call). *(amended 2026-10-25: the 3-frame aggregation was never built — each scene is captioned and scored from its single middle frame; S-2.13.7)*
 
 Cache reuse (per A-011, N-007): re-running curation on the same media against the same brief gets free Stage-2 hits except for `score_image (narrative-value)` if the brief changed; brief-aware scores re-run on brief change.
 
@@ -66,7 +66,7 @@ Cache reuse (per A-011, N-007): re-running curation on the same media against th
 
 For each photo and each video scene, in parallel (rate-limited per the routing config):
 
-- `extract_metadata_image` (or `extract_metadata_video_scene`) → returns the D-009 rich schema:
+- `extract_metadata_image` (or `extract_metadata_video_scene`) → returns the D-009 rich schema: *(amended 2026-10-25: there is no `extract_metadata_video_scene`; scenes go through `extract_metadata_image` with the `RichMetadataVideoScene` schema, one middle frame per scene — S-2.13.7)*
   - `time_of_day`, `people` (count + age bands + recognition results from N-008 if library non-empty), `lat_long`, `location_description`, `mood`, `lighting`, `quality`, `foreground_activity`, `background_activity`, `objects` (S/M/L size buckets), `clothing`, `pose_quality_scores`, `generic_tags`, `task_context_tags` (brief-aware).
 - Schema-validated structured output (per ADR-0007). Schema-mismatch → retry once → raise `LLMOperationFailed`.
 - Cache: keyed by content-hash + provider + model + model_version + prompt_version + (when person-library is non-empty) `library_version_hash`.

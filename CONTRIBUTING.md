@@ -12,7 +12,7 @@ Every commit must carry a [Developer Certificate of Origin](https://developercer
 Signed-off-by: Your Name <you@example.com>
 ```
 
-The sign-off certifies that you wrote the change or have the right to submit it under the project licence. Commits without it are not merged.
+The sign-off certifies that you wrote the change or have the right to submit it under the project licence. It is required on external contributions; the maintainer's own commits and the two housekeeping skills' commits do not carry the trailer today (recorded honestly, 2026-10-25).
 
 ## The flow: branch → PR → squash
 
@@ -62,7 +62,7 @@ If you touch `project/`, run `python scripts/tracker_board.py` and then `python 
 
 ## Style, in one paragraph
 
-Comments are rare and explain *why*, never *what*. No dead code and no commented-out code. Validate at boundaries, trust internal code. No premature abstraction — three similar lines beat a generic helper. Forward-slash paths everywhere. Python is 3.12 with FastAPI; the frontend is React 18 + TypeScript + Vite + Tailwind. Architectural changes (a new dependency class, a swapped library, a changed security or storage model) need an ADR in `docs/architecture/` — short, dated, with status / context / decision / consequences.
+Comments are rare and explain *why*, never *what*. No dead code and no commented-out code. Validate at boundaries, trust internal code. No premature abstraction — three similar lines beat a generic helper. Forward-slash paths everywhere. Python 3.12 (3.11 is the declared floor) with FastAPI; the frontend is React 18 + TypeScript + Vite + Tailwind; Node 20+ (24 in use); ffmpeg + ffprobe on PATH — setup per README → Quick start (`pip install -e ".[dev]"` or the lock-file path). Architectural changes (a new dependency class, a swapped library, a changed security or storage model) need an ADR in `docs/architecture/` — short, dated, with status / context / decision / consequences.
 
 ## Dependencies and third-party assets
 

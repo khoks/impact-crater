@@ -64,7 +64,7 @@ def test_is_dry_run_enabled_default_true(monkeypatch: pytest.MonkeyPatch) -> Non
     assert is_dry_run_enabled() is True
 
 
-@pytest.mark.parametrize("val", ["0", "false", "False", "no", "off", ""])
+@pytest.mark.parametrize("val", ["0", "false", "False", "no", "off"])
 def test_is_dry_run_disabled_when_explicitly_off(
     monkeypatch: pytest.MonkeyPatch, val: str
 ) -> None:
@@ -72,7 +72,7 @@ def test_is_dry_run_disabled_when_explicitly_off(
     assert is_dry_run_enabled() is False
 
 
-@pytest.mark.parametrize("val", ["1", "true", "yes", "on", "anything-else"])
+@pytest.mark.parametrize("val", ["1", "true", "yes", "on", "anything-else", "", "  "])
 def test_is_dry_run_enabled_when_explicitly_on(
     monkeypatch: pytest.MonkeyPatch, val: str
 ) -> None:

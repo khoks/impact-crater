@@ -116,7 +116,7 @@ The table in the Decision names Sonnet 4.7 / Opus 4.7 / `text-embedding-004`; no
 | `caption_image`, `score_image`, `generate_title_text` | S | google | `gemini-2.5-flash` | `v1` | `generate_title_text` runs at temperature 0.5 |
 | `extract_metadata_image`, `parse_user_brief` | M | anthropic | `claude-sonnet-4-6` | `latest` | `extract_metadata_image` also serves video-scene frames (video-scene schema); `parse_user_brief` also carries Stage 0.5 brief intent, the Stage 6.5 second-guess and the Stage 9 refinement planner |
 | `generate_title_background` | M | google | `gemini-2.5-flash-image` | `v1` | opt-in title-card image; no rate card yet (S-2.10.9) |
-| `judge_narrative_arc` | L | anthropic | `claude-opus-4-8` | `latest` | `max_tokens` 8192; `temperature` omitted because the model rejects it |
+| `judge_narrative_arc` | L | anthropic | `claude-opus-4-8` | `latest` | `max_tokens` 8192; the Anthropic client drops `temperature` for `claude-opus-4-8` (`_TEMPERATURE_UNSUPPORTED_MODELS`) — the yaml has no explicit line but `defaults.temperature` still reaches the CallParams |
 
 Removed by S-2.13.7 (routed, never dispatched, no router method): `recommend_effort_level`, `explain_cost`, `explain_upgrade_path`, `orchestrator_reasoning` (ADR-0021), `caption_video_scene`, `extract_metadata_video_scene`. Never routed, never built: `analyze_music_duration_mismatch` (ADR-0012 amendment).
 
