@@ -252,7 +252,7 @@ What is *not* novel here: the general idea of in-context-learning for identifica
 
 ### N-009 — Agentic refinement with custom plan generation (2026-05-02)
 
-**Status:** proposed — published on master per user instruction (no patent-priority hold)
+**Status:** proposed — published on master per user instruction (no patent-priority hold). **Realised 2026-07-01** (E-2.12, D-056) as a single richly-contextualised planner call → `RefinementOutcome` over the two shared curation levers, not as a 10-turn tool loop — see ADR-0021 §2 (2026-10-25); the text below is the original disclosure.
 
 **Inventor(s):** Rahul Singh Khokhar
 

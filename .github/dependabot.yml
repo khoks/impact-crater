@@ -1,0 +1,32 @@
+# Dependabot — weekly version-update PRs for the three ecosystems in this repo.
+# PRs are reviewed and merged by the maintainer; nothing here auto-merges
+# (ADR-0004 covers Claude-generated PRs only). Dependency installs still follow
+# CLAUDE.md: no `pip install` / `npm install` in a session without approval.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies, python]
+    groups:
+      python-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies, frontend]
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    labels: [dependencies, ci]

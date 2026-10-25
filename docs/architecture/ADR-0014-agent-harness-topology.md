@@ -1,6 +1,6 @@
 # ADR-0014 — Agent harness topology + cross-project user profile
 
-**Status:** Accepted
+**Status:** Accepted — *Topology, Tool registry, Consolidated tool surface, Reasoning model, Failure-mode UX, Cancellation* and *Resume after crash* **superseded by [ADR-0021](./ADR-0021-deterministic-stage-runner.md)** on 2026-10-25 (the deterministic 9-stage runner with single-shot structured calls that shipped; no `Orchestrator` was built). The *Cross-project user profile (N-010)* section stands as design: backend and endpoints exist, emitters and UI do not (`ARCHITECTURE.md` → Amendments).
 **Deciders:** Rahul Singh Khokhar
 **Date:** 2026-05-03
 **Phase:** scaffolding

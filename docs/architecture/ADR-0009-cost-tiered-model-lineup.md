@@ -103,3 +103,21 @@ The v1 routing config gets a `local_eligible: true|false` flag per operation; th
 - Cascades to: ADR-0011 (curation engine — references the routing table), ADR-0014 (orchestrator — uses Tier-M), ADR-0015 (resource accounting — telemetry schema feeds A-015).
 - Decision-log entry: D-027 in [`docs/decisions/DECISIONS_LOG.md`](../decisions/DECISIONS_LOG.md).
 - Project task: T-1.3.1.5 in [`project/tasks/`](../../project/tasks/T-1.3.1.5-adr-0009-cost-tiered-model-lineup.md).
+
+## Amendments
+
+### 2026-10-25 — current pins; `config/llm-routing.yaml` is the source of truth (S-2.13.5)
+
+The table in the Decision names Sonnet 4.7 / Opus 4.7 / `text-embedding-004`; none of those is routed. **`config/llm-routing.yaml` is the single source of truth for which model serves which operation.** The table below is a dated snapshot of it (PR #72, 2026-07-01, S-2.10.7), verified against master `d9bb392`, so this ADR reads true; **S-2.10.9 (restart Phase 1) changes it again** — current GA IDs chosen by the owner (S-2.13.8), a pinned `model_version` token instead of `latest`, a rate card for every routed model, and a pre-spend availability ping. After S-2.13.7 the yaml routes nine operations.
+
+| Operation(s) | Tier | Provider | Model | `model_version` | Notes |
+|---|---|---|---|---|---|
+| `embed_image`, `embed_text` | embedding | google | `gemini-embedding-001` | `v1` | `embed_image` captions with `gemini-2.5-flash`, then embeds the caption text (ADR-0018 replaces this) |
+| `caption_image`, `score_image`, `generate_title_text` | S | google | `gemini-2.5-flash` | `v1` | `generate_title_text` runs at temperature 0.5 |
+| `extract_metadata_image`, `parse_user_brief` | M | anthropic | `claude-sonnet-4-6` | `latest` | `extract_metadata_image` also serves video-scene frames (video-scene schema); `parse_user_brief` also carries Stage 0.5 brief intent, the Stage 6.5 second-guess and the Stage 9 refinement planner |
+| `generate_title_background` | M | google | `gemini-2.5-flash-image` | `v1` | opt-in title-card image; no rate card yet (S-2.10.9) |
+| `judge_narrative_arc` | L | anthropic | `claude-opus-4-8` | `latest` | `max_tokens` 8192; `temperature` omitted because the model rejects it |
+
+Removed by S-2.13.7 (routed, never dispatched, no router method): `recommend_effort_level`, `explain_cost`, `explain_upgrade_path`, `orchestrator_reasoning` (ADR-0021), `caption_video_scene`, `extract_metadata_video_scene`. Never routed, never built: `analyze_music_duration_mismatch` (ADR-0012 amendment).
+
+Also true today: `model_version: latest` on the Anthropic operations means a provider-side model roll does **not** invalidate cached results — the reason S-2.10.9 pins a real token; `pipeline/runner.py::_TIER_BY_OPERATION` mirrors this yaml for `JobCostSummary`; telemetry puts roughly 99 % of spend on Anthropic (S-2.13.8). Everything else in this ADR stands — three tiers, cheapest model that meets the bar, Tier-L reserved for the single judge call, a static table until the N-002 router. The cost envelope loses its "~80 orchestrator turns" line (ADR-0021).

@@ -38,7 +38,7 @@ Final tally:
 - **`I-2 MVP` initiative + 9 epic shells** (E-2.1..E-2.9)
 - **Two auto-running session-housekeeping skills** (`knowledge-curator`, `work-tracker`) with the auto-merge-with-`--admin` policy
 
-The tally above is the 2026-05-03 scaffolding record and is kept as-is. **Current (2026-10-25):** 20 ADRs (ADR-0001..ADR-0020), 57 decisions (D-001..D-057), 15 novel mechanisms (N-001..N-015), 29 recommended additions (A-001..A-029).
+The tally above is the 2026-05-03 scaffolding record and is kept as-is. **Current (2026-10-25):** 21 ADRs (ADR-0001..ADR-0021), 58 decisions (D-001..D-059, with D-058 reserved for the quality-gate decision), 15 novel mechanisms (N-001..N-015), 29 recommended additions (A-001..A-029).
 
 ---
 
@@ -87,7 +87,7 @@ Not a sixth capability bundle: `mvp-hardening` is the tail of the MVP initiative
 
 **How the phase continues — restart Phases 0–3** ([plan §5](./LANDSCAPE-AND-PLAN-2026-10-24.md); D-057):
 
-- **Phase 0 — Resume honestly** (E-2.13, in-progress since 2026-10-24, $0): tracker reconciliation (S-2.13.1, done), D-057 + the honest `MVP.md` pre-flight (S-2.13.2, done), feedback-inbox triage (S-2.13.3, done), this public-trust docs pass (S-2.13.4), ADR truth bundle (S-2.13.5), repo + session hygiene (S-2.13.6, done), dead-code sweep (S-2.13.7), owner-side $0 model-availability check + Phase 1 spend envelope (S-2.13.8).
+- **Phase 0 — Resume honestly** (E-2.13, in-progress since 2026-10-24, $0): tracker reconciliation (S-2.13.1, done), D-057 + the honest `MVP.md` pre-flight (S-2.13.2, done), feedback-inbox triage (S-2.13.3, done), this public-trust docs pass (S-2.13.4, done), ADR truth bundle (S-2.13.5, done — ADR-0021 + amendments, D-059, NOTICE / CONTRIBUTING / SECURITY / CODE_OF_CONDUCT / dependabot), repo + session hygiene (S-2.13.6, done), dead-code sweep (S-2.13.7), owner-side $0 model-availability check + Phase 1 spend envelope (S-2.13.8).
 - **Phase 1 — Run and publish for real** (E-3.11 plus E-2.8 / E-3.3 items): model-lineup bump to current GA IDs (S-2.10.9); CI on ubuntu + windows (S-3.11.2); local API hardening (S-3.11.3); **the first dry-run and the first real private YouTube publish**; publish-UX honesty; Connect-YouTube-in-Settings (S-3.3.5); publish / refine from any snapshot; closes E-2.9 and I-2; tags v0.1.0.
 - **Phase 2 — Instruments + daily-driver hardening** (E-3.10, E-3.11, E-2.9 residuals; $0): the measurable single-video quality gate written down as a decision (D-057 reserves D-058 for it; not yet recorded); the $0 eval harness + owner-labelled golden set (E-3.10, A-029); durable job registry (S-2.9.19); refine as a job (S-3.5.5); mid-job quota guard (S-3.11.1); token-aware estimate (S-2.9.18); privacy-honesty minimum (S-3.1.4); disk / telemetry bounds + a delete path; profile event emitters; test gaps closed.
 - **Phase 3 — Single-video quality mastery, then the gate** (paid: 2–3 full runs): a fresh full-scale reference run on the new lineup; root-cause fixes with before/after eval evidence (local visual embedder, two-phase pre-filter, calibrated floors, YuNet detector, cast review, auto-grading, theme presets); the quality-gate run on two real trips, recorded as a further D-NNN (met, or not met with the failing metric). Only a gate-met decision opens Phase 6 (Trip Package pilot + live job); the formal v1 opening is Phase 4.

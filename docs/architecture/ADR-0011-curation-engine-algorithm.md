@@ -208,7 +208,7 @@ Orchestrator thinking step (Tier-M)
   (e) explain-why-not-possible → some refinements aren't realizable with current media
 ```
 
-The thinking step is implemented as a **single tool-call loop** (orchestrator_reasoning per ADR-0009 Tier-M). The orchestrator has access to:
+The thinking step is implemented as a **single tool-call loop** (orchestrator_reasoning per ADR-0009 Tier-M). *(amended 2026-10-25: realised instead as **one structured planner call** → `RefinementOutcome` → child snapshot — D-056, [ADR-0021 §2](./ADR-0021-deterministic-stage-runner.md); there is no tool loop and no `orchestrator_reasoning` route.)* The orchestrator has access to:
 
 - The current `ArcJudgment` + `RenderPlan` + `SecondGuessResult` history.
 - The user's brief, the brief's parse, target_duration, mode, music spec.

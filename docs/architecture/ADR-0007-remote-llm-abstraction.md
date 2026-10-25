@@ -191,3 +191,15 @@ Cache hits skip the provider call entirely. Cache misses populate the cache afte
 - Cascades to: ADR-0008 (local-LLM slot uses the same protocol), ADR-0009 (per-operation model assignments), ADR-0011 (curation engine consumes the operations), ADR-0014 (orchestrator harness uses `tool_call` / `stream_chat`), ADR-0015 (resource accounting consumes `LLMCallEvent`).
 - Decision-log entry: D-025 in [`docs/decisions/DECISIONS_LOG.md`](../decisions/DECISIONS_LOG.md).
 - Project task: T-1.3.1.3 in [`project/tasks/`](../../project/tasks/T-1.3.1.3-adr-0007-remote-llm-abstraction.md).
+
+## Amendments
+
+### 2026-10-25 — the abstraction as built (S-2.13.5)
+
+Verified against master `d9bb392` (`backend/impact_crater/llm_clients/`).
+
+- **SDKs.** Anthropic: the official `anthropic` SDK (`AsyncAnthropic.messages.create`; structured output = one forced tool whose `input_schema` is the expected JSON Schema). Google: the **`google-genai`** SDK (`genai.Client`), not the retired `google-generativeai` named in the Decision; structured output = prompted JSON with a schema-keyword scrub, because `response_schema` support varied across SDK versions. Pins since S-2.13.6: `anthropic>=0.40,<1`, `google-genai>=1.0,<2`.
+- **`params` is a dataclass, not a dict.** Every method takes `params: CallParams` (operation, provider, model, model_version, max_tokens, temperature, extra); the provider client writes the real token usage back onto it after the call so the router can price the call from the rate card (ADR-0015).
+- **Methods that exist** on both clients: `embed_image`, `embed_text`, `generate_image` (S-2.11.5; Anthropic raises), `caption_image`, `score_image`, `extract_metadata_image`, `judge_narrative_arc`, `parse_user_brief`. The router adds `generate_title_text` and `generate_title_background` as routed operations. **Never implemented as router operations** and removed from the protocol by S-2.13.7: `caption_video_scene` and `extract_metadata_video_scene` (scene frames go through the image operations with the video-scene schema), `recommend_effort_level`, `explain_cost`, `explain_upgrade_path` (the effort / cost UX is deterministic in `api/effort.py`), and the orchestrator primitives `tool_call` / `stream_chat` with their `ToolSpec` / `Message` / `ToolCall` types (ADR-0021).
+- **Router responsibilities.** `router.py::LLMRouter` loads `config/llm-routing.yaml`, owns the read-through cache (`cache.py`), rate-card pricing, `LLMCallEvent` telemetry and quota recording, and a progress sink for the job WebSocket. Prompts live in `prompts/{operation}/{provider}_{model}.jinja2` as decided (`tests/test_routing_config_integrity.py` guards the pairing).
+- **Still as decided:** one `LLMClient` Protocol, two providers, async-only, numpy float32 embeddings, structured retry (`LLMTransientError` / `LLMOperationFailed`), one `LLMCallEvent` per call; the local slot (ADR-0008) is still empty.

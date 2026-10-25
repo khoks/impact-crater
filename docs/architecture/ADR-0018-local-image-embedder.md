@@ -1,6 +1,6 @@
 # ADR-0018 — Local image embedder (CLIP/SigLIP) replaces caption-then-embed
 
-Status: **proposed** (2026-06-29). Cascades from [ADR-0008](./ADR-0008-local-llm-runtime-slot.md) (local runtime slot) and [ADR-0009](./ADR-0009-cost-tiered-model-lineup.md) (routing).
+Status: **accepted — staged** (proposed 2026-06-29; interface + stub shipped 2026-07-01 in PR #72; accepted 2026-10-25 under S-2.13.5; the weights backend lands in restart Phase 3 as S-2.10.8 — see the amendment below). Cascades from [ADR-0008](./ADR-0008-local-llm-runtime-slot.md) (local runtime slot) and [ADR-0009](./ADR-0009-cost-tiered-model-lineup.md) (routing).
 
 ## Context
 
@@ -23,3 +23,9 @@ Replace caption-then-embed in Stage 2 with a **local image embedder** — `open_
 - Also unblocks higher-quality cast clustering (a real face/identity signal) if extended there later.
 
 Linked: S-2.10.8, E-2.10, ADR-0008, ADR-0009.
+
+## Amendment 2026-10-25 — accepted, staged (S-2.13.5)
+
+What exists, verified against master `d9bb392`: `media/image_embed.py` holds the `ImageEmbedder` protocol, the `RouterImageEmbedder` default (delegates to the router's caption-then-embed `embed_image`) and `LocalClipImageEmbedder`, a **stub** that returns `None` so callers fall back to the routed op; `build_image_embedder` has zero callers. Stage 2 therefore still embeds caption text through `gemini-embedding-001`. The decision stands as written. It is *accepted* because the restart plan schedules it (`docs/roadmap/LANDSCAPE-AND-PLAN-2026-10-24.md` Phase 3 item 2; S-2.10.8 under E-3.1) and *staged* because nothing in it runs yet — the status is not "proposed" any more because the alternative (fixing dedup through prompt caps alone) was tried in S-2.10.3 and treated the symptom.
+
+Conditions S-2.10.8 inherits from this amendment: (1) the hardware probe (S-3.1.5) lands first and picks the device; (2) local vectors are written under a **distinct cache namespace** — the router cache key does not include the media-layer backend, so caption-space and CLIP-space vectors would otherwise collide in the 0.93 dedup cosine; (3) the checkpoint is pinned and its licence recorded in `NOTICE.md` before the flag flips (D-059: open_clip code MIT, LAION checkpoints MIT, SigLIP WebLI checkpoints Apache-2.0 per their model cards, DataComp / DFN checkpoints under their own terms); (4) the 0.93 threshold is re-tuned on the E-3.10 fixtures, with before / after evidence, before the default changes; (5) weights are downloaded to the user's cache at first use, never into the repo or the wheel.
