@@ -1,5 +1,7 @@
 # ROADMAP.md — Impact Crater phased roadmap
 
+> **2026-10-24 restart note.** The phase index below predates the MVP gate pass (2026-06-18) and the mvp-hardening work of June–July 2026. The audited current state and the phase-wise restart plan live in [`LANDSCAPE-AND-PLAN-2026-10-24.md`](./LANDSCAPE-AND-PLAN-2026-10-24.md); this file is refreshed as part of that plan's Phase 0.
+>
 > **Status: locked (E-1.4 round 2 closed 2026-05-03).** Five-phase shape + per-phase milestone sequencing all locked. Calendar dates intentionally omitted — phases ship when they ship. Per-phase effort estimates assume **AI-assisted full-time velocity** (the user is PM/EM/Architect; Claude does the build via Anthropic's Max 20x plan) per [D-036](../decisions/DECISIONS_LOG.md). Total path from MVP-start to v3 launch ≈ **12-18 months** at this pace.
 
 Impact Crater is a **dead-simple, 1-click media-to-video creator**: the user dumps a pile of photos and videos, describes the video(s) they want in their own words, clicks submit, and is done — the AI does the rest. Every phase below adds capability *behind* that single action, never on top of it. Local-first models, live jobs, multi-platform publishing, conversational refinement — each makes the one click faster, cheaper, more personal, or more capable, but none of them changes the headline experience the user lives through.

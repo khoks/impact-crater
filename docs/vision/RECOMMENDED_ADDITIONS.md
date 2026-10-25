@@ -461,3 +461,24 @@ Internally, the AI plans the package per N-013 — a planning layer ABOVE the ex
 - **Why it matters:** Makes auto-titles accurate for briefs that don't enumerate destinations, and grounds them in the real media distribution rather than the user's phrasing.
 - **Status:** proposed.
 - **Linked items:** S-2.11.7, S-2.10.5, S-2.10.8, D-055.
+
+### A-027 — Shared content-addressed media cache + disk accounting (2026-10-24)
+- **Source:** session 2026-10-24 (restart audit), summarized from Claude.
+- **Idea:** Scene frames and thumbnails are written under `projects/{project_id}/cache/` keyed by content hash but never shared across projects, so re-ingesting the same trip into a new project duplicates ~13 GB; the tree is ~92 GB today with six projects at 8–14 GB each. Move scene/thumb caches into the global content-addressed store (the ADR-0006 design already does this for LLM payloads), hard-link or reference them per project, add disk accounting to Settings, and a "clean unused caches / orphaned snapshots" action with a keep-last-N retention policy that never deletes published snapshots.
+- **Why it matters:** Repeated evaluation runs on the same reference media (the single-video quality gate, A/B tests, model bumps) are disk-bound before they are API-cost-bound; nothing accounts for media-cache growth (ADR-0015 covers telemetry and cost only).
+- **Status:** proposed.
+- **Linked items:** ADR-0006, ADR-0015, S-2.9.19 (durable registry; orphan cleanup), E-3.9 (cache), landscape §4.2.
+
+### A-028 — Pre-job provider/model availability probe (2026-10-24)
+- **Source:** session 2026-10-24 (restart audit), summarized from Claude.
+- **Idea:** Ping each configured provider with a $0 call (models list / count-tokens) at setup ("Test key" is still the M0 stub that accepts any non-empty string), at server start, and at job submit, validating that every model ID routed in `config/llm-routing.yaml` still resolves; map "model not found / deprecated" to a readable failure in `runner_glue._classify_failure`. Pin `model_version` tokens instead of `latest` so caches invalidate deliberately on a bump.
+- **Why it matters:** The routing pins `claude-sonnet-4-6` / `claude-opus-4-8` (and three Gemini IDs) across the yaml, prompt filenames, rate cards, a client guard and a test; a retired Anthropic ID would surface only at Stage 3, after all Gemini Stage 2 spend, and the fail-soft brief parse would silently drop the destination reservations. Anthropic is ~99 % of spend.
+- **Status:** proposed.
+- **Linked items:** ADR-0009, S-2.10.7 (previous bump), `api/setup.py` stub, MVP.md risk #1.
+
+### A-029 — Deterministic curation eval harness + owner-labelled golden set (2026-10-24)
+- **Source:** session 2026-10-24 (restart audit), summarized from Claude.
+- **Idea:** Promote the ad-hoc `.scratch/eval_headless.py` into `scripts/eval_plan.py`: compute quality metrics deterministically from `plan.json` / `diagnostics.json` / `cast.json` (motion share, chronology back-steps, every brief-named destination present, per-viewpoint cap, consecutive same-combo runs, people/landscape balance, cast coverage, safety-floor leaks), run it as `pytest -m eval` against frozen fixtures (the SW-US snapshot `b4b73c7b1fe044b7` and the Zion set) at $0 API cost, and export the owner's decision-level feedback verdicts into a golden set the harness reports agreement with. This is the instrument that makes the D-042 "single-video quality mastery" gate measurable and lets every Stage 4/5/6 or prompt change be checked before and after on the same fixture.
+- **Why it matters:** No quality-regression harness exists; E-2.10 / E-2.12 acceptance has never been machine-checked, and no full-scale run has happened since the Vegas fix. Without it the Trip Package gate is a judgment call that can be deferred indefinitely or opened on a feeling.
+- **Status:** proposed.
+- **Linked items:** D-042, D-053 (cap-violation "measure first"), A-023/N-015 (feedback loop), E-2.10, E-2.12, ADR-0020 A/B.
