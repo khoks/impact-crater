@@ -18,6 +18,7 @@
 | [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | Initiative | P0 | mvp | in-progress |
 | [E-2.9](./epics/E-2.9-cross-project-profile-mvp.md) | Cross-project user profile (N-010 minimum-viable) + polish + D-014 validation | Epic | P0 | mvp | in-progress |
 | [E-2.13](./epics/E-2.13-restart-close-out-and-hygiene.md) | Restart close-out + hygiene (Phase 0 of the 2026-10-24 plan) (plan-phase-0) | Epic | P0 | mvp-hardening | in-progress |
+| [S-2.13.8](./stories/S-2.13.8-owner-model-availability-check-and-spend-envelope.md) | Owner-side $0 check: which Claude / Gemini model IDs still resolve; pick targets and the Phase 1 spend envelope (plan-phase-0) | Story | P0 | mvp-hardening | in-progress |
 | [I-3](./initiatives/I-3-v1-local-first-live-job-multi-platform-style-polish.md) | v1 — Local-first + live job + multi-platform + style + polish | Initiative | P1 | v1 | in-progress |
 | [E-3.3](./epics/E-3.3-multi-platform-connectors-instagram-facebook-x.md) | Multi-platform connectors — Instagram + Facebook + X (plan-phase-1, plan-phase-4) | Epic | P1 | v1 | in-progress |
 
@@ -28,7 +29,6 @@
 | [E-3.10](./epics/E-3.10-quality-eval-harness-and-golden-set.md) | Quality eval harness + golden set (plan-phase-2) | Epic | P0 | mvp-hardening | todo |
 | [E-3.11](./epics/E-3.11-restart-hardening-and-release-engineering.md) | Restart Phases 1–2 hardening + release engineering (plan-phase-1, plan-phase-2) | Epic | P0 | mvp-hardening | todo |
 | [S-2.10.9](./stories/S-2.10.9-model-lineup-bump-current-ga-ids.md) | Model-lineup bump to current GA IDs — pinned model_version, rate cards, data-driven temperature guard, model-not-found mapping, real key ping (plan-phase-1) | Story | P0 | mvp-hardening | todo |
-| [S-2.13.8](./stories/S-2.13.8-owner-model-availability-check-and-spend-envelope.md) | Owner-side $0 check: which Claude / Gemini model IDs still resolve; pick targets and the Phase 1 spend envelope (plan-phase-0) | Story | P0 | mvp-hardening | todo |
 | [S-3.3.5](./stories/S-3.3.5-connect-youtube-in-settings.md) | Connect YouTube in Settings (loopback OAuth → connector_credentials) (plan-phase-1) | Story | P0 | v1 | todo |
 | [S-3.10.1](./stories/S-3.10.1-eval-plan-script-and-thresholds.md) | scripts/eval_plan.py + D-058 thresholds on frozen SW-US and Zion fixtures (pytest -m eval) (plan-phase-2) | Story | P0 | mvp-hardening | todo |
 | [S-3.11.2](./stories/S-3.11.2-test-ci.md) | Test CI — ruff / mypy / pytest / vitest / build / mkdocs on ubuntu and windows; branch protection; ADR-0004 --admin → --auto (plan-phase-1) | Story | P0 | mvp-hardening | todo |
@@ -85,7 +85,7 @@ Placeholder stories backfilled on 2026-06-14 plus later filings whose restart-pl
 | [E-3.9](./epics/E-3.9-cross-job-cache-full-reuse-class-semantics.md) | Cross-job cache — full reuse-class semantics | v1 | todo | 2 todo | S-3.9.1, S-3.9.2 |
 | [E-4.1](./epics/E-4.1-full-mobile-ui.md) | Full mobile UI | v2 | todo | 1 todo | S-4.1.1 |
 | [E-4.2](./epics/E-4.2-multi-agent-harness.md) | Multi-agent harness | v2 | todo | 1 todo | S-4.2.1 |
-| [E-4.3](./epics/E-4.3-conversational-refinement-at-scale.md) | Conversational refinement at scale | v2 | todo | 1 todo | S-4.3.1 |
+| [E-4.3](./epics/E-4.3-conversational-refinement-at-scale.md) | Conversational refinement at scale | v2 | todo | 2 todo | S-4.3.1, S-4.3.2 |
 | [E-4.4](./epics/E-4.4-generated-music.md) | Generated music | v2 | todo | 1 todo | S-4.4.1 |
 | [E-4.5](./epics/E-4.5-the-trip-package-autonomous-multi-artifact-creation-north-st.md) | The Trip Package — autonomous multi-artifact creation (north star) | v2 | todo | 5 todo | S-4.5.1, S-4.5.2, S-4.5.3, S-4.5.4, S-4.5.5 |
 | [E-4.6](./epics/E-4.6-ai-crowd-removal.md) | AI crowd removal | v2 | todo | 1 todo | S-2.9.7 |
@@ -187,6 +187,6 @@ Regenerate with `python scripts/tracker_board.py`; `--check` fails when this fil
 |---|---|---|---|---|---|---|---|
 | Initiative | 2 | 0 | 0 | 1 | 2 | 0 | 5 |
 | Epic | 0 | 0 | 0 | 16 | 3 | 19 | 38 |
-| Story | 0 | 1 | 1 | 75 | 0 | 67 | 144 |
+| Story | 0 | 1 | 1 | 75 | 1 | 67 | 145 |
 | Task | 0 | 0 | 0 | 30 | 0 | 0 | 30 |
-| **All** | 2 | 1 | 1 | 122 | 5 | 86 | 217 |
+| **All** | 2 | 1 | 1 | 122 | 6 | 86 | 218 |
