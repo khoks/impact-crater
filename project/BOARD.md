@@ -18,8 +18,6 @@
 |---|---|---|---|---|---|
 | [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | Initiative | P0 | mvp | in-progress |
 | [E-2.9](./epics/E-2.9-cross-project-profile-mvp.md) | Cross-project user profile (N-010 minimum-viable) + polish + D-014 validation | Epic | P0 | mvp | in-progress |
-| [E-2.13](./epics/E-2.13-restart-close-out-and-hygiene.md) | Restart close-out + hygiene (Phase 0 of the 2026-10-24 plan) (plan-phase-0) | Epic | P0 | mvp-hardening | in-progress |
-| [S-2.13.8](./stories/S-2.13.8-owner-model-availability-check-and-spend-envelope.md) | Owner-side $0 check: which Claude / Gemini model IDs still resolve; pick targets and the Phase 1 spend envelope (plan-phase-0) | Story | P0 | mvp-hardening | in-progress |
 | [I-3](./initiatives/I-3-v1-local-first-live-job-multi-platform-style-polish.md) | v1 — Local-first + live job + multi-platform + style + polish | Initiative | P1 | v1 | in-progress |
 | [E-3.3](./epics/E-3.3-multi-platform-connectors-instagram-facebook-x.md) | Multi-platform connectors — Instagram + Facebook + X (plan-phase-1, plan-phase-4) | Epic | P1 | v1 | in-progress |
 
@@ -96,6 +94,7 @@ Placeholder stories backfilled on 2026-06-14 plus later filings whose restart-pl
 
 | ID | Title | Type | Done |
 |---|---|---|---|
+| [S-2.13.8](./stories/S-2.13.8-owner-model-availability-check-and-spend-envelope.md) | Owner-side $0 check: which Claude / Gemini model IDs still resolve; pick targets and the Phase 1 spend envelope | Story | 2026-10-25 |
 | [S-2.13.7](./stories/S-2.13.7-dead-code-sweep.md) | Dead-code sweep — placeholder router, six unimplemented routed ops, unused events and client methods | Story | 2026-10-25 |
 | [S-2.13.5](./stories/S-2.13.5-adr-truth-bundle-and-governance-files.md) | ADR truth bundle (ADR-0007/0009/0010/0012/0013/0018/0020 + ADR-0021) and repo governance files | Story | 2026-10-25 |
 | [S-2.13.4](./stories/S-2.13.4-public-trust-docs-pass.md) | Public-trust docs pass — OVERVIEW, README, CLAUDE.md, ROADMAP, GROOMED, ARCHITECTURE, PIPELINE_DATAFLOW, headers, RAW_VISION addenda | Story | 2026-10-25 |
@@ -113,6 +112,7 @@ Placeholder stories backfilled on 2026-06-14 plus later filings whose restart-pl
 | [S-2.5.3](./stories/S-2.5.3-music-video-ui.md) | Frontend mode picker + section-to-media NL textarea | Story | 2026-10-24 |
 | [S-2.5.2](./stories/S-2.5.2-music-video-stages.md) | Music-video mode through Stages 5/6/7 + section-to-media NL | Story | 2026-10-24 |
 | [S-2.5.1](./stories/S-2.5.1-music-analyzer-and-cut-grid.md) | MusicAnalyzer (librosa-only) + CutGrid + MusicAnalysis Pydantic model | Story | 2026-10-24 |
+| [E-2.13](./epics/E-2.13-restart-close-out-and-hygiene.md) | Restart close-out + hygiene (Phase 0 of the 2026-10-24 plan) | Epic | 2026-10-24 |
 | [E-2.10](./epics/E-2.10-feedback-driven-curation-quality.md) | Feedback-driven curation quality — coverage, balance, video, specialness | Epic | 2026-10-24 |
 | [E-2.8](./epics/E-2.8-youtube-publish.md) | YouTube publish — OAuth + resumable upload + audit log | Epic | 2026-10-24 |
 | [E-2.7](./epics/E-2.7-agentic-refinement-and-second-guess.md) | Agentic refinement (N-009) + orchestrator second-guess | Epic | 2026-10-24 |
@@ -175,7 +175,7 @@ Placeholder stories backfilled on 2026-06-14 plus later filings whose restart-pl
 | ID | Title | Status | Phase | Epics |
 |---|---|---|---|---|
 | [I-1](./initiatives/I-1-project-foundation.md) | Project foundation | done | scaffolding | 5 epics: 5 done |
-| [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | in-progress | mvp | 13 epics: 11 done, 2 in-progress |
+| [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | in-progress | mvp | 13 epics: 12 done, 1 in-progress |
 | [I-3](./initiatives/I-3-v1-local-first-live-job-multi-platform-style-polish.md) | v1 — Local-first + live job + multi-platform + style + polish | in-progress | v1 | 11 epics: 1 in-progress, 10 todo |
 | [I-4](./initiatives/I-4-v2-mobile-multi-agent-conversational-generated-music-trip-pa.md) | v2 — Mobile + multi-agent + conversational + generated music + Trip Package | backlog | v2 | 6 epics: 6 todo |
 | [I-5](./initiatives/I-5-v3-hosted-multi-tenant-saas.md) | v3 — Hosted multi-tenant SaaS | backlog | v3 | 3 epics: 3 todo |
@@ -187,7 +187,7 @@ Regenerate with `python scripts/tracker_board.py`; `--check` fails when this fil
 | Type | backlog | canceled | deferred | done | in-progress | todo | Total |
 |---|---|---|---|---|---|---|---|
 | Initiative | 2 | 0 | 0 | 1 | 2 | 0 | 5 |
-| Epic | 0 | 0 | 0 | 16 | 3 | 19 | 38 |
-| Story | 0 | 1 | 1 | 77 | 1 | 65 | 145 |
+| Epic | 0 | 0 | 0 | 17 | 2 | 19 | 38 |
+| Story | 0 | 1 | 1 | 78 | 0 | 65 | 145 |
 | Task | 0 | 0 | 0 | 30 | 0 | 0 | 30 |
-| **All** | 2 | 1 | 1 | 124 | 6 | 84 | 218 |
+| **All** | 2 | 1 | 1 | 126 | 4 | 84 | 218 |
