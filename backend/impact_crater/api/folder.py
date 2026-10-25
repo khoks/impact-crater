@@ -1,6 +1,7 @@
 """GET /api/folder/scan — recursively list supported media in a folder.
 
-Per ADR-0010, photos = JPEG/PNG/WebP/AVIF/HEIC/HEIF/RAW; videos = MP4/MOV/etc.
+Photos = JPEG/PNG/WebP/AVIF/HEIC/HEIF/BMP/TIFF (`stage1_ingest._PHOTO_EXTS`; RAW
+is not decoded — ADR-0010 amendment 2026-10-25); videos = MP4/MOV/etc.
 The frontend uses this to confirm a user-entered folder path before
 submitting a job (browsers can't expose absolute filesystem paths in
 drag-drop, so we accept a path string + scan server-side).
@@ -83,9 +84,7 @@ async def scan(path: str) -> FolderScanResponse:
             size = entry.stat().st_size
         except OSError:
             continue
-        counts.items.append(
-            FolderScanItem(path=str(entry), media_type=media_type, file_size=size)
-        )
+        counts.items.append(FolderScanItem(path=str(entry), media_type=media_type, file_size=size))
         if media_type == "photo":
             counts.photos += 1
         else:

@@ -1,13 +1,13 @@
 """Pydantic models for the curation pipeline outputs per D-009 + ADR-0011.
 
-Stage 3's `extract_metadata_image` returns the `RichMetadataPhoto` shape;
-`extract_metadata_video_scene` returns the same plus per-scene fields.
-The schema is the contract the LLM must satisfy — the router validates
-against `model_json_schema()` and rejects on mismatch.
+Stage 3's `extract_metadata_image` returns the `RichMetadataPhoto` shape for
+photos and, when given the video-scene schema, `RichMetadataVideoScene` (the
+same plus per-scene fields). The schema is the contract the LLM must satisfy
+— the router validates against `model_json_schema()` and rejects on mismatch.
 
 Field set follows D-009 + the Stage 3 description in ADR-0011. The
-person-library `recognized_persons` field exists from M1 but is
-always empty until N-008 lands at M5.
+person-library `recognized_persons` field exists but is never populated:
+the N-008 collage input was never wired (ADR-0010 amendment 2026-10-25).
 """
 
 from __future__ import annotations
@@ -17,9 +17,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-TimeOfDay = Literal[
-    "morning", "midday", "golden_hour", "dusk", "night", "indoor", "ambiguous"
-]
+TimeOfDay = Literal["morning", "midday", "golden_hour", "dusk", "night", "indoor", "ambiguous"]
 
 # Cinematographic shot scale (A-022) — lets the planner vary framing and
 # pick establishing shots for openers, close-ups for emotional peaks.
@@ -101,6 +99,7 @@ def _coerce_people_obs(value: Any) -> Any:
     # XML-ish tool-use leak: `<parameter name="count">3` etc. Tolerate
     # optional surrounding quotes on the value (Sonnet sometimes wraps).
     import re
+
     m = re.search(r'name="count"[^>]*>\s*"?\s*(\d+)', s)
     count = int(m.group(1)) if m else 0
     return {"count": count, "in_focus": []}
@@ -128,6 +127,7 @@ def _coerce_location_obs(value: Any) -> Any:
     except (json.JSONDecodeError, ValueError):
         pass
     import re
+
     m = re.search(r'name="description"[^>]*>\s*([^<]+)', s)
     description = m.group(1).strip() if m else None
     return {"description": description, "lat_long": None}
@@ -148,7 +148,8 @@ class LocationObservation(BaseModel):
 
 
 class RecognizedPerson(BaseModel):
-    """Output of N-008 person-library face recognition. Empty at M1."""
+    """Output of N-008 person-library face recognition. Never populated today
+    (the collage input is unwired)."""
 
     model_config = ConfigDict(extra="ignore")
     person_id: str
@@ -256,7 +257,9 @@ class RichMetadataPhoto(BaseModel):
     _coerce_objects = field_validator("objects", mode="before")(_coerce_str_list)
     _coerce_clothing = field_validator("clothing", mode="before")(_coerce_str_list)
     _coerce_generic_tags = field_validator("generic_tags", mode="before")(_coerce_str_list)
-    _coerce_task_context_tags = field_validator("task_context_tags", mode="before")(_coerce_str_list)
+    _coerce_task_context_tags = field_validator("task_context_tags", mode="before")(
+        _coerce_str_list
+    )
 
     # Nested-model tolerance: Sonnet sometimes leaks its tool-use parameter
     # wrapper as a raw string into nested-model fields (real failure 2026-05-07

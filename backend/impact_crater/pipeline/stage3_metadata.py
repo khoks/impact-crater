@@ -1,14 +1,14 @@
 """Stage 3 — rich metadata extraction per ADR-0011 §"Stage 3 — Rich metadata extraction".
 
-For each photo (and each video scene's representative frames), call
-`extract_metadata_image` (or `extract_metadata_video_scene`) and validate
-the response against the D-009 Pydantic schema. On schema mismatch we
-retry once; second mismatch raises `LLMOperationFailed`.
+For each photo and each video scene's representative frame, call
+`extract_metadata_image` (scenes pass the `RichMetadataVideoScene` JSON
+schema — there is no separate video-scene op) and validate the response
+against the D-009 Pydantic schema; a mismatch raises `LLMOperationFailed`
+and the asset is skipped (Stage 4 tolerates missing metadata).
 
-Person-library integration (N-008) is the M5 plug-in: when the library
-is non-empty, the call site adds the reference-collage as a second image
-input and the Pydantic schema's `recognized_persons` field gets populated
-by the LLM. At M1 the field is always empty.
+The N-008 reference-collage input was never wired: only the asset image is
+sent, so `recognized_persons` stays empty (ADR-0010 amendment 2026-10-25);
+the A-018 trip cast covers people instead.
 """
 
 from __future__ import annotations

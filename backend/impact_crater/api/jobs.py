@@ -4,7 +4,7 @@
   - `POST /api/jobs/render`   (M2) — synchronous Stages 1-7 → MP4 path.
   - `POST /api/jobs/submit`   (M3) — async Stages 1-7 → 202 + job_id.
   - `GET  /api/jobs/{job_id}` (M3) — poll snapshot.
-  - `WS   /api/ws/jobs/{job_id}` (M3 — defined in api/ws.py) — event stream.
+  - `WS   /api/jobs/ws/{job_id}` (M3) — event stream (defined below).
 
 Quota gate (402) and router factory (412) shared by all sync endpoints.
 """
@@ -48,9 +48,7 @@ async def _resolve_cast_settings() -> tuple[bool, str | None]:
     enabled_raw = await settings_store.get_value(
         settings_store.KEY_CAST_ANALYSIS_ENABLED, default="true"
     )
-    backend = await settings_store.get_value(
-        settings_store.KEY_CAST_BACKEND, default="gemini"
-    )
+    backend = await settings_store.get_value(settings_store.KEY_CAST_BACKEND, default="gemini")
     return (str(enabled_raw).strip().lower() != "false", backend)
 
 
@@ -307,7 +305,7 @@ async def post_submit_job(req: SubmitJobRequest) -> SubmitJobResponse:
     """Kick off the M2 pipeline as a background task. Returns 202 immediately.
 
     Use `GET /api/jobs/{job_id}` to poll, or subscribe to
-    `WS /api/ws/jobs/{job_id}` for live progress events.
+    `WS /api/jobs/ws/{job_id}` for live progress events.
     """
     audio_path = Path(req.audio_path)
     if not audio_path.is_file():

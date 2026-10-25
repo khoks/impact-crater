@@ -91,7 +91,7 @@ def test_strip_exif_no_exif_input_returns_unchanged() -> None:
 
 
 def test_blur_faces_no_faces_returns_input_unchanged() -> None:
-    """Solid-color JPEG has no faces → mediapipe returns 0 boxes → pass-through."""
+    """Solid-color JPEG has no faces → the detector returns 0 boxes → pass-through."""
     img = Image.new("RGB", (320, 240), (100, 100, 100))
     buf = io.BytesIO()
     img.save(buf, format="JPEG")
@@ -113,12 +113,8 @@ def test_prepare_pass_through_when_posture_is_off(tmp_path: Path) -> None:
 def test_prepare_strips_exif_and_caches(tmp_path: Path) -> None:
     p = tmp_path / "x.jpg"
     p.write_bytes(_jpeg_with_exif())
-    out1 = prepare_for_llm(
-        p, posture=PrivacySettings(strip_exif="all"), project_id="test-proj"
-    )
-    out2 = prepare_for_llm(
-        p, posture=PrivacySettings(strip_exif="all"), project_id="test-proj"
-    )
+    out1 = prepare_for_llm(p, posture=PrivacySettings(strip_exif="all"), project_id="test-proj")
+    out2 = prepare_for_llm(p, posture=PrivacySettings(strip_exif="all"), project_id="test-proj")
     # Same posture → same cached bytes.
     assert out1 == out2
     # Strip actually happened — original had GPS, output doesn't.
@@ -129,12 +125,8 @@ def test_prepare_strips_exif_and_caches(tmp_path: Path) -> None:
 def test_prepare_different_postures_different_cache_files(tmp_path: Path) -> None:
     p = tmp_path / "x.jpg"
     p.write_bytes(_jpeg_with_exif())
-    out_gps = prepare_for_llm(
-        p, posture=PrivacySettings(strip_exif="gps_only"), project_id="multi"
-    )
-    out_all = prepare_for_llm(
-        p, posture=PrivacySettings(strip_exif="all"), project_id="multi"
-    )
+    out_gps = prepare_for_llm(p, posture=PrivacySettings(strip_exif="gps_only"), project_id="multi")
+    out_all = prepare_for_llm(p, posture=PrivacySettings(strip_exif="all"), project_id="multi")
     # Different transforms → different bytes.
     assert out_gps != out_all
     # gps_only kept the camera info; all wiped it.

@@ -6,7 +6,7 @@
   - `_RegistryReporter` (stage-boundary callbacks → registry.update_stage)
   - router progress sink (per-LLM-call cost → registry.record_llm_call)
 
-so the in-progress UI can drive every panel from `WS /api/ws/jobs/{id}`.
+so the in-progress UI can drive every panel from `WS /api/jobs/ws/{job_id}`.
 """
 
 from __future__ import annotations
@@ -183,9 +183,7 @@ async def _run_and_capture(
     log.info("job_running job_id=%s media_count=%d", job_id, len(config.media_paths))
     await registry.update_state(job_id, "running")
     try:
-        result = await run_full_pipeline(
-            config, router=router, progress=reporter
-        )
+        result = await run_full_pipeline(config, router=router, progress=reporter)
         snap = registry.get(job_id)
         if snap is not None:
             snap.correlation_id = result.correlation_id
@@ -245,8 +243,7 @@ async def _run_and_capture(
         )
     except RenderError as exc:
         log.error(
-            "job_render_failed job_id=%s stage=%s ffmpeg_exit_code=%s "
-            "stderr_tail=%r",
+            "job_render_failed job_id=%s stage=%s ffmpeg_exit_code=%s stderr_tail=%r",
             job_id,
             exc.stage,
             exc.ffmpeg_exit_code,
@@ -281,9 +278,7 @@ async def _run_and_capture(
             job_id,
             str(exc)[:200],
         )
-        await registry.update_state(
-            job_id, "failed", failure_reason=_classify_failure(exc)
-        )
+        await registry.update_state(job_id, "failed", failure_reason=_classify_failure(exc))
     finally:
         # Detach the per-job sink so subsequent jobs don't accidentally
         # share state through the singleton router.

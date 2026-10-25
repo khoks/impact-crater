@@ -316,3 +316,7 @@ The agentic max-permissible recommendation (per N-006) computes which levels fit
 - Cascades to: ADR-0016 (telemetry events for privacy-routing decisions surface via the same cost-transparency UI).
 - Decision-log entry: D-034 in [`docs/decisions/DECISIONS_LOG.md`](../decisions/DECISIONS_LOG.md).
 - Project task: T-1.3.3.3 in [`project/tasks/`](../../project/tasks/T-1.3.3.3-adr-0015-resource-accounting.md).
+
+## Amendment 2026-10-25 — four event types; quota is pre-job only (S-2.13.5 / S-2.13.7)
+
+Verified against `telemetry.py`, `quota.py` and `pipeline/runner.py` on master `bf4cc03`. `OrchestratorTurnEvent` was defined but never emitted — no orchestrator turn loop exists (ADR-0021) — and was **deleted in S-2.13.7**; the stream carries `LLMCallEvent`, `RenderEvent`, `IngestEvent` and `JobLifecycleEvent`, and `correlation_id` ties the events of one job (or one refinement, `refine-{snapshot_id}`) together rather than one orchestrator turn. `quota.check_quota` runs once, before Stage 1; there is no per-stage check and no mid-job pause-and-prompt (S-3.11.1, restart Phase 2). Telemetry rotation is still unbounded (E-3.11). The dual-cap model, rate cards keyed by `model_version` and `JobCostSummary` are as decided; `pipeline/runner.py::_TIER_BY_OPERATION` mirrors `config/llm-routing.yaml` for the per-tier rollup (guarded by `tests/test_routing_config_integrity.py`).

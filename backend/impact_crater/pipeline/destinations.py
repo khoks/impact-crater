@@ -1,9 +1,10 @@
 """Destination→media mapping + the shared reservation primitive (S-2.10.5).
 
 `ReservationSet` is THE source-agnostic "must-keep" lever through Stage 4 — the
-Vegas fix. Three consumers build the same object: S-2.10.5 from named
-destinations, the refinement layer's `reserve_destination`/`force_include` tools
-(`source="refinement"`), and A-023 feedback (`source="feedback"`). Stage 4 has
+Vegas fix. Two consumers build the same object today: S-2.10.5 from named
+destinations (`source="destination"`) and the Stage 9 refinement planner's
+`reserve_destinations` / `reserve_refs` (`source="refinement"`); the
+`"feedback"` source is reserved for A-023 and nothing builds it yet. Stage 4 has
 exactly one reservation-merge path.
 
 Deterministic, no-LLM. Assets are duck-typed (anything with `.key`, `.caption`,
@@ -40,8 +41,12 @@ class CoveragePlan:
 
     def to_prompt_vars(self) -> list[dict[str, Any]]:
         return [
-            {"name": d.name, "matched": len(d.asset_keys), "basis": d.basis,
-             "chronological_hint": d.chronological_hint}
+            {
+                "name": d.name,
+                "matched": len(d.asset_keys),
+                "basis": d.basis,
+                "chronological_hint": d.chronological_hint,
+            }
             for d in self.named_destinations
         ]
 

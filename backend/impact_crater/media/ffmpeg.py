@@ -10,9 +10,8 @@ Subprocess execution lives here so render-stage code never shells out
 directly. The worker pool's `register_subprocess` lets `cancel()`
 SIGTERM in-flight ffmpeg children with a grace period before SIGKILL.
 
-Audio probe (`probe_audio`) is the only ffprobe consumer at M2; the
-M4 music-analysis pipeline will use Madmom + librosa instead and only
-fall back to ffprobe for ingest-time metadata.
+Audio probe (`probe_audio`) serves the render path; music structure
+analysis itself is librosa in `media/music.py` (ADR-0012, amended 2026-10-25).
 """
 
 from __future__ import annotations
@@ -202,9 +201,7 @@ def _resolve_binary(*, env_key: str, binary_name: str) -> str:
         p = Path(override).expanduser()
         if p.is_file():
             return str(p)
-        raise FFmpegNotFound(
-            f"{env_key} points at {override!r} which is not a file"
-        )
+        raise FFmpegNotFound(f"{env_key} points at {override!r} which is not a file")
 
     on_path = shutil.which(binary_name)
     if on_path:

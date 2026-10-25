@@ -3,8 +3,9 @@
 State lives in the SQLite `quota_state` table (one row per (date, provider);
 the synthetic "_total_" provider tracks the all-providers aggregate).
 
-The pre-job and per-stage check call `check_quota(estimated_cost_per_provider)`;
-post-call, every successful LLM dispatch records into `record_spend()`.
+`pipeline/runner.py` calls `check_quota(estimated_cost_per_provider)` once before
+Stage 1 — there is no per-stage or mid-job check yet (S-3.11.1); every successful
+LLM dispatch records into `record_spend()`.
 """
 
 from __future__ import annotations

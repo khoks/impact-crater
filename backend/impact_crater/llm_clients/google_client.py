@@ -1,12 +1,14 @@
 """GoogleLLMClient — implementation against the official `google-genai` SDK.
 
-Per ADR-0009, this client serves Tier-S Gemini Flash (caption_image,
-caption_video_scene, score_image) AND embeddings (text-embedding-004 or
-the current Google embedding model). The Anthropic client raises for
+Per ADR-0009, this client serves Tier-S Gemini Flash (`caption_image`,
+`score_image`, `generate_title_text`), the title-card image model and the
+embeddings (`gemini-embedding-001`; `embed_image` captions first, then embeds
+the caption text — ADR-0018 replaces this). The Anthropic client raises for
 embed_* operations so the router pattern stays clean.
 
-Structured outputs use Gemini's `response_schema` mode for JSON-shape
-guarantees.
+Structured outputs are prompted JSON with a schema-keyword scrub
+(`_call_with_schema`) rather than `response_schema`, for cross-version
+robustness of the SDK.
 
 Note: the older `google-generativeai` package was deprecated in favor of
 `google-genai`. This client targets the new SDK from the start.
@@ -16,7 +18,6 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import AsyncIterator
 from typing import Any, Literal
 
 import numpy as np
@@ -36,11 +37,8 @@ from impact_crater.llm_clients.base import (
     CallParams,
     CandidateRef,
     Embedding,
-    Message,
     MusicSpec,
     SelectedItem,
-    ToolCall,
-    ToolSpec,
 )
 from impact_crater.llm_clients.exceptions import LLMOperationFailed, LLMTransientError
 
@@ -179,32 +177,6 @@ class GoogleLLMClient:
         _apply_usage(params, result)
         return _extract_text(result)
 
-    async def caption_video_scene(
-        self,
-        scene_frames: list[bytes],
-        *,
-        prompt_template: str,
-        params: CallParams,
-    ) -> str:
-        contents: list[Any] = [
-            gtypes.Part.from_bytes(data=f, mime_type=_sniff_mime_type(f)) for f in scene_frames
-        ]
-        contents.append(prompt_template)
-        result = await _retry(
-            params,
-            lambda: _to_async(
-                self._client.models.generate_content,
-                model=params.model,
-                contents=contents,
-                config=gtypes.GenerateContentConfig(
-                    temperature=params.temperature,
-                    max_output_tokens=params.max_tokens,
-                ),
-            ),
-        )
-        _apply_usage(params, result)
-        return _extract_text(result)
-
     async def score_image(
         self,
         image_bytes: bytes,
@@ -219,8 +191,7 @@ class GoogleLLMClient:
         # and parsing the first float we see is more robust.
         contents = [
             gtypes.Part.from_bytes(data=image_bytes, mime_type=_sniff_mime_type(image_bytes)),
-            prompt_template
-            + "\n\nReply with ONLY a single decimal number between 0.0 and 1.0. "
+            prompt_template + "\n\nReply with ONLY a single decimal number between 0.0 and 1.0. "
             "No words. No JSON. No explanation. Just the number.",
         ]
         result = await _retry(
@@ -267,20 +238,6 @@ class GoogleLLMClient:
                 prompt_template,
             ],
         )
-
-    async def extract_metadata_video_scene(
-        self,
-        scene_frames: list[bytes],
-        *,
-        prompt_template: str,
-        schema: dict[str, Any],
-        params: CallParams,
-    ) -> dict[str, Any]:
-        contents: list[Any] = [
-            gtypes.Part.from_bytes(data=f, mime_type=_sniff_mime_type(f)) for f in scene_frames
-        ]
-        contents.append(prompt_template)
-        return await self._call_with_schema(params, schema=schema, contents=contents)
 
     # -- Narrative judgment (N-001) ----------------------------------------
 
@@ -344,48 +301,6 @@ class GoogleLLMClient:
         params: CallParams,
     ) -> dict[str, Any]:
         return await self._call_with_schema(params, schema=schema, contents=[prompt_template])
-
-    # -- Orchestrator tool-call loop ---------------------------------------
-
-    async def tool_call(
-        self,
-        tools: list[ToolSpec],
-        messages: list[Message],
-        *,
-        params: CallParams,
-    ) -> ToolCall:
-        # Gemini's tool-calling API differs from Anthropic's. Per ADR-0009
-        # the orchestrator's tool-call loop runs on Anthropic Sonnet, so this
-        # path is exercised mainly when the user manually picks Google.
-        # Minimal support kept for M1.
-        raise LLMOperationFailed(
-            operation=params.operation,
-            provider=self.provider,
-            model=params.model,
-            attempts=0,
-            last_error=(
-                "google.tool_call is not implemented at M1 — orchestrator routes "
-                "to anthropic per the ADR-0009 cost-tier defaults"
-            ),
-        )
-
-    async def stream_chat(
-        self,
-        messages: list[Message],
-        *,
-        tools: list[ToolSpec] | None = None,
-        params: CallParams,
-    ) -> AsyncIterator[str]:
-        contents = [{"role": m.role, "parts": [{"text": m.content}]} for m in messages]
-        result = await _to_async(
-            self._client.models.generate_content_stream,
-            model=params.model,
-            contents=contents,
-        )
-        for chunk in result:
-            text = getattr(chunk, "text", "") or ""
-            if text:
-                yield text
 
     # -- Internal helpers --------------------------------------------------
 
@@ -552,7 +467,10 @@ _IMAGE_MAGIC_PREFIXES: tuple[tuple[bytes, str], ...] = (
     (b"GIF87a", "image/gif"),
     (b"GIF89a", "image/gif"),
     # WebP: "RIFF" .... "WEBP"
-    (b"RIFF", "image/webp"),  # not perfect — WEBP has WEBP at offset 8, but RIFF alone is sufficiently rare for our inputs
+    (
+        b"RIFF",
+        "image/webp",
+    ),  # not perfect — WEBP has WEBP at offset 8, but RIFF alone is sufficiently rare for our inputs
     (b"BM", "image/bmp"),
 )
 
@@ -649,4 +567,4 @@ async def _retry(params: CallParams, callable_: Any) -> Any:
 
 
 __all__ = ["GoogleLLMClient"]
-_ = (CandidateRef, MusicSpec, ToolSpec)
+_ = (CandidateRef, MusicSpec)
