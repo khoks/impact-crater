@@ -39,6 +39,7 @@ Tech stack, MVP scope, agent harness shape, vision-model choices, sandbox approa
 - **Decision log:** [`docs/decisions/DECISIONS_LOG.md`](./docs/decisions/DECISIONS_LOG.md). Append-only D-NNN entries.
 - **MVP scope:** [`docs/roadmap/MVP.md`](./docs/roadmap/MVP.md). Locked once chosen — anything outside it becomes a backlog Story.
 - **Roadmap:** [`docs/roadmap/ROADMAP.md`](./docs/roadmap/ROADMAP.md).
+- **Restart landscape + phase-wise plan (2026-10-24):** [`docs/roadmap/LANDSCAPE-AND-PLAN-2026-10-24.md`](./docs/roadmap/LANDSCAPE-AND-PLAN-2026-10-24.md). Audited state of the project after the mid-2026 pause — what is done at macro/medium/micro level, the honest MVP gaps, every pending feature / improvement / decision / test / future item, a 7-phase plan, and the handoff prompt for the next session. **Read it after BOARD.md until its Phase 0 has been worked through.**
 - **Live work tracking:** [`project/BOARD.md`](./project/BOARD.md). **Read this every session before starting work.**
 
 ---
