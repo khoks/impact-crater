@@ -100,10 +100,10 @@ class CastInventory:
 def detect_and_crop_faces(
     image_bytes: bytes, *, margin: float = _FACE_CROP_MARGIN
 ) -> list[tuple[bytes, tuple[float, float, float, float]]]:
-    """Detect faces (mediapipe) and return (crop_jpeg_bytes, norm_bbox) each.
+    """Detect faces and return (crop_jpeg_bytes, norm_bbox) each.
 
-    Reuses the existing privacy-blur detector. Returns [] when mediapipe is
-    unavailable or no face is found.
+    Reuses the shared detector (`_face_detect`: the OpenCV Haar cascade on
+    current installs). Returns [] when no detector loads or no face is found.
     """
     from impact_crater.media._face_detect import detect_face_boxes
 
@@ -291,7 +291,9 @@ def _day_key(iso_timestamp: str | None) -> str:
         return iso_timestamp[:10]
 
 
-def location_key(gps_lat: float | None, gps_lon: float | None, description: str | None) -> str | None:
+def location_key(
+    gps_lat: float | None, gps_lon: float | None, description: str | None
+) -> str | None:
     """A coarse location bucket for recurrence breadth — a ~1km GPS cell
     when coordinates exist, else the VLM location description."""
     if gps_lat is not None and gps_lon is not None:
@@ -318,9 +320,7 @@ class CoverageReport:
         return not self.missing_person_ids
 
 
-def compute_coverage(
-    inventory: CastInventory, selected_content_hashes: set[str]
-) -> CoverageReport:
+def compute_coverage(inventory: CastInventory, selected_content_hashes: set[str]) -> CoverageReport:
     """Group members present in vs absent from the selected clips.
 
     Answers the user's "is everyone being included, or did we leave someone

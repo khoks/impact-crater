@@ -5,9 +5,15 @@
 # Per-user overrides flow through settings.routing_overrides (ADR-0006).
 # Per-job overrides flow through the effort-level UX (D-013 / A-015).
 #
+# This file is the source of truth for which model serves which operation
+# (ADR-0009 amendment 2026-10-25). Every operation here has an `LLMRouter`
+# method and `pipeline/runner.py::_TIER_BY_OPERATION` mirrors it
+# (tests/test_routing_config_integrity.py). S-2.10.9 bumps the IDs and pins
+# real `model_version` tokens.
+#
 # Tiers (ADR-0009):
 #   S — Tier-S Gemini Flash (cheap, bulk, vision-language)
-#   M — Tier-M Claude Sonnet (structured output, agentic prose)
+#   M — Tier-M Claude Sonnet (structured output)
 #   L — Tier-L Claude Opus (one-call-per-job heavy reasoning)
 #   embedding — Google embedding model (not on the S/M/L axis)
 #
@@ -40,12 +46,6 @@ operations:
     model_version: v1
     tier: S
     max_tokens: 256
-  caption_video_scene:
-    provider: google
-    model: gemini-2.5-flash
-    model_version: v1
-    tier: S
-    max_tokens: 256
   score_image:
     provider: google
     model: gemini-2.5-flash
@@ -67,49 +67,23 @@ operations:
     max_tokens: 64
     temperature: 0.5
 
-  # ---- Tier-M (structured output, agentic prose) ----------------------
+  # ---- Tier-M (structured output) --------------------------------------
+  # extract_metadata_image also serves video-scene frames: Stage 3 passes the
+  # RichMetadataVideoScene schema for scenes (there is no separate op).
   extract_metadata_image:
     provider: anthropic
     model: claude-sonnet-4-6
     model_version: latest
     tier: M
     max_tokens: 2048
-  extract_metadata_video_scene:
-    provider: anthropic
-    model: claude-sonnet-4-6
-    model_version: latest
-    tier: M
-    max_tokens: 2048
+  # parse_user_brief also carries Stage 0.5 brief intent, the Stage 6.5
+  # second-guess and the Stage 9 refinement planner (ADR-0021).
   parse_user_brief:
     provider: anthropic
     model: claude-sonnet-4-6
     model_version: latest
     tier: M
     max_tokens: 1024
-  recommend_effort_level:
-    provider: anthropic
-    model: claude-sonnet-4-6
-    model_version: latest
-    tier: M
-    max_tokens: 1024
-  explain_cost:
-    provider: anthropic
-    model: claude-sonnet-4-6
-    model_version: latest
-    tier: M
-    max_tokens: 1024
-  explain_upgrade_path:
-    provider: anthropic
-    model: claude-sonnet-4-6
-    model_version: latest
-    tier: M
-    max_tokens: 1024
-  orchestrator_reasoning:
-    provider: anthropic
-    model: claude-sonnet-4-6
-    model_version: latest
-    tier: M
-    max_tokens: 2048
   # S-2.11.5 opt-in AI title/splash card background (remote image-gen per D-054).
   # One call per job, only when the user opts in; fail-soft to a typographic card.
   generate_title_background:

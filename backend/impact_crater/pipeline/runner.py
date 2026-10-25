@@ -95,7 +95,9 @@ class HeadlessJobResult:
     candidate_set: CandidateSet
     media_count: int
     correlation_id: str
-    media: list[Any] = field(default_factory=list)  # MediaRecord; typed Any to avoid forward-ref dance
+    media: list[Any] = field(
+        default_factory=list
+    )  # MediaRecord; typed Any to avoid forward-ref dance
     quota_snapshot: dict[str, Any] = field(default_factory=dict)
     cast: Any = None  # A-018 CastInventory (or None when disabled)
 
@@ -211,12 +213,8 @@ async def run_headless_pipeline(
     try:
         # Stage 1
         await reporter.stage_started("stage_1_ingest")
-        media = await stage1_ingest.ingest_media(
-            project_id, config.media_paths, pool=pool
-        )
-        await reporter.stage_completed(
-            "stage_1_ingest", detail=f"{len(media)} media records"
-        )
+        media = await stage1_ingest.ingest_media(project_id, config.media_paths, pool=pool)
+        await reporter.stage_completed("stage_1_ingest", detail=f"{len(media)} media records")
 
         # Stage 2 + 3 — sequentially (3 needs the full media list); inside
         # each stage we parallelize per-asset.
@@ -225,23 +223,17 @@ async def run_headless_pipeline(
         # an accurate denominator instead of the raw input-file count. Cheap:
         # just flattens the already-loaded media records, no I/O.
         asset_count = len(list(stage2_bulk_ops._enumerate_assets(media)))
-        await reporter.stage_started(
-            "stage_2_bulk_ops", detail=f"{asset_count} shots to analyze"
-        )
+        await reporter.stage_started("stage_2_bulk_ops", detail=f"{asset_count} shots to analyze")
         stage2 = await stage2_bulk_ops.run_stage2(
             router=router, media=media, brief=config.brief, pool=pool
         )
-        await reporter.stage_completed(
-            "stage_2_bulk_ops", detail=f"{len(stage2)} shots analyzed"
-        )
+        await reporter.stage_completed("stage_2_bulk_ops", detail=f"{len(stage2)} shots analyzed")
 
         await reporter.stage_started("stage_3_metadata")
         stage3 = await stage3_metadata.run_stage3(
             router=router, media=media, brief=config.brief, pool=pool
         )
-        await reporter.stage_completed(
-            "stage_3_metadata", detail=f"{len(stage3)} extracted"
-        )
+        await reporter.stage_completed("stage_3_metadata", detail=f"{len(stage3)} extracted")
 
         # Stage 3.5 — auto trip cast (A-018). Fail-soft: any error or a
         # missing face model yields an empty inventory and the pipeline
@@ -385,20 +377,17 @@ class FullJobResult:
     arc_judgment: ArcJudgment | None = None
 
 
-# Tier-lookup mirrors ADR-0009; consumed by `telemetry.aggregate_summary`.
+# Mirrors config/llm-routing.yaml (guarded by tests/test_routing_config_integrity.py);
+# consumed by `telemetry.aggregate_summary`.
 _TIER_BY_OPERATION = {
     "embed_image": "embedding",
     "embed_text": "embedding",
     "caption_image": "S",
-    "caption_video_scene": "S",
     "score_image": "S",
+    "generate_title_text": "S",
     "extract_metadata_image": "M",
-    "extract_metadata_video_scene": "M",
     "parse_user_brief": "M",
-    "recommend_effort_level": "M",
-    "explain_cost": "M",
-    "explain_upgrade_path": "M",
-    "orchestrator_reasoning": "M",
+    "generate_title_background": "M",
     "judge_narrative_arc": "L",
 }
 
@@ -519,8 +508,7 @@ async def run_full_pipeline(
         correlation_id=headless.correlation_id,
     )
     log.info(
-        "stage6_plan_compiled project_id=%s snapshot_id=%s correlation_id=%s "
-        "clip_count=%d",
+        "stage6_plan_compiled project_id=%s snapshot_id=%s correlation_id=%s clip_count=%d",
         headless.project_id,
         plan.snapshot_id,
         headless.correlation_id,
@@ -548,7 +536,9 @@ async def run_full_pipeline(
 
     if sg_result is not None and sg_result.overrides:
         # Persist the full second-guess result for the v1 UI.
-        sg_path = stage6_plan.snapshot_dir(headless.project_id, plan.snapshot_id) / "second_guess.json"
+        sg_path = (
+            stage6_plan.snapshot_dir(headless.project_id, plan.snapshot_id) / "second_guess.json"
+        )
         sg_path.write_text(sg_result.model_dump_json(indent=2), encoding="utf-8")
         if sg_result.overall_confidence > 0.85:
             plan = stage6_plan.apply_overrides(plan, sg_result.overrides)
@@ -567,9 +557,7 @@ async def run_full_pipeline(
     if config.add_title_card:
         await reporter.stage_started("stage_6_title_card")
         try:
-            title_spec = stage6_plan.TitleCardSpec(
-                enabled=True, title_text=config.title_text
-            )
+            title_spec = stage6_plan.TitleCardSpec(enabled=True, title_text=config.title_text)
             title_clip = await stage6_title_card.build_title_clip(
                 router=sg_router,
                 plan=plan,
@@ -581,10 +569,12 @@ async def run_full_pipeline(
             )
             if title_clip is not None:
                 # Persist the spec so refinement can re-inject + edit the card.
-                plan = plan.model_copy(update={"clips": [title_clip, *plan.clips], "title_card_spec": title_spec})
-                (stage6_plan.snapshot_dir(headless.project_id, plan.snapshot_id) / "plan.json").write_text(
-                    plan.model_dump_json(indent=2), encoding="utf-8"
+                plan = plan.model_copy(
+                    update={"clips": [title_clip, *plan.clips], "title_card_spec": title_spec}
                 )
+                (
+                    stage6_plan.snapshot_dir(headless.project_id, plan.snapshot_id) / "plan.json"
+                ).write_text(plan.model_dump_json(indent=2), encoding="utf-8")
         except Exception as exc:
             log.warning("title_card_step_failed (proceeding without): %r", str(exc)[:200])
         await reporter.stage_completed("stage_6_title_card")
@@ -605,18 +595,14 @@ async def run_full_pipeline(
     )
     await _emit_phase_diag(reporter, diagnostics.phase_stage6, plan)
 
-    await reporter.stage_completed(
-        "stage_6_plan", detail=f"{len(plan.clips)} clips"
-    )
+    await reporter.stage_completed("stage_6_plan", detail=f"{len(plan.clips)} clips")
 
     # Stage 7 — render.
     await reporter.stage_started("stage_7_render")
     render_result = await stage7_render.render_plan(
         plan, correlation_id=headless.correlation_id, pool=pool
     )
-    await reporter.stage_completed(
-        "stage_7_render", detail=f"{render_result.output_bytes} bytes"
-    )
+    await reporter.stage_completed("stage_7_render", detail=f"{render_result.output_bytes} bytes")
 
     # Aggregate JobCostSummary across the entire correlation_id family
     # and persist alongside render.mp4.
@@ -626,7 +612,9 @@ async def run_full_pipeline(
         correlation_ids=[headless.correlation_id],
         tier_lookup=_TIER_BY_OPERATION,
     )
-    summary_path = stage6_plan.snapshot_dir(headless.project_id, plan.snapshot_id) / "cost_summary.json"
+    summary_path = (
+        stage6_plan.snapshot_dir(headless.project_id, plan.snapshot_id) / "cost_summary.json"
+    )
     summary_path.write_text(json.dumps(asdict(summary), indent=2), encoding="utf-8")
 
     log.info(

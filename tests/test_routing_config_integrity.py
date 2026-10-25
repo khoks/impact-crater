@@ -31,11 +31,24 @@ def test_every_routed_op_with_a_prompt_dir_resolves() -> None:
     assert not missing, f"routing references models with no prompt file: {missing}"
 
 
+def test_tier_lookup_mirrors_routing_yaml() -> None:
+    """Every routed op has a tier entry for JobCostSummary and nothing dead lingers (S-2.13.7)."""
+    from impact_crater.pipeline.runner import _TIER_BY_OPERATION
+
+    cfg = yaml.safe_load(_ROUTING.read_text(encoding="utf-8"))
+    routed = {op: route["tier"] for op, route in cfg["operations"].items()}
+    assert len(routed) == 9
+    assert routed == _TIER_BY_OPERATION
+
+
 def test_bumped_models_are_current() -> None:
     cfg = yaml.safe_load(_ROUTING.read_text(encoding="utf-8"))
     assert cfg["operations"]["judge_narrative_arc"]["model"] == "claude-opus-4-8"
     assert cfg["operations"]["parse_user_brief"]["model"] == "claude-sonnet-4-6"
     # No op should still point at a superseded 4-5 Anthropic model.
-    stale = [op for op, r in cfg["operations"].items()
-             if r.get("provider") == "anthropic" and str(r.get("model", "")).endswith("-4-5")]
+    stale = [
+        op
+        for op, r in cfg["operations"].items()
+        if r.get("provider") == "anthropic" and str(r.get("model", "")).endswith("-4-5")
+    ]
     assert not stale, f"ops still on a -4-5 model: {stale}"

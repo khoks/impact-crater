@@ -202,8 +202,7 @@ async def _prerender_clips(
     for i, clip in enumerate(plan.clips):
         seg_path = work_dir / f"seg-{i:04d}.mp4"
         log.debug(
-            "stage7_clip_render snapshot_id=%s clip=%d/%d candidate_ref=%s "
-            "kind=%s duration_ms=%d",
+            "stage7_clip_render snapshot_id=%s clip=%d/%d candidate_ref=%s kind=%s duration_ms=%d",
             plan.snapshot_id,
             i + 1,
             len(plan.clips),
@@ -237,38 +236,58 @@ async def _prerender_one(
     if clip.kind in ("photo", "title_card"):  # title card renders as a static image (S-2.11.5)
         args = [
             "-y",
-            "-loop", "1",
-            "-t", f"{duration_s:.3f}",
-            "-i", clip.source_path,
-            "-vf", vf,
-            "-r", str(_OUT_FPS),
-            "-c:v", "libx264",
-            "-preset", _X264_PRESET,
-            "-crf", str(_X264_CRF),
-            "-pix_fmt", "yuv420p",
+            "-loop",
+            "1",
+            "-t",
+            f"{duration_s:.3f}",
+            "-i",
+            clip.source_path,
+            "-vf",
+            vf,
+            "-r",
+            str(_OUT_FPS),
+            "-c:v",
+            "libx264",
+            "-preset",
+            _X264_PRESET,
+            "-crf",
+            str(_X264_CRF),
+            "-pix_fmt",
+            "yuv420p",
             # Force TV-range (limited) — JPEG sources default to PC range
             # (full), which ffprobe reports as yuvj420p. Limited-range is
             # the broader-compatible choice for YouTube + most players.
-            "-color_range", "tv",
+            "-color_range",
+            "tv",
             "-an",
             str(out_path),
         ]
     else:  # video_scene
         args = [
             "-y",
-            "-ss", f"{clip.start_seconds:.3f}",
-            "-t", f"{duration_s:.3f}",
-            "-i", clip.source_path,
-            "-vf", vf,
-            "-r", str(_OUT_FPS),
-            "-c:v", "libx264",
-            "-preset", _X264_PRESET,
-            "-crf", str(_X264_CRF),
-            "-pix_fmt", "yuv420p",
+            "-ss",
+            f"{clip.start_seconds:.3f}",
+            "-t",
+            f"{duration_s:.3f}",
+            "-i",
+            clip.source_path,
+            "-vf",
+            vf,
+            "-r",
+            str(_OUT_FPS),
+            "-c:v",
+            "libx264",
+            "-preset",
+            _X264_PRESET,
+            "-crf",
+            str(_X264_CRF),
+            "-pix_fmt",
+            "yuv420p",
             # Force TV-range (limited) — JPEG sources default to PC range
             # (full), which ffprobe reports as yuvj420p. Limited-range is
             # the broader-compatible choice for YouTube + most players.
-            "-color_range", "tv",
+            "-color_range",
+            "tv",
             "-an",
             str(out_path),
         ]
@@ -277,8 +296,7 @@ async def _prerender_one(
     if rc != 0:
         stderr_str = stderr.decode("utf-8", errors="replace")
         log.error(
-            "stage7_clip_failed candidate_ref=%s kind=%s ffmpeg_exit_code=%d "
-            "stderr_tail=%r",
+            "stage7_clip_failed candidate_ref=%s kind=%s ffmpeg_exit_code=%d stderr_tail=%r",
             clip.candidate_ref,
             clip.kind,
             rc,
@@ -292,9 +310,7 @@ async def _prerender_one(
         )
 
 
-async def _prerender_montage(
-    clip: RenderClip, out_path: Path, *, pool: WorkerPool | None
-) -> None:
+async def _prerender_montage(clip: RenderClip, out_path: Path, *, pool: WorkerPool | None) -> None:
     """Render each montage member photo to a tiny normalized segment, then
     concat them (stream-copy) into one montage segment that is byte-compatible
     with the other top-level segments (S-2.11.4)."""
@@ -305,10 +321,29 @@ async def _prerender_montage(
         seg = work / f"{stem}-m{j:03d}.mp4"
         dur_s = max(m.duration_ms / 1000.0, 0.2)
         args = [
-            "-y", "-loop", "1", "-t", f"{dur_s:.3f}", "-i", m.source_path,
-            "-vf", _video_filter(m.aspect_ratio_action), "-r", str(_OUT_FPS),
-            "-c:v", "libx264", "-preset", _X264_PRESET, "-crf", str(_X264_CRF),
-            "-pix_fmt", "yuv420p", "-color_range", "tv", "-an", str(seg),
+            "-y",
+            "-loop",
+            "1",
+            "-t",
+            f"{dur_s:.3f}",
+            "-i",
+            m.source_path,
+            "-vf",
+            _video_filter(m.aspect_ratio_action),
+            "-r",
+            str(_OUT_FPS),
+            "-c:v",
+            "libx264",
+            "-preset",
+            _X264_PRESET,
+            "-crf",
+            str(_X264_CRF),
+            "-pix_fmt",
+            "yuv420p",
+            "-color_range",
+            "tv",
+            "-an",
+            str(seg),
         ]
         rc, _stdout, stderr = await _run(args, pool=pool)
         if rc != 0:
@@ -355,10 +390,8 @@ def _video_filter(action: str) -> str:
             f"setsar=1,fps={_OUT_FPS},format=yuv420p"
         )
     if action == "smart_crop":
-        # M2 baseline = center-crop after a scale-to-cover. saliency-aware
-        # smart_crop via smartcrop.py can plug in here in M3+ by pre-computing
-        # the crop bbox at plan-compile time and emitting an explicit crop=
-        # filter; for now center-crop is the deterministic fallback.
+        # "smart_crop" is a deterministic centre crop after a scale-to-cover
+        # (ADR-0010 amendment 2026-10-25); no saliency library is used.
         return (
             f"scale=w={_OUT_W}:h={_OUT_H}:force_original_aspect_ratio=increase,"
             f"crop={_OUT_W}:{_OUT_H},setsar=1,fps={_OUT_FPS}"
@@ -387,10 +420,14 @@ async def _concat_segments(
     )
     args = [
         "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", str(list_file),
-        "-c", "copy",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        str(list_file),
+        "-c",
+        "copy",
         str(out_path),
     ]
     rc, _stdout, stderr = await _run(args, pool=pool)
@@ -421,10 +458,12 @@ async def _normalize_audio(
     # Pass 1 — measure.
     measure_args = [
         "-y",
-        "-i", str(src),
+        "-i",
+        str(src),
         "-af",
         f"loudnorm=I={target_lufs}:TP={true_peak_db}:LRA=11:print_format=json",
-        "-f", "null",
+        "-f",
+        "null",
         "-",
     ]
     rc, _stdout, stderr = await _run(measure_args, pool=pool)
@@ -457,12 +496,18 @@ async def _normalize_audio(
     )
     apply_args = [
         "-y",
-        "-i", str(src),
-        "-af", af_chain,
-        "-c:a", _AUDIO_CODEC,
-        "-b:a", _AUDIO_BITRATE,
-        "-ar", "48000",
-        "-ac", "2",
+        "-i",
+        str(src),
+        "-af",
+        af_chain,
+        "-c:a",
+        _AUDIO_CODEC,
+        "-b:a",
+        _AUDIO_BITRATE,
+        "-ar",
+        "48000",
+        "-ac",
+        "2",
         str(out_path),
     ]
     rc, _stdout, stderr = await _run(apply_args, pool=pool)
@@ -514,14 +559,21 @@ async def _mux_video_audio(
 ) -> None:
     args = [
         "-y",
-        "-i", str(video),
-        "-i", str(audio),
-        "-map", "0:v:0",
-        "-map", "1:a:0",
-        "-c:v", "copy",
-        "-c:a", "copy",
+        "-i",
+        str(video),
+        "-i",
+        str(audio),
+        "-map",
+        "0:v:0",
+        "-map",
+        "1:a:0",
+        "-c:v",
+        "copy",
+        "-c:a",
+        "copy",
         "-shortest",
-        "-movflags", "+faststart",
+        "-movflags",
+        "+faststart",
         str(out_path),
     ]
     rc, _stdout, stderr = await _run(args, pool=pool)
@@ -547,9 +599,7 @@ async def _run(
     return await ff.run_ffmpeg_async(args, on_subprocess_started=on_started)
 
 
-async def _set_render_status(
-    snapshot_id: str, status: str, render_path: str | None
-) -> None:
+async def _set_render_status(snapshot_id: str, status: str, render_path: str | None) -> None:
     async with connection() as db:
         if render_path is None:
             await db.execute(

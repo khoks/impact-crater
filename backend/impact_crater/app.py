@@ -32,17 +32,12 @@ from impact_crater.api import (
     setup,
     snapshots,
     workplan,
-    ws,
 )
 
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Per-process startup + shutdown hooks.
-
-    M0 only runs schema migrations; M1+ will add LLM client warm-up,
-    worker pool start, etc.
-    """
+    """Per-process startup + shutdown hooks: run the pending schema migrations."""
     from impact_crater.storage import migrations
 
     await migrations.run_pending_migrations()
@@ -77,7 +72,6 @@ def create_app() -> FastAPI:
     app.include_router(persons.router, prefix="/api/persons", tags=["persons"])
     app.include_router(publish.router, prefix="/api", tags=["publish"])
     app.include_router(profile.router, prefix="/api/profile", tags=["profile"])
-    app.include_router(ws.router, prefix="/api", tags=["ws"])
 
     _mount_frontend(app)
 
@@ -95,6 +89,7 @@ def _mount_frontend(app: FastAPI) -> None:
     dist_dir = _frontend_dist_dir()
 
     if dist_dir is None:
+
         @app.get("/", response_class=HTMLResponse)
         async def not_built() -> str:
             return _NOT_BUILT_HTML

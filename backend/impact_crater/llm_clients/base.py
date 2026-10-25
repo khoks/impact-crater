@@ -8,7 +8,6 @@ the right implementation per operation.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, runtime_checkable
 
@@ -98,33 +97,6 @@ class CallParams:
     usage_image_tokens: int = 0
 
 
-# ---- Tool / message shapes for tool-call loops --------------------------
-
-
-@dataclass
-class ToolSpec:
-    name: str
-    description: str
-    input_schema: dict[str, Any]  # JSON Schema
-
-
-@dataclass
-class Message:
-    role: Literal["system", "user", "assistant", "tool"]
-    content: str
-    tool_call_id: str | None = None
-    tool_name: str | None = None
-
-
-@dataclass
-class ToolCall:
-    """Output of `tool_call()` — one tool the model wants to invoke."""
-
-    tool_name: str
-    tool_input: dict[str, Any]
-    raw_response_text: str = ""
-
-
 # ---- The Protocol --------------------------------------------------------
 
 
@@ -133,9 +105,10 @@ class LLMClient(Protocol):
     """The single contract every provider implementation satisfies.
 
     All methods are async. Embeddings are normalized to numpy ndarray
-    (float32, shape (D,)). Structured-output operations (extract_metadata_*,
-    parse_user_brief, recommend_effort_level) validate the response against
-    the supplied JSON Schema and raise LLMOperationFailed on mismatch.
+    (float32, shape (D,)). Structured-output operations (`extract_metadata_image`,
+    `parse_user_brief`) validate the response against the supplied JSON Schema
+    and raise LLMOperationFailed on mismatch. Video-scene frames go through
+    `caption_image` / `extract_metadata_image` with the video-scene schema.
 
     Pricing / cost-estimation lives outside this Protocol — the LLMRouter
     layers it on top using rate cards (ADR-0015).
@@ -157,14 +130,6 @@ class LLMClient(Protocol):
         self, image_bytes: bytes, *, prompt_template: str, params: CallParams
     ) -> str: ...
 
-    async def caption_video_scene(
-        self,
-        scene_frames: list[bytes],
-        *,
-        prompt_template: str,
-        params: CallParams,
-    ) -> str: ...
-
     async def score_image(
         self,
         image_bytes: bytes,
@@ -184,15 +149,6 @@ class LLMClient(Protocol):
         params: CallParams,
     ) -> dict[str, Any]: ...
 
-    async def extract_metadata_video_scene(
-        self,
-        scene_frames: list[bytes],
-        *,
-        prompt_template: str,
-        schema: dict[str, Any],
-        params: CallParams,
-    ) -> dict[str, Any]: ...
-
     # Narrative judgment (N-001) -------------------------------------------
     async def judge_narrative_arc(
         self,
@@ -206,7 +162,7 @@ class LLMClient(Protocol):
         params: CallParams,
     ) -> ArcJudgment: ...
 
-    # Brief parsing + agentic UX -------------------------------------------
+    # Brief parsing (also the brief-intent, second-guess and refinement planner carrier)
     async def parse_user_brief(
         self,
         text: str,
@@ -215,20 +171,3 @@ class LLMClient(Protocol):
         schema: dict[str, Any],
         params: CallParams,
     ) -> dict[str, Any]: ...
-
-    # Orchestrator (D-017) — tool-call-driven loop -------------------------
-    async def tool_call(
-        self,
-        tools: list[ToolSpec],
-        messages: list[Message],
-        *,
-        params: CallParams,
-    ) -> ToolCall: ...
-
-    def stream_chat(
-        self,
-        messages: list[Message],
-        *,
-        tools: list[ToolSpec] | None = None,
-        params: CallParams,
-    ) -> AsyncIterator[str]: ...

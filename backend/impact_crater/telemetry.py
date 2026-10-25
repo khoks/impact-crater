@@ -1,12 +1,11 @@
 """Append-only JSONL telemetry stream per ADR-0015.
 
-Five event types — `LLMCallEvent`, `RenderEvent`, `IngestEvent`,
-`OrchestratorTurnEvent`, `JobLifecycleEvent` — written to
-`~/.impact-crater/telemetry.jsonl`. Each event self-describes via
-`schema_version`. Rotation is deferred to v1; MVP keeps everything.
+Four event types — `LLMCallEvent`, `RenderEvent`, `IngestEvent`,
+`JobLifecycleEvent` — written to `~/.impact-crater/telemetry.jsonl`. Each
+event self-describes via `schema_version`. Rotation is still unbounded
+(E-3.11).
 
-The same writer also feeds the post-job `JobCostSummary` aggregator
-(ADR-0014 references this as a feature input for profile re-derivation).
+The same writer also feeds the post-job `JobCostSummary` aggregator.
 """
 
 from __future__ import annotations
@@ -86,21 +85,6 @@ class IngestEvent:
 
 
 @dataclass
-class OrchestratorTurnEvent:
-    project_id: str
-    snapshot_id: str | None
-    turn_index: int
-    tool_name: str
-    tool_input_summary: dict[str, Any]
-    tool_outcome: Literal["success", "failure", "cancelled"]
-    tool_latency_ms: int
-    correlation_id: str
-    schema_version: int = 1
-    event_type: Literal["orchestrator_turn"] = "orchestrator_turn"
-    timestamp: str = field(default_factory=_now_iso)
-
-
-@dataclass
 class JobLifecycleEvent:
     project_id: str
     snapshot_id: str | None
@@ -112,13 +96,7 @@ class JobLifecycleEvent:
     timestamp: str = field(default_factory=_now_iso)
 
 
-TelemetryEvent = (
-    LLMCallEvent
-    | RenderEvent
-    | IngestEvent
-    | OrchestratorTurnEvent
-    | JobLifecycleEvent
-)
+TelemetryEvent = LLMCallEvent | RenderEvent | IngestEvent | JobLifecycleEvent
 
 
 # ---- Writer ------------------------------------------------------------

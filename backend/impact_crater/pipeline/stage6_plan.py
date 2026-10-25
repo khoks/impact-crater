@@ -1,16 +1,14 @@
 """Stage 6 — plan compile per ADR-0011 §"Stage 6 — Plan compilation".
 
-Deterministic at M2 — orchestrator second-guess + music-video beat-snap
-land in M6 + M4 respectively.
+Deterministic, no LLM. Walks the `ArcJudgment.selected_items`, joins back to
+the source media (photo file paths or video scenes), computes final clip
+durations through the `PlanDirective` (ADR-0019), applies aspect-ratio
+handling (`smart_crop` = a centre crop at render / pad-letterbox for 9:16
+video) and persists `snapshots/{snapshot_id}/plan.json` per ADR-0006.
 
-Walks the `ArcJudgment.selected_items`, joins back to the source media
-(photo file paths or video scenes), computes final clip durations,
-applies aspect-ratio handling (smart-crop for photos / pad-letterbox
-for 9:16 video), and persists as `snapshots/{snapshot_id}/plan.json`
-per ADR-0006.
-
-Standard mode only at M2; music-video mode raises NotImplementedError
-loudly so callers don't silently fall back to standard.
+Standard mode and music-video mode both ship: music-video requires
+`StandardMusicSpec.cut_grid` and snaps clips to it. The Tier-M second-guess
+pass lives in `stage6_second_guess.py` (Stage 6.5).
 """
 
 from __future__ import annotations
@@ -128,12 +126,12 @@ class TitleCardSpec(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
     enabled: bool = False
-    title_text: str | None = None          # explicit title; None → derived from brief
-    style: str | None = None               # image style hint ("painterly sunset", "vintage film")
-    spirit_prompt: str | None = None       # full override of the AI image prompt (advanced)
+    title_text: str | None = None  # explicit title; None → derived from brief
+    style: str | None = None  # image style hint ("painterly sunset", "vintage film")
+    spirit_prompt: str | None = None  # full override of the AI image prompt (advanced)
     title_position: TitlePosition = "lower-third"
-    text_color: str = "white"              # name ("white"/"black"/"gold"/…) or "#RRGGBB"
-    text_size_scale: float = 1.0           # multiplies the fitted title size
+    text_color: str = "white"  # name ("white"/"black"/"gold"/…) or "#RRGGBB"
+    text_size_scale: float = 1.0  # multiplies the fitted title size
     show_year: bool = True
     show_faces: bool = True
 
@@ -208,9 +206,7 @@ async def compile_plan(
 
     directive = directive or DEFAULT_DIRECTIVE
     target_ms = max(target_duration_seconds, 1) * 1000
-    clips = _build_clips(
-        arc_judgment.selected_items, ingest_records, candidate_refs=candidate_refs
-    )
+    clips = _build_clips(arc_judgment.selected_items, ingest_records, candidate_refs=candidate_refs)
     if not clips:
         raise ValueError("ArcJudgment selected_items produced zero resolvable clips")
 
@@ -307,7 +303,9 @@ def _build_clips(
         content_hash, scene_index = _split_ref(ref)
         rec = by_hash.get(content_hash)
         if rec is None:
-            log.warning("plan: ArcJudgment ref %s missing from ingest set; skipping", item.candidate_ref)
+            log.warning(
+                "plan: ArcJudgment ref %s missing from ingest set; skipping", item.candidate_ref
+            )
             continue
         if rec.media_type == "photo" and scene_index is None:
             clips.append(_photo_clip(rec, item))
@@ -501,7 +499,9 @@ def _video_clip(rec: MediaRecord, scene: SceneRecord, item: SelectedItem) -> Ren
         source_path=rec.source_path,
         start_seconds=scene.start_seconds,
         end_seconds=scene.end_seconds,
-        intended_duration_ms=min(item.intended_duration_ms or natural_duration_ms, natural_duration_ms),
+        intended_duration_ms=min(
+            item.intended_duration_ms or natural_duration_ms, natural_duration_ms
+        ),
         aspect_ratio_action=_pick_action_for_video(width, height),
         transition_in="cut",
         role=item.role,
@@ -689,9 +689,7 @@ def _apply_tempo_profile(
     return out
 
 
-def _soft_align_boundaries(
-    clips: list[RenderClip], directive: PlanDirective
-) -> list[RenderClip]:
+def _soft_align_boundaries(clips: list[RenderClip], directive: PlanDirective) -> list[RenderClip]:
     """Lever (c) / S-2.11.6: nudge each cumulative clip boundary onto the nearest
     section start within the window (standard mode only). No-op when disabled."""
     spec = directive.soft_align
@@ -776,7 +774,9 @@ def _scale_to_target(
         for c in capped:
             lo, _ = _band_for(c, directive)
             out.append(
-                c.model_copy(update={"intended_duration_ms": max(int(c.intended_duration_ms * factor), lo)})
+                c.model_copy(
+                    update={"intended_duration_ms": max(int(c.intended_duration_ms * factor), lo)}
+                )
             )
         return out
 
@@ -819,9 +819,7 @@ async def _persist(plan: RenderPlan) -> None:
 
 
 def _plan_path(project_id: str, snapshot_id: str) -> Path:
-    return (
-        paths.projects_dir() / project_id / "snapshots" / snapshot_id / "plan.json"
-    )
+    return paths.projects_dir() / project_id / "snapshots" / snapshot_id / "plan.json"
 
 
 def snapshot_dir(project_id: str, snapshot_id: str) -> Path:

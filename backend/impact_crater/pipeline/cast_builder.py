@@ -1,8 +1,8 @@
 """Cast-analysis orchestration (A-018) — runs between Stage 3 and Stage 4.
 
 Detects faces on the analysis renditions, embeds each via the configured
-backend, and builds the `CastInventory`. Fail-soft: if mediapipe or the
-embedder is unavailable, or no faces are found, it returns an empty
+backend, and builds the `CastInventory`. Fail-soft: if the face detector or
+the embedder is unavailable, or no faces are found, it returns an empty
 inventory and the pipeline proceeds exactly as before.
 """
 
@@ -55,7 +55,9 @@ async def build_cast(
             image_bytes = await asyncio.to_thread(path.read_bytes)
             crops = await asyncio.to_thread(detect_and_crop_faces, image_bytes)
         except Exception as exc:
-            log.warning("cast: face detect failed for %s: %s", rec.content_hash[:12], str(exc)[:120])
+            log.warning(
+                "cast: face detect failed for %s: %s", rec.content_hash[:12], str(exc)[:120]
+            )
             continue
         if not crops:
             continue

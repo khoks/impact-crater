@@ -6,7 +6,8 @@ Two pre-LLM image transforms:
      - `off`     : original bytes pass through unchanged
      - `gps_only`: GPS group cleared; rest of EXIF preserved
      - `all`     : all EXIF cleared
-  2. Face blur — `mediapipe` face-detection + Gaussian blur on detected
+  2. Face blur — face detection through `media/_face_detect.py` (the OpenCV
+     Haar cascade on current installs, D-044) + Gaussian blur on detected
      boxes. Modes: `off` / `on`.
 
 Originals are never modified in place — both transforms write to a
@@ -14,10 +15,9 @@ per-project cache. The `prepare_for_llm(path, posture, project_id)`
 helper picks the right transform pipeline and returns the bytes the
 LLM call should consume.
 
-ADR-0010 named pyexiv2 + dlib's face-recognition; we substitute piexif
-+ mediapipe because the originals don't ship pre-built wheels for
-Python 3.12 + Windows. mediapipe's face *detection* is enough — we
-only need bounding boxes, not embeddings.
+ADR-0010 named pyexiv2; piexif is used instead because pyexiv2 ships no
+Python 3.12 / Windows wheel (ADR-0010 amendment 2026-10-25). Blur only
+needs bounding boxes, not identity embeddings.
 """
 
 from __future__ import annotations
@@ -111,12 +111,11 @@ def strip_exif(image_bytes: bytes, *, mode: ExifMode) -> bytes:
 
 
 def blur_faces(image_bytes: bytes, *, blur_radius: int = 25) -> bytes:
-    """Detect faces with mediapipe; Gaussian-blur each bbox.
+    """Detect faces (`_face_detect.detect_face_boxes`); Gaussian-blur each bbox.
 
-    Falls back to no-op when mediapipe can't load (e.g. CPU-only
-    install without OpenCV — mediapipe's pipeline requires it).
-    Returns JPEG bytes regardless of input format so downstream code
-    can treat the output uniformly.
+    Falls back to a no-op when no detector can load. Returns JPEG bytes
+    regardless of input format so downstream code can treat the output
+    uniformly.
     """
     try:
         from impact_crater.media._face_detect import detect_face_boxes

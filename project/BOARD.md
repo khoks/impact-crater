@@ -41,7 +41,6 @@
 | [S-3.11.6](./stories/S-3.11.6-clear-ruff-mypy-baseline-debt.md) | Clear the ruff / mypy baseline debt so CI can enforce them (plan-phase-1) | Story | P1 | mvp-hardening | todo |
 | [S-2.9.18](./stories/S-2.9.18-token-aware-pre-job-cost-estimate.md) | Token-aware pre-job cost estimate (align the preview with the now-accurate meter) (plan-phase-2) | Story | P2 | mvp-hardening | todo |
 | [S-2.10.4](./stories/S-2.10.4-trip-cast-group-crowd-tightening.md) | Trip-cast group/crowd tightening (appearance/day gate + merge + detection) (plan-phase-2) | Story | P2 | mvp-hardening | todo |
-| [S-2.13.7](./stories/S-2.13.7-dead-code-sweep.md) | Dead-code sweep — placeholder router, six unimplemented routed ops, unused events and client methods (plan-phase-0) | Story | P2 | mvp-hardening | todo |
 | [S-3.10.3](./stories/S-3.10.3-cap-violation-counters.md) | Cap-violation counters in diagnostics.json — instrument before the D-053 repair-loop decision (plan-phase-2) | Story | P2 | mvp-hardening | todo |
 | [S-3.11.4](./stories/S-3.11.4-wheel-packaging-prompts-and-config.md) | Wheel packaging of prompts/ and config/; requires-python 3.12; single version source; CHANGELOG (plan-phase-2) | Story | P2 | mvp-hardening | todo |
 | [S-3.11.5](./stories/S-3.11.5-frontend-dependency-bump.md) | Frontend dependency bump — vite / vitest / jsdom / @types/node / tailwind / react-router majors; clear npm audit; engines check (plan-phase-1) | Story | P2 | mvp-hardening | todo |
@@ -96,6 +95,7 @@ Placeholder stories backfilled on 2026-06-14 plus later filings whose restart-pl
 
 | ID | Title | Type | Done |
 |---|---|---|---|
+| [S-2.13.7](./stories/S-2.13.7-dead-code-sweep.md) | Dead-code sweep — placeholder router, six unimplemented routed ops, unused events and client methods | Story | 2026-10-25 |
 | [S-2.13.5](./stories/S-2.13.5-adr-truth-bundle-and-governance-files.md) | ADR truth bundle (ADR-0007/0009/0010/0012/0013/0018/0020 + ADR-0021) and repo governance files | Story | 2026-10-25 |
 | [S-2.13.4](./stories/S-2.13.4-public-trust-docs-pass.md) | Public-trust docs pass — OVERVIEW, README, CLAUDE.md, ROADMAP, GROOMED, ARCHITECTURE, PIPELINE_DATAFLOW, headers, RAW_VISION addenda | Story | 2026-10-25 |
 | [S-2.13.3](./stories/S-2.13.3-feedback-inbox-triage.md) | Feedback inbox triage — close the A-023 loop for the 11 rows still status=new | Story | 2026-10-25 |
@@ -187,6 +187,6 @@ Regenerate with `python scripts/tracker_board.py`; `--check` fails when this fil
 |---|---|---|---|---|---|---|---|
 | Initiative | 2 | 0 | 0 | 1 | 2 | 0 | 5 |
 | Epic | 0 | 0 | 0 | 16 | 3 | 19 | 38 |
-| Story | 0 | 1 | 1 | 76 | 1 | 66 | 145 |
+| Story | 0 | 1 | 1 | 77 | 1 | 65 | 145 |
 | Task | 0 | 0 | 0 | 30 | 0 | 0 | 30 |
-| **All** | 2 | 1 | 1 | 123 | 6 | 85 | 218 |
+| **All** | 2 | 1 | 1 | 124 | 6 | 84 | 218 |

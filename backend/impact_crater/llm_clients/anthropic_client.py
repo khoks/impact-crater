@@ -4,8 +4,8 @@ Uses the Messages API throughout; structured-output operations use Anthropic's
 tool-use mode (the model is forced to invoke a single tool whose input_schema
 is the desired JSON Schema, then we parse `tool_input` as the structured result).
 
-Per ADR-0009, this client serves Tier-M Sonnet (extract_metadata_*, parse_user_brief,
-recommend_*, explain_*, orchestrator_reasoning) and Tier-L Opus (judge_narrative_arc).
+Per ADR-0009, this client serves Tier-M Sonnet (`extract_metadata_image`,
+`parse_user_brief`) and Tier-L Opus (`judge_narrative_arc`).
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ import base64
 import io
 import json
 import logging
-from collections.abc import AsyncIterator
 from typing import Any, Literal
 
 import anthropic
@@ -37,16 +36,14 @@ _TEMPERATURE_UNSUPPORTED_MODELS = frozenset({"claude-opus-4-8"})
 def _supports_temperature(model: str) -> bool:
     return model not in _TEMPERATURE_UNSUPPORTED_MODELS
 
+
 from impact_crater.llm_clients.base import (
     ArcJudgment,
     CallParams,
     CandidateRef,
     Embedding,
-    Message,
     MusicSpec,
     SelectedItem,
-    ToolCall,
-    ToolSpec,
 )
 from impact_crater.llm_clients.exceptions import LLMOperationFailed, LLMTransientError
 
@@ -111,27 +108,6 @@ class AnthropicLLMClient:
         )
         return _first_text(msg)
 
-    async def caption_video_scene(
-        self,
-        scene_frames: list[bytes],
-        *,
-        prompt_template: str,
-        params: CallParams,
-    ) -> str:
-        msg = await self._call_messages(
-            params,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        *(_image_block(b) for b in scene_frames),
-                        {"type": "text", "text": prompt_template},
-                    ],
-                }
-            ],
-        )
-        return _first_text(msg)
-
     async def score_image(
         self,
         image_bytes: bytes,
@@ -188,23 +164,6 @@ class AnthropicLLMClient:
             ],
         )
 
-    async def extract_metadata_video_scene(
-        self,
-        scene_frames: list[bytes],
-        *,
-        prompt_template: str,
-        schema: dict[str, Any],
-        params: CallParams,
-    ) -> dict[str, Any]:
-        return await self._extract_via_tool(
-            params,
-            schema=schema,
-            user_blocks=[
-                *(_image_block(b) for b in scene_frames),
-                {"type": "text", "text": prompt_template},
-            ],
-        )
-
     # -- Narrative judgment (N-001) ----------------------------------------
 
     async def judge_narrative_arc(
@@ -233,8 +192,12 @@ class AnthropicLLMClient:
                         "type": "array",
                         "items": {
                             "type": "object",
-                            "required": ["candidate_ref", "placement_position",
-                                          "intended_duration_ms", "role"],
+                            "required": [
+                                "candidate_ref",
+                                "placement_position",
+                                "intended_duration_ms",
+                                "role",
+                            ],
                             "properties": {
                                 "candidate_ref": {"type": "string"},
                                 "placement_position": {"type": "integer", "minimum": 0},
@@ -250,7 +213,8 @@ class AnthropicLLMClient:
                     "section_mapping": {
                         "type": "object",
                         "additionalProperties": {
-                            "type": "array", "items": {"type": "integer", "minimum": 0}
+                            "type": "array",
+                            "items": {"type": "integer", "minimum": 0},
                         },
                     },
                 },
@@ -285,70 +249,6 @@ class AnthropicLLMClient:
             schema=schema,
             user_blocks=[{"type": "text", "text": prompt_template}],
         )
-
-    # -- Orchestrator tool-call loop ---------------------------------------
-
-    async def tool_call(
-        self,
-        tools: list[ToolSpec],
-        messages: list[Message],
-        *,
-        params: CallParams,
-    ) -> ToolCall:
-        anth_tools = [
-            {"name": t.name, "description": t.description, "input_schema": t.input_schema}
-            for t in tools
-        ]
-        anth_messages = [
-            {"role": m.role, "content": m.content} for m in messages if m.role != "system"
-        ]
-        system = next((m.content for m in messages if m.role == "system"), "")
-        msg = await self._call_messages(
-            params,
-            messages=anth_messages,
-            system=system,
-            tools=anth_tools,
-        )
-        for block in msg.content:
-            if block.type == "tool_use":
-                return ToolCall(
-                    tool_name=block.name,
-                    tool_input=dict(block.input),
-                    raw_response_text=_first_text_safe(msg),
-                )
-        # Model returned text only — wrap as a synthetic "no tool" result.
-        return ToolCall(
-            tool_name="",
-            tool_input={},
-            raw_response_text=_first_text_safe(msg),
-        )
-
-    async def stream_chat(
-        self,
-        messages: list[Message],
-        *,
-        tools: list[ToolSpec] | None = None,
-        params: CallParams,
-    ) -> AsyncIterator[str]:
-        anth_messages = [
-            {"role": m.role, "content": m.content} for m in messages if m.role != "system"
-        ]
-        system = next((m.content for m in messages if m.role == "system"), "")
-        kwargs: dict[str, Any] = {
-            "model": params.model,
-            "max_tokens": params.max_tokens,
-            "messages": anth_messages,
-        }
-        if system:
-            kwargs["system"] = system
-        if tools:
-            kwargs["tools"] = [
-                {"name": t.name, "description": t.description, "input_schema": t.input_schema}
-                for t in tools
-            ]
-        async with self._client.messages.stream(**kwargs) as stream:
-            async for chunk in stream.text_stream:
-                yield chunk
 
     # -- Internal helpers --------------------------------------------------
 
@@ -586,13 +486,6 @@ def _first_text(msg: anthropic.types.Message) -> str:
         attempts=1,
         last_error="response had no text block",
     )
-
-
-def _first_text_safe(msg: anthropic.types.Message) -> str:
-    for block in msg.content:
-        if block.type == "text":
-            return block.text
-    return ""
 
 
 def _is_transient(e: BaseException) -> bool:
