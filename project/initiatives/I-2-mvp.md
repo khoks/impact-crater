@@ -7,7 +7,7 @@ priority: P0
 phase: mvp
 tags: [mvp, story-video, youtube]
 created: 2026-05-03
-updated: 2026-10-24
+updated: 2026-10-25
 ---
 
 ## North-star outcome
@@ -107,3 +107,4 @@ All E-1.3 architecture ADRs (ADR-0005..0016) and all E-1.2/E-1.3 D-NNN entries (
 - 2026-05-05 — **E-2.4 done.** All 5 stories closed. The full UI loop (Wizard → Dashboard → New Project → Effort+Cost → In-Progress → Preview) is wired against an async-jobs API with WebSocket progress events. Settings panel ships in the same epic. M3 also piggybacked an M1 follow-up: per-call LLMCallEvent telemetry + ProgressSink in the router, so JobCostSummary actually populates and the live-spend panel updates in real time. **218 tests green** (185 backend unit + 26 frontend unit + 7 backend integration). **E-2.5 (M4 music-video) and E-2.6 (M5 person library + privacy) are now Up Next — parallelizable.**
 - 2026-10-24 — **Restart audit** (docs/roadmap/LANDSCAPE-AND-PLAN-2026-10-24.md). After ~4 idle months: the curate→preview half of D-014 stands (1,663 assets, 60 min warm after a 2h55m cold run, ~$50 total); the publish half has never executed (audit table 0 rows; in-app OAuth never built; dry-run default). E-2.13 filed as Phase 0 (honest close-out + hygiene) and S-2.10.9 (model-lineup bump) as the first Phase 1 story. I-2 stays in-progress until S-2.13.2 records D-057 and Phase 1 lands the real publish. Children list is stale (rewritten in S-2.13.1).
 - 2026-10-24 — S-2.13.1 (tracker reconciliation, per the restart audit): Children rewritten to exactly E-2.1..E-2.13 with status and done date from each epic file and git (the old list carried duplicate E-2.4/E-2.5/E-2.6 lines and pre-M4 "blocked by" states; E-2.5–E-2.8 went done 2026-05-05 in PRs #16–#19, E-2.10 is marked done 2026-07-01 in the same reconciliation, E-2.11 done 2026-06-30, E-2.12 done 2026-07-01, E-2.13 in-progress). Scope reworded from "nine epics" to thirteen (nine milestone + four post-gate). Status unchanged: in-progress until the first real publish closes E-2.9.
+- 2026-10-25 — D-057 recorded (S-2.13.2): the MVP closes on the amended `docs/roadmap/MVP.md` pre-flight once the first real private YouTube publish lands (restart Phase 1); that publish closes E-2.9 and I-2 together, at which point S-2.9.17 / S-2.9.18 / S-2.9.19 move to E-3.11. The other pre-flight items are re-scoped with tracker IDs and no longer hold the MVP open.
