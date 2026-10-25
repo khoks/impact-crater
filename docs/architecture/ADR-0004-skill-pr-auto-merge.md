@@ -111,3 +111,7 @@ The following files were updated to land this ADR:
 - Skills: [`work-tracker/SKILL.md`](../../.claude/skills/work-tracker/SKILL.md), [`knowledge-curator/SKILL.md`](../../.claude/skills/knowledge-curator/SKILL.md).
 - Hook: [`.claude/hooks/post-session-housekeeping.sh`](../../.claude/hooks/post-session-housekeeping.sh).
 - Project work item: E-1.5 / S-1.5.1 / T-1.5.1.1.
+
+## Operational note 2026-10-25 — merge immediately after a push can be refused
+
+Observed twice on 2026-10-25 (PRs #85 and #99, each with a second commit pushed seconds before the merge): `gh pr merge --squash --delete-branch --admin` failed with `GraphQL: Pull Request is not mergeable (mergePullRequest)` while GitHub was still recomputing mergeability for the new head. The PR was fine — `gh pr view <n> --json mergeable,mergeStateStatus` reported `MERGEABLE` / `BLOCKED` (BLOCKED is only the review rule that `--admin` bypasses) and the same merge command succeeded on retry about twenty seconds later. Rule for the skills and for feature PRs: after the last push, check `mergeStateStatus` before merging and retry once if `mergeable` is still `UNKNOWN`; the flow itself is unchanged.
