@@ -28,7 +28,6 @@
 | [E-3.10](./epics/E-3.10-quality-eval-harness-and-golden-set.md) | Quality eval harness + golden set (plan-phase-2) | Epic | P0 | mvp-hardening | todo |
 | [E-3.11](./epics/E-3.11-restart-hardening-and-release-engineering.md) | Restart Phases 1–2 hardening + release engineering (plan-phase-1, plan-phase-2) | Epic | P0 | mvp-hardening | todo |
 | [S-2.10.9](./stories/S-2.10.9-model-lineup-bump-current-ga-ids.md) | Model-lineup bump to current GA IDs — pinned model_version, rate cards, data-driven temperature guard, model-not-found mapping, real key ping (plan-phase-1) | Story | P0 | mvp-hardening | todo |
-| [S-2.13.4](./stories/S-2.13.4-public-trust-docs-pass.md) | Public-trust docs pass — OVERVIEW, README, CLAUDE.md, ROADMAP, GROOMED, ARCHITECTURE, PIPELINE_DATAFLOW, headers, RAW_VISION addenda (plan-phase-0) | Story | P0 | mvp-hardening | todo |
 | [S-2.13.8](./stories/S-2.13.8-owner-model-availability-check-and-spend-envelope.md) | Owner-side $0 check: which Claude / Gemini model IDs still resolve; pick targets and the Phase 1 spend envelope (plan-phase-0) | Story | P0 | mvp-hardening | todo |
 | [S-3.3.5](./stories/S-3.3.5-connect-youtube-in-settings.md) | Connect YouTube in Settings (loopback OAuth → connector_credentials) (plan-phase-1) | Story | P0 | v1 | todo |
 | [S-3.10.1](./stories/S-3.10.1-eval-plan-script-and-thresholds.md) | scripts/eval_plan.py + D-058 thresholds on frozen SW-US and Zion fixtures (pytest -m eval) (plan-phase-2) | Story | P0 | mvp-hardening | todo |
@@ -40,6 +39,7 @@
 | [S-3.10.2](./stories/S-3.10.2-golden-set-from-feedback.md) | Golden set — export the owner's decision-level feedback verdicts; harness reports agreement (plan-phase-2) | Story | P1 | mvp-hardening | todo |
 | [S-3.11.1](./stories/S-3.11.1-mid-job-quota-guard.md) | Mid-job quota guard — check before every paid call (total + per-provider), refinement and title card included, UTC day boundary (plan-phase-2) | Story | P1 | mvp-hardening | todo |
 | [S-3.11.3](./stories/S-3.11.3-local-api-hardening.md) | Local API hardening — per-install bearer token, WS origin check, refuse non-loopback --host without --allow-remote, SECURITY.md (plan-phase-1) | Story | P1 | mvp-hardening | todo |
+| [S-3.11.6](./stories/S-3.11.6-clear-ruff-mypy-baseline-debt.md) | Clear the ruff / mypy baseline debt so CI can enforce them (plan-phase-1) | Story | P1 | mvp-hardening | todo |
 | [S-2.9.18](./stories/S-2.9.18-token-aware-pre-job-cost-estimate.md) | Token-aware pre-job cost estimate (align the preview with the now-accurate meter) (plan-phase-2) | Story | P2 | mvp-hardening | todo |
 | [S-2.10.4](./stories/S-2.10.4-trip-cast-group-crowd-tightening.md) | Trip-cast group/crowd tightening (appearance/day gate + merge + detection) (plan-phase-2) | Story | P2 | mvp-hardening | todo |
 | [S-2.13.7](./stories/S-2.13.7-dead-code-sweep.md) | Dead-code sweep — placeholder router, six unimplemented routed ops, unused events and client methods (plan-phase-0) | Story | P2 | mvp-hardening | todo |
@@ -97,6 +97,7 @@ Placeholder stories backfilled on 2026-06-14 plus later filings whose restart-pl
 
 | ID | Title | Type | Done |
 |---|---|---|---|
+| [S-2.13.4](./stories/S-2.13.4-public-trust-docs-pass.md) | Public-trust docs pass — OVERVIEW, README, CLAUDE.md, ROADMAP, GROOMED, ARCHITECTURE, PIPELINE_DATAFLOW, headers, RAW_VISION addenda | Story | 2026-10-25 |
 | [S-2.13.3](./stories/S-2.13.3-feedback-inbox-triage.md) | Feedback inbox triage — close the A-023 loop for the 11 rows still status=new | Story | 2026-10-25 |
 | [S-2.13.2](./stories/S-2.13.2-d057-mvp-closure-and-honest-preflight.md) | D-057 MVP-closure decision + honest MVP.md pre-flight | Story | 2026-10-25 |
 | [S-3.3.2](./stories/S-3.3.2-facebookconnector-xconnector.md) | FacebookConnector (Page video) | Story | 2026-10-24 |
@@ -186,6 +187,6 @@ Regenerate with `python scripts/tracker_board.py`; `--check` fails when this fil
 |---|---|---|---|---|---|---|---|
 | Initiative | 2 | 0 | 0 | 1 | 2 | 0 | 5 |
 | Epic | 0 | 0 | 0 | 16 | 3 | 19 | 38 |
-| Story | 0 | 1 | 1 | 74 | 0 | 67 | 143 |
+| Story | 0 | 1 | 1 | 75 | 0 | 67 | 144 |
 | Task | 0 | 0 | 0 | 30 | 0 | 0 | 30 |
-| **All** | 2 | 1 | 1 | 121 | 5 | 86 | 216 |
+| **All** | 2 | 1 | 1 | 122 | 5 | 86 | 217 |

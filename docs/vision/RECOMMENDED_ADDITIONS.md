@@ -1,6 +1,6 @@
 # RECOMMENDED_ADDITIONS.md — Gaps the user didn't mention but the product likely needs
 
-> **Status: round 1 grooming closed (E-1.2, 2026-04-26).** Ten seed candidates formalized as A-001..A-010 with verdicts; five new entries added as A-011..A-015. The `knowledge-curator` skill appends to this file whenever a session surfaces a future-looking requirement or gap not already covered.
+> **Status: 29 entries (A-001..A-029).** Round 1 grooming (E-1.2, 2026-04-26) formalized the ten seed candidates as A-001..A-010 with verdicts and added A-011..A-015. A-016..A-029 were appended between 2026-06-11 and 2026-10-24 (dates below are the entries' own headings unless noted): A-016..A-020 in the 2026-06-11 trip-workflow grooming, A-021..A-022 (dated 2026-06-11 in their headings, filed with the 2026-06-13 preparation-phase build), A-023..A-024 with the 2026-06-14 feedback-loop and tracker-pages builds, and A-025 (dated 2026-06-18), A-026 (2026-06-30) and A-027..A-029 (2026-10-24, restart audit) by `knowledge-curator` sweeps. Entry status lines are updated in place as items are delivered or re-scoped (e.g. A-013, A-018, A-021..A-024). The `knowledge-curator` skill appends to this file whenever a session surfaces a future-looking requirement or gap not already covered. Header refreshed 2026-10-25.
 
 This file captures features, requirements, and capabilities that are not always explicitly named in [`RAW_VISION.md`](./RAW_VISION.md), but which Claude (or the user, on reflection) thinks the product needs in order to be a credible product.
 

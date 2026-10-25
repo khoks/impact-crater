@@ -637,3 +637,15 @@ the detached dev server after backend commits before UI-testing. End by running 
 /work-tracker so the housekept marker is written. Report what you finished, what you could not verify,
 and the exact next item.
 ```
+
+---
+
+## 7. Corrections after Phase 0 session 1 (2026-10-25)
+
+Recorded here rather than edited in place, so the audit above stays the dated snapshot it was.
+
+- **§4.3 item 31 / §5 Phase 0 item 4 — "ruff / mypy strict / pytest / vitest already enforced" is wrong for ruff and mypy.** They are configured, not passing: with the lock-pinned ruff 0.15.12 / mypy 1.20.2, `ruff check backend tests scripts` reports ~175 violations (83 auto-fixable), `ruff format --check` would reformat 88 of 140 files and `mypy --strict` finds 68 errors in 24 files. pytest (477 / 7 skipped) and vitest + tsc (38) are green. Filed as S-3.11.6, which now blocks the CI story S-3.11.2; CLAUDE.md's coding-standards section states the real baseline and the interim "no new violations in touched files" rule.
+- **§4.6 "docs/vision/notes/ was never created" and §5 Phase 0 item 4 (RAW_VISION 2026-06-30 addenda)** — the folder exists (S-2.13.4). The two 2026-06-30 addenda could not be verbatim: the session transcripts were not retained, so they are labelled reconstructions quoting only the phrases the tracker and decision records preserved (`docs/vision/notes/2026-06-30-round-2-feedback-and-arbitrary-nl-refinement.md`).
+- **§5 Phase 0 item 1 — E-2.10 → done "once S-2.10.8 is re-homed"** also needed S-2.10.9 (filed under E-2.10 after this plan was written) and the reopened S-2.10.4 moved out; both went to the new E-3.11, and E-2.10 / E-2.11 / E-2.12 were retagged `mvp-hardening` so the child-inherits-epic-phase rule holds (D-057). I-3 is `in-progress` for hardening only (E-3.3, E-3.10, E-3.11), ahead of the Phase 4 v1 opening.
+- **§4.4 — the flaky `test_viewpoint_candidate_cap_limits_per_gps_cell`** (fixture pHashes derived from the per-process-randomised `hash()`; failed 3/10 runs) was fixed in PR #79; the plan's test inventory did not know about it.
+- **Session 1 outcome:** S-2.13.6 (PR #77), S-2.13.1 (PR #78), S-2.13.3 (PR #79), S-2.13.2 (PR #80) and S-2.13.4 landed; S-2.13.5 and S-2.13.7 are queued for session 2; S-2.13.8 is the owner's question.
