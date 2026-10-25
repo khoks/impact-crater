@@ -1,5 +1,5 @@
 site_name: Impact Crater
-site_description: An AI-driven photo & video curator — turn a pile of media plus a one-line brief into a ready-to-share, music-scored video.
+site_description: A one-click media-to-video creator — drop a pile of photos and videos, describe the video you want, and get a ready-to-share, music-scored video. Self-hosted.
 site_url: https://khoks.github.io/impact-crater/
 repo_url: https://github.com/khoks/impact-crater
 repo_name: khoks/impact-crater

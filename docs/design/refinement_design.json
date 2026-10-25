@@ -1,0 +1,630 @@
+{
+  "summary": "Design the intelligent open-ended refinement layer + curation levers (S-2.10.4/5/6/7/8, S-2.11.5/6)",
+  "agentCount": 6,
+  "logs": [
+    "parallel[0] failed: agent({schema}): StructuredOutput retry cap (5) exceeded — 5 failed calls with no valid output"
+  ],
+  "result": {
+    "designs": [
+      {
+        "key": "destination_coverage",
+        "design": {
+          "summary": "S-2.10.5 makes named destinations from the brief (e.g. \"Las Vegas\") survive Stage 4 to reach the judge. Root cause (verified): `prefilter()` takes no brief, so its global top-K (`ranked[:target_size]`, stage4_prefilter.py:240) drops all shots for a sparse/low-quality named place; `parse_user_brief` is wired as a route but never called in `run_headless_pipeline` (only stage6_second_guess + stage9_refine use it with their own ad-hoc schemas); and the judge prompt already renders a `named_destinations` HARD-coverage block (judge jinja2 lines 63-69) but no code produces that var. The design adds a Stage-0.5 brief-parse (new `pipeline/brief_intent.py`, reusing the existing `parse_user_brief` op + a `BRIEF_SCHEMA` that adds `named_destinations`+`chronological`), a deterministic `map_destinations()` (text + optional offline GPS reverse-geocode + same-capture-day bridge for driving videos), and — the load-bearing, reusable piece — a `ReservationSet` threaded into `prefilter(..., reservations=)` whose keys are inviolable \"must-keep\" seeds that bypass every Stage-4 cut and are force-appended if still missing, plus a consolidated `CoveragePlan` object on `CandidateSet` the judge reads via `extra_prompt_vars` and diagnostics renders. The `ReservationSet` is the shared abstraction: S-2.10.5 seeds it from destinations, S-2.10.6's stratified budget consumes the same seeds (one budget owner, no double-budgeting), and the refinement layer's `force_include`/`reserve_destination` tool calls construct the same object — so Stage 4 has exactly one reservation-merge mechanism. All Stage-4 changes stay no-LLM and degrade to current behaviour when `reservations=None`.",
+          "new_files": [
+            {
+              "path": "backend/impact_crater/pipeline/brief_intent.py",
+              "purpose": "Stage-0.5 brief understanding. Defines BRIEF_SCHEMA (JSON Schema adding named_destinations[{name,aliases,kind,chronological_hint}] + chronological to the existing theme/mood/must_include/... the parse_user_brief jinja2 already documents), the BriefIntent dataclass, and async parse_brief(router, brief, *, media_count, target_duration_seconds) -> BriefIntent which calls router.parse_user_brief(brief, schema=BRIEF_SCHEMA, prompt_vars={'hints':{...}}). Fail-soft: any error / empty result returns an empty BriefIntent (→ current behaviour). Cached by brief hash for free by the router (sha256(text)+schema_hash cache key; BRIEF_SCHEMA differs from the second-guess/refine schemas so no cache collision)."
+            },
+            {
+              "path": "backend/impact_crater/pipeline/destinations.py",
+              "purpose": "Deterministic, no-LLM destination→media mapping + the shared reservation primitive. Defines: DestMatch (name, aliases, asset_keys:set[str], best_keys:list[str] ranked, basis:Literal['matched','sparse','none'], chronological_hint), CoveragePlan (named_destinations:list[DestMatch-as-dict], video_floor:int|None, people_landscape_target:tuple|None — populated only for destinations here, other fields reserved for S-2.10.6/Stage-5 balance), ReservationSet (keys:frozenset[str], reason_by_key:dict[str,str], source:Literal['destination','refinement','feedback']), and map_destinations(assets, intent, media_by_hash, *, per_dest=2, reverse_geocode=True) -> tuple[dict[str,DestMatch], ReservationSet]. Matching is layered cheapest-first: (1) case-insensitive name/alias substring vs asset.caption + location_description + scenery/loc metadata; (2) optional offline reverse_geocoder over media[].gps_lat/lon photo clusters, alias-matching the resolved place label; (3) same-capture-day bridge attaching timestamp-adjacent no-GPS videos (driving footage) to a day that has exactly one GPS-confirmed destination. Reserves top per_dest keys per destination by max(specialness_score, combined_score). reverse_geocoder import is wrapped in try/except (fail-soft to text-only, matching the cast fail-soft pattern)."
+            },
+            {
+              "path": "tests/test_brief_intent.py",
+              "purpose": "Unit tests for parse_brief: a mocked router returning the SW-US brief yields named_destinations == [Zion, Bryce, Horseshoe Bend, Grand Canyon, Las Vegas] and chronological==True; a router error → empty BriefIntent (fail-soft); BRIEF_SCHEMA validates the required keys."
+            },
+            {
+              "path": "tests/test_destinations.py",
+              "purpose": "Unit tests for map_destinations + ReservationSet: text match catches 'Hoover Dam' via caption; a GPS-only Hoover Dam photo with no 'vegas' caption matches Las Vegas via reverse-geocode (skipped/xfail if reverse_geocoder absent); a same-day Vegas drive video (no GPS) attaches via the day-bridge; a named place with zero media reports basis='none'; reservation keys use _Asset.key form ('{hash}' and '{hash}#{scene}'); per_dest cap and 0.25*target_size reservation cap honoured."
+            }
+          ],
+          "files_to_change": [
+            {
+              "path": "backend/impact_crater/pipeline/runner.py",
+              "change": "In run_headless_pipeline, after Stage-1 ingest and before Stage 2 (media_count needed; can run concurrently with Stage 2 to hide the one Tier-M call's latency), add: brief_intent = await brief_intent.parse_brief(router, config.brief, media_count=len(media), target_duration_seconds=config.target_duration_seconds) wrapped in try/except → empty BriefIntent (fail-soft, mirror the cast_builder block at lines 247-264). Compute media_by_hash = {m.content_hash: m for m in media}. Call reservations, dest_map = destinations.map_destinations(...) is done INSIDE prefilter (it already has the joined _Asset list) — so instead pass brief_intent into prefilter (see below). Pass brief_intent into stage4_prefilter.prefilter(..., brief_intent=brief_intent) and thread the resulting candidate_set.coverage_plan into stage5_judge.judge_narrative_arc(..., coverage_plan=candidate_set.coverage_plan, chronological=brief_intent.chronological). Add brief_intent + coverage_plan to HeadlessJobResult. In run_full_pipeline, pass headless.candidate_set.coverage_plan into _write_diagnostics for the inspect UI."
+            },
+            {
+              "path": "backend/impact_crater/pipeline/stage4_prefilter.py",
+              "change": "1) Add optional params to prefilter(): brief_intent: BriefIntent | None = None and reservations: ReservationSet | None = None (the refinement/feedback layer passes reservations directly; the analysis path passes brief_intent and prefilter derives reservations via destinations.map_destinations over the joined `assets` + a media_by_hash it builds from `media`). Merge both sources into one effective must_keep set. 2) Thread must_keep through every cut: in _apply_safety_floor NEVER exempt (safety wins — a must-keep that is 'explicit' is dropped and logged reason='must_keep_overridden_by_safety'); in _apply_min_video_floor / _apply_quality_floor / _apply_dedup / _apply_semantic_dedup / _cap_location_clusters / _cap_gps_viewpoints, add `or a.key in must_keep` to the keep condition and log reason='must_keep_destination_coverage' with the destination name. 3) In the final selection (currently `chosen = ranked[:target_size]`, lines 240-241): reserve seats for must-keeps first — take all must-keep survivors, then fill the remaining (target_size - len(kept_must_keeps)) from the ranked non-reserved remainder; if len(must_keeps) > target_size, clamp target up to `ceiling` and log over-reservation. 4) FINAL GUARD: any must_keep key not yet in `items` is appended and logged reason='must_keep_forced' (this is the structural fix that makes a sparse Vegas beat reach the judge even when its day is weak). 5) Tag reserved assets: extend metadata_summary with `dest=<name>` in _annotate (mirror _annotate_cast), so _to_candidate_ref carries it to the judge. 6) Build coverage_plan: CoveragePlan populated from map_destinations (named_destinations with matched counts, reserved keys, basis) and attach to CandidateSet. 7) Add CandidateSet.coverage_plan: CoveragePlan | None = None and cluster_metadata['must_keep_satisfied'] = count. Design the merge so it is the ONLY reservation mechanism — when S-2.10.6's _stratified_select lands, it consumes this same must_keep set as inviolable per-bucket seeds (documented contract, no second reserve path)."
+            },
+            {
+              "path": "backend/impact_crater/pipeline/stage5_judge.py",
+              "change": "Add coverage_plan: CoveragePlan | None = None and chronological: bool = False kwargs to judge_narrative_arc. Build extra_prompt_vars: when coverage_plan present, set named_destinations = [{name, matched, chronological_hint} for d in coverage_plan.named_destinations]; set chronological flag. Merge with the existing music_analysis extra. Forward via router.judge_narrative_arc(extra_prompt_vars=...). No router signature change — extra_prompt_vars already flows to the prompt AND into the judge cache key input_signature (router.py:410 _stable_repr(extra_prompt_vars)), so coverage changes correctly invalidate a stale cached judgment."
+            },
+            {
+              "path": "backend/impact_crater/pipeline/runner.py (HeadlessJobResult + FullJobResult)",
+              "change": "Add brief_intent: BriefIntent | None = None and coverage_plan: CoveragePlan | None = None to HeadlessJobResult so diagnostics + Stage-6 coverage report + a future feedback-driven re-reserve can read them."
+            },
+            {
+              "path": "prompts/parse_user_brief/anthropic_claude-sonnet-4-5.jinja2",
+              "change": "Add two guidance bullets after the must_include bullet (line 21): a `named_destinations` bullet ('every distinct place/person/subject/event the user names as something the video should cover; for each give canonical name, lowercase aliases the captions/metadata might use e.g. Las Vegas → [vegas, the strip, hoover dam, fremont], a kind, and a 0-based chronological_hint when the brief lists them in order; empty list only when none are named') and a `chronological` bullet ('true when the user asks for chronological / in-order / building-from-arrival sequencing'). The tool schema is supplied at call time (submit_metadata input_schema = BRIEF_SCHEMA), so no separate schema file — the jinja2 only needs the guidance."
+            },
+            {
+              "path": "backend/impact_crater/pipeline/diagnostics.py",
+              "change": "In _stage4_phase summary, add per-destination coverage from candidate_set.coverage_plan: a `destination_coverage` list of {name, matched, reserved_count, basis} so the inspect UI shows which named places were reserved/sparse/absent. Read-only; no new LLM calls. (Satisfies T-2.10.5.6.)"
+            },
+            {
+              "path": "pyproject.toml",
+              "change": "Add optional dependency reverse_geocoder (pure-offline KD-tree over cities1000, MIT, ~3MB, no network — consistent with ADR-0016 no-network default). Imported behind try/except in destinations.py so its absence degrades to text + day-bridge matching (which already covers the SW-US trip). Gate behind an ADR note; do not pull weights."
+            }
+          ],
+          "data_model": "\n# backend/impact_crater/pipeline/brief_intent.py\nBRIEF_SCHEMA = {\n  \"type\": \"object\",\n  \"required\": [\"theme\",\"mood_keywords\",\"must_include\",\"must_exclude\",\n               \"narrative_intent\",\"audience\",\"pacing_preference\",\n               \"named_destinations\",\"chronological\"],\n  \"properties\": {\n    \"theme\": {\"type\": \"string\"},\n    \"mood_keywords\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}},\n    \"must_include\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}},\n    \"must_exclude\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}},\n    \"narrative_intent\": {\"type\": \"string\"},\n    \"audience\": {\"type\": \"string\"},\n    \"pacing_preference\": {\"enum\": [\"slow\",\"moderate\",\"fast\",\"varied\"]},\n    \"named_destinations\": {\"type\": \"array\", \"items\": {\n      \"type\": \"object\", \"required\": [\"name\",\"aliases\"],\n      \"properties\": {\n        \"name\": {\"type\": \"string\"},                       # canonical \"Las Vegas\"\n        \"aliases\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}},  # [\"vegas\",\"hoover dam\"]\n        \"kind\": {\"enum\": [\"place\",\"person\",\"subject\",\"event\"]},\n        \"chronological_hint\": {\"type\": [\"integer\",\"null\"]},\n      }}},\n    \"chronological\": {\"type\": \"boolean\"},\n  },\n}\n\n@dataclass\nclass BriefIntent:\n    theme: str = \"\"\n    mood_keywords: list[str] = field(default_factory=list)\n    must_include: list[str] = field(default_factory=list)\n    must_exclude: list[str] = field(default_factory=list)\n    narrative_intent: str = \"\"\n    audience: str = \"general\"\n    pacing_preference: str = \"moderate\"\n    named_destinations: list[dict] = field(default_factory=list)\n    chronological: bool = False\n\nasync def parse_brief(router, brief, *, media_count, target_duration_seconds) -> BriefIntent: ...\n\n# backend/impact_crater/pipeline/destinations.py — the SHARED reservation primitive\n@dataclass\nclass DestMatch:\n    name: str\n    aliases: list[str]\n    asset_keys: set[str] = field(default_factory=set)     # all matched _Asset.key\n    best_keys: list[str] = field(default_factory=list)    # top per_dest, ranked\n    basis: Literal[\"matched\",\"sparse\",\"none\"] = \"none\"\n    chronological_hint: int | None = None\n\n@dataclass\nclass CoveragePlan:\n    named_destinations: list[DestMatch] = field(default_factory=list)\n    # reserved for S-2.10.6 / Stage-5 balance — set None here:\n    video_floor: int | None = None\n    people_landscape_target: tuple[float, float] | None = None\n    def to_prompt_vars(self) -> list[dict]:                # {name, matched, chronological_hint}\n        ...\n\n@dataclass(frozen=True)\nclass ReservationSet:\n    \"\"\"THE shared curation lever. S-2.10.5 builds it from destinations;\n    S-2.10.6's stratified budget consumes these as inviolable per-bucket\n    seeds; the refinement layer's force_include/reserve_destination tools\n    construct the same object. Stage 4 has exactly one reserve/merge path.\"\"\"\n    keys: frozenset[str]                                   # _Asset.key values\n    reason_by_key: dict[str, str] = field(default_factory=dict)  # key → \"dest:Las Vegas\"\n    source: Literal[\"destination\",\"refinement\",\"feedback\"] = \"destination\"\n    @classmethod\n    def from_dest_matches(cls, matches: dict[str, DestMatch]) -> \"ReservationSet\": ...\n    def merged_with(self, other: \"ReservationSet\") -> \"ReservationSet\": ...  # union, dest wins ties\n\ndef map_destinations(assets, intent, media_by_hash, *, per_dest=2, reverse_geocode=True\n                     ) -> tuple[dict[str, DestMatch], ReservationSet]: ...\n\n# stage4_prefilter.py additions\n@dataclass\nclass CandidateSet:            # + one field\n    coverage_plan: CoveragePlan | None = None\n    # cluster_metadata gains \"must_keep_satisfied\": int\n\ndef prefilter(*, media, stage2, stage3, target_duration_seconds,\n              overrides=None, cast=None,\n              brief_intent: \"BriefIntent | None\" = None,          # analysis path\n              reservations: \"ReservationSet | None\" = None,       # refinement/feedback path\n              ) -> CandidateSet: ...\n",
+          "prompt_or_config": "Two prompt-adjacent changes, no routing change:\n\n1) prompts/parse_user_brief/anthropic_claude-sonnet-4-5.jinja2 — add named_destinations + chronological guidance bullets (schema is supplied at call time as submit_metadata's input_schema = BRIEF_SCHEMA).\n\n2) prompts/judge_narrative_arc/anthropic_claude-opus-4-5.jinja2 — NO EDIT NEEDED. The `{% if named_destinations %}` HARD-coverage block already ships (lines 63-69, landed under S-2.10.3) and no-ops until this story feeds the var. Optionally also gate the existing `{% if chronological %}` strict-forward-after-opener block (lines 31-33) on brief_intent.chronological — that var is already referenced by the template; this story just starts supplying it.\n\nconfig/llm-routing.yaml — unchanged. parse_user_brief is already routed (Tier-M Sonnet, lines 72-77). One extra cached Tier-M call per job (~$0.005, negligible); judge stays Tier-L Opus.",
+          "test_plan": [
+            "Unit (test_brief_intent.py): mocked router returns the SW-US brief → parse_brief yields 5 named_destinations [Zion,Bryce,Horseshoe Bend,Grand Canyon,Las Vegas] and chronological==True; router raises → empty BriefIntent (fail-soft).",
+            "Unit (test_destinations.py): text match catches a 'Hoover Dam' caption; a GPS-only Hoover Dam photo (no 'vegas' text) matches Las Vegas via reverse-geocode (xfail when reverse_geocoder absent); a same-day no-GPS Vegas drive video attaches via the day-bridge; a zero-media place reports basis='none'; reservation keys use _Asset.key form incl '{hash}#{scene}'.",
+            "Unit (test_stage4_prefilter.py): with brief_intent naming Las Vegas, a 0.72-specialness Hoover Dam asset appears in candidate_set.items even when it ranks below target_size (F1 regression); filter_log has reason='must_keep_destination_coverage' or 'must_keep_forced'; a non-reserved low-rank shot is dropped to stay within ceiling; cluster_metadata['must_keep_satisfied']==len(reservations.keys).",
+            "Unit (reuse/lever): prefilter(reservations=ReservationSet(source='refinement', keys={k})) force-keeps k with reason from reason_by_key — proves the same mechanism serves the refinement layer with NO brief_intent.",
+            "Unit (safety precedence): a must-keep asset with safety_level=='explicit' is STILL dropped, logged reason='must_keep_overridden_by_safety'.",
+            "Determinism: prefilter twice on identical input+reservations → identical item key order.",
+            "Backward-compat: brief_intent=None and reservations=None → behaviour on existing fixtures unchanged (kept count within envelope; no coverage_plan effect).",
+            "Render/cache: stage5 judge cache key includes named_destinations via extra_prompt_vars → changing a brief's destinations changes the judge cache key (assert two different coverage_plans produce different content_hash in router.judge_narrative_arc input_signature).",
+            "E2E (per MEMORY e2e loop, snapshot b4b73c7b): re-run the SW-US job → assert ≥1 Vegas/Hoover-Dam beat in the ArcJudgment OR an explicit sparsity note in arc_reasoning/open_questions; diagnostics.json stage_4 summary shows destination_coverage with basis per named place."
+          ],
+          "shared_abstractions": "The load-bearing shared abstraction is ReservationSet + the single reservation-merge path inside prefilter(). It is deliberately source-agnostic (source ∈ {destination, refinement, feedback}) so THREE consumers reuse ONE mechanism: (1) S-2.10.5 builds it from named destinations via map_destinations; (2) the refinement layer's force_include(ref) / reserve_destination(name) tool calls construct a ReservationSet(source='refinement') and re-run Stage 4 → Stage 5 through it (this is the reusable lever the task demands — the refinement blueprint should call prefilter(reservations=...) rather than inventing its own force-keep); (3) A-023 feedback ('this place should have been included') persists as a per-project ReservationSet(source='feedback'). CRITICAL coordination with S-2.10.6 (stratified budget, not yet landed): they MUST share ONE budget owner — when _stratified_select lands it consumes reservations.keys as inviolable per-bucket seeds (its 'seed each bucket's chosen with its must-keeps first' step), NOT a second parallel reserve. This blueprint's final-guard 'must_keep_forced' append is the fallback that also works with today's global top-K, so S-2.10.5 lands first and S-2.10.6 slots the same seeds into the stratifier without a second merge path (resolves critique.md conflict #1/#3). CoveragePlan is the single consolidated coverage object on CandidateSet (resolves conflict #3): Stage 4 populates it, Stage 5 reads it via extra_prompt_vars, diagnostics renders it — no three-incompatible-fields drift. _annotate for dest=<name> mirrors the existing _annotate_cast pattern. The _scores() filter_log helper (already landed) is reused for every new must_keep drop/keep log entry.",
+          "risks": [
+            "Over-reservation crowds out better shots when a brief names many places: cap per_dest=2 and skip/trim reservation when reserved_count > 0.25*target_size (log it). Reservations clamp to the ADR-0011 ceiling, never below floor.",
+            "F5 specialness scoring does NOT fix Vegas (Hoover Dam specialness 0.72 < 0.75 rescue threshold; it was dropped by rank, not the quality floor) — only the reservation fixes it. Do not conflate the two; this story's reservation is the Vegas fix.",
+            "Alias false-positives ('vegas' matching an unrelated caption): keep matching conservative, prefer GPS over text where both exist, surface basis in diagnostics so the user can correct via feedback.",
+            "Video day-bridge can mis-attach a drive video to the wrong destination: gate it to days where exactly one destination has GPS-confirmed photos.",
+            "The judge may still skip a reserved beat despite the HARD prompt requirement — mitigated by the prompt being a HARD requirement + verified in the E2E assertion; the reservation only guarantees the candidate is PRESENT, not selected (that is Stage 5's contract).",
+            "reverse_geocoder is an optional dep; absence must degrade to text+day-bridge (try/except import, matching cast fail-soft) — do not make it a hard dependency.",
+            "parse_brief must fail-soft (empty intent → current behaviour) or a brief-parse hiccup would regress every job; wrap like cast_builder.",
+            "Stage-4 output shifts for jobs with named destinations → their cached Stage-5 signature changes and Stage 5 re-runs (expected per ADR-0017); validate the known-good 23-shot arc still holds when no destinations are named."
+          ],
+          "open_questions": [
+            "chronological_hint (brief order) vs actual EXIF capture-time conflict (brief lists Vegas last but Vegas photos are mid-trip): which wins for placement? Proposal: EXIF real chronology wins, brief order is the tie-break only — confirm with product intent.",
+            "When a named destination is kind=='person'/'subject', should coverage route through the A-018 cast inventory (group_persons_by_hash) instead of GPS/caption matching? Likely yes — unify 'must-include subject' with cast coverage in a follow-up; this story handles kind=='place' first.",
+            "Should a feedback-originated ReservationSet(source='feedback') persist as a per-project override (survives re-runs) or be one-shot? Ties into A-023/A-024 override storage — flag for the feedback layer owner.",
+            "per_dest default (1 vs 2): 2 gives the judge a best-of choice but doubles reservation pressure on many-destination briefs. Recommend 2 with the 0.25*target_size cap; confirm against a real many-destination brief.",
+            "S-2.10.6 sequencing: this blueprint's final-guard append works with today's global top-K; confirm S-2.10.6's stratified selector will consume reservations.keys as seeds (not re-reserve) so the two never double-budget — this is a hard cross-story contract."
+          ]
+        }
+      },
+      {
+        "key": "duration_tempo_levers",
+        "design": {
+          "summary": "Design a structured `PlanDirective` pydantic model that Stage 6 consumes as the single source of truth for duration/positional/tempo shaping, replacing today's hard-coded module constants (_PHOTO_MAX_MS, _MAX_CLIPS_PER_LOCATION, etc.) with a directive-parameterised band-and-scale pipeline. Three LEVERS all read from one directive: (a) POSITIONAL — per-region duration multipliers keyed by timeline fraction (e.g. \"beginning clips +2s / photos around them -0.5s\"); (b) TEMPO/SECTION — a per-song-half or per-section duration+density curve derived from music.energy_curve/Section.tempo so photo duration and selection density rise/fall with tempo; (c) S-2.11.6 SOFT-ALIGN — optional nudging of standard-mode clip boundaries to section starts (soft, not the music-video hard beat-snap). The same `PlanDirective` is the payload that the refinement layer's `adjust_durations` tool emits, so an initial plan and a refined re-plan run through identical Stage 6 code. The default directive is a no-op that reproduces exactly today's behaviour, so existing tests and renders are unaffected until a lever is populated. This is new scope: create epic E-2.12 with stories for the model, each lever, and the refinement wiring, plus ADR-0018 locking the directive contract shared across planning + refinement.",
+          "new_files": [
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/backend/impact_crater/pipeline/plan_directive.py",
+              "purpose": "The shared PlanDirective pydantic model + its sub-models (DurationBands, PositionalRule, TempoProfile, SoftAlignSpec) and pure helper functions that Stage 6 and the refinement layer both import. Also `DEFAULT_DIRECTIVE` (a no-op that reproduces current behaviour) and `build_directive_from_music(music_analysis, target_ms, *, half_split=True)` which derives the TempoProfile from energy_curve/sections. Kept dependency-light (imports only music.MusicAnalysis + pydantic) so both stage6_plan and stage9_refine import it without a cycle."
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/tests/test_plan_directive.py",
+              "purpose": "Unit tests for the directive: DEFAULT_DIRECTIVE reproduces the current _PHOTO_MIN/MAX + _MAX_CLIPS_PER_LOCATION bands; positional multiplier math (region fraction → per-clip multiplier, opener +2s, neighbours -0.5s); tempo profile derivation from a synthetic energy_curve (high-energy half → shorter photos + higher density); soft-align snapping a boundary within window to a section start and leaving far boundaries alone; round-trip JSON so the refinement tool's emitted directive parses."
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/docs/architecture/ADR-0018-plan-directive-shared-levers.md",
+              "purpose": "ADR locking PlanDirective as the single duration/positional/tempo shaping contract shared by Stage 6 initial planning and Stage 9 refinement. Records: directive is deterministic and additive (default no-op); Stage 6 applies bands → positional multipliers → tempo density/duration → soft-align → _scale_to_target in a fixed order; refinement's adjust_durations tool emits a partial directive that is merged over the plan's persisted directive rather than mutating clip durations directly; music-video hard beat-snap remains a separate path (directive.soft_align is ignored in music_video mode)."
+            }
+          ],
+          "files_to_change": [
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/backend/impact_crater/pipeline/stage6_plan.py",
+              "change": "Consume a `directive: PlanDirective` throughout. (1) Add `directive: PlanDirective | None = None` param to `compile_plan` (default None → `plan_directive.DEFAULT_DIRECTIVE`), persist it on `RenderPlan.directive` so refinement can merge over it. (2) Replace the module-level constants (_PHOTO_MIN_MS/_PHOTO_MAX_MS/_VIDEO_MIN_MS/_MAX_CLIPS_PER_LOCATION/_MONTAGE_*) as *defaults* on `DurationBands`/directive fields; `_clip_band(c)` becomes `_clip_band(c, directive)` reading `directive.bands`. (3) `_cap_per_location` takes `max_per_loc` from `directive.max_clips_per_location`. (4) Insert the standard-mode lever pipeline in compile_plan between montage-collapse and _scale_to_target, in fixed order: `clips = _apply_positional(clips, directive, target_ms)` (per-region duration multipliers keyed by timeline fraction), then `clips = _apply_tempo_profile(clips, directive, target_ms)` (per-song-half/section duration+density scaling from directive.tempo), then `_scale_to_target(clips, target_ms, directive=directive)` (band-aware, now reads directive bands), then optional `clips = _soft_align_boundaries(clips, directive, target_ms)` (nudge cumulative boundaries onto directive.soft_align.section_starts_ms within window). (5) `_scale_to_target`/`_clip_band` thread `directive` so bands are parameterised not hard-coded. (6) Add `directive: PlanDirective = Field(default_factory=lambda: DEFAULT_DIRECTIVE)` to `RenderPlan`. Music-video path unchanged (directive.soft_align ignored; beat-snap owns pacing)."
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/backend/impact_crater/pipeline/runner.py",
+              "change": "In `run_full_pipeline`, after music_analysis is computed, build the shaping directive once and pass it into `compile_plan`: `directive = plan_directive.build_directive_from_music(music_analysis, target_ms=config.target_duration_seconds*1000)` when music_analysis is present and mode==standard, else `DEFAULT_DIRECTIVE`; add any user-brief-derived positional rules here later. Pass `directive=directive` to `stage6_plan.compile_plan(...)`. Also add an optional `plan_directive: PlanDirective | None = None` field to `FullJobConfig` so a caller (or a future brief-parser) can inject positional rules like 'make the opening slower' without a music track."
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/backend/impact_crater/pipeline/stage9_refine.py",
+              "change": "Wire the flagship `adjust_durations` refinement tool to emit a partial `PlanDirective` instead of (or alongside) the brief-addendum re-judge. Add a 6th strategy `adjust_plan_directive` whose tool output is a `PlanDirective` (partial: only the fields the user's message implies, e.g. positional rule 'slow the intro' → PositionalRule(region=(0,0.2), photo_multiplier=1.4)). `refine` merges the emitted directive over `prior_plan.directive` (deep-merge: emitted fields win) and re-runs ONLY Stage 6 `compile_plan` with the same arc_judgment + merged directive — no new Opus judge call needed for pure pacing edits. This makes `shorten`/`lengthen` (today no-ops in apply_overrides) actually work via the directive. Keep partial_fix_via_plan_edit for content changes ('more landscape')."
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/backend/impact_crater/pipeline/stage6_second_guess.py",
+              "change": "Optional follow-on (can be a later story): allow the second-guess to emit a `directive_patch` (partial PlanDirective) alongside typed overrides, so its `shorten`/`lengthen`/pacing suggestions map onto the same directive mechanism the refinement layer uses, replacing the currently-logged-and-skipped shorten/lengthen override types. Not required for the first cut of E-2.12; noted so the override→directive convergence is designed in, not bolted on."
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/docs/architecture/PIPELINE_DATAFLOW.md",
+              "change": "Refresh the Stage 6 section to document the PlanDirective as the shaping input: show the fixed lever-application order (bands → positional → tempo → scale-to-target → soft-align), that the directive is persisted on plan.json, and that Stage 9 refinement re-enters Stage 6 with a merged directive. Note directive is AI-influenced only via the refinement/second-guess tool that emits it; the application itself is deterministic."
+            }
+          ],
+          "data_model": "\n# backend/impact_crater/pipeline/plan_directive.py\nfrom __future__ import annotations\nfrom typing import Literal\nfrom pydantic import BaseModel, ConfigDict, Field\nfrom impact_crater.media.music import MusicAnalysis\n\nClipKindKey = Literal[\"photo\", \"video_scene\", \"burst_montage\"]\n\nclass DurationBands(BaseModel):\n    \"\"\"Per-kind (min,max) display-duration band in ms. Defaults reproduce the\n    current stage6 constants exactly, so DEFAULT_DIRECTIVE is a no-op.\"\"\"\n    model_config = ConfigDict(extra=\"ignore\")\n    photo_min_ms: int = 1000\n    photo_max_ms: int = 3000\n    video_min_ms: int = 2000\n    montage_min_ms: int = 2000\n    montage_max_ms: int = 4000\n\nclass PositionalRule(BaseModel):\n    \"\"\"LEVER (a): a duration directive keyed by a timeline REGION (fraction of\n    the final timeline, 0..1). `region=(0.0,0.2)` = first 20%. Multipliers\n    apply to a clip whose *center* falls in the region; ms deltas are additive\n    and applied after the multiplier, then re-clamped to the band. `neighbor_*`\n    lets 'make the opener longer AND shrink the photos around it' be one rule.\"\"\"\n    model_config = ConfigDict(extra=\"ignore\")\n    region: tuple[float, float]                 # (start_frac, end_frac) in [0,1]\n    photo_multiplier: float = 1.0               # e.g. 1.5 = +50%\n    photo_delta_ms: int = 0                     # e.g. +2000 = +2s\n    video_multiplier: float = 1.0\n    neighbor_multiplier: float = 1.0            # applied to clips just outside region\n    neighbor_delta_ms: int = 0                  # e.g. -500 for 'reduce photos around them'\n    neighbor_span: float = 0.05                 # how wide the neighbor shoulder is (frac)\n    label: str = \"\"                             # provenance ('opener-emphasis', user msg)\n\nclass TempoBand(BaseModel):\n    \"\"\"One slice of the song (a half, or a section span) with a target pacing.\n    density_multiplier scales how many clips land here vs a uniform spread;\n    duration_multiplier scales each clip's display time. Both derived from the\n    slice's mean energy / section tempo relative to the track median.\"\"\"\n    model_config = ConfigDict(extra=\"ignore\")\n    start_frac: float\n    end_frac: float\n    duration_multiplier: float = 1.0            # <1 = snappier under high energy\n    density_multiplier: float = 1.0             # >1 = pack more clips here\n    source: str = \"\"                            # 'energy_half' | 'section:<label>'\n\nclass TempoProfile(BaseModel):\n    \"\"\"LEVER (b): the whole song's pacing curve as ordered TempoBands. Empty =\n    no tempo shaping (default).\"\"\"\n    model_config = ConfigDict(extra=\"ignore\")\n    bands: list[TempoBand] = Field(default_factory=list)\n    # When True, apply density (reselect/thin) not just duration. First cut ships\n    # duration-only (safe, no clip-count change); density is a follow-on flag.\n    apply_density: bool = False\n\nclass SoftAlignSpec(BaseModel):\n    \"\"\"LEVER (c) / S-2.11.6: in STANDARD mode only, nudge cumulative clip\n    boundaries onto section starts when within `window_ms`. Never reorders or\n    drops; only shifts a boundary by <= window_ms. Ignored in music_video mode\n    (hard beat-snap owns that path).\"\"\"\n    model_config = ConfigDict(extra=\"ignore\")\n    enabled: bool = False\n    section_starts_ms: list[int] = Field(default_factory=list)\n    window_ms: int = 400\n\nclass PlanDirective(BaseModel):\n    \"\"\"The single shaping contract Stage 6 consumes and the refinement\n    `adjust_durations` tool emits. Every field defaults to a no-op so\n    DEFAULT_DIRECTIVE == today's behaviour. Refinement emits a PARTIAL and it\n    is deep-merged over the plan's persisted directive.\"\"\"\n    model_config = ConfigDict(extra=\"ignore\")\n    schema_version: int = 1\n    bands: DurationBands = Field(default_factory=DurationBands)\n    max_clips_per_location: int = 3             # was _MAX_CLIPS_PER_LOCATION\n    positional_rules: list[PositionalRule] = Field(default_factory=list)\n    tempo: TempoProfile = Field(default_factory=TempoProfile)\n    soft_align: SoftAlignSpec = Field(default_factory=SoftAlignSpec)\n    provenance: str = \"default\"                 # 'default'|'music'|'refine'|'second_guess'\n\nDEFAULT_DIRECTIVE = PlanDirective()\n\ndef merge_directive(base: PlanDirective, patch: PlanDirective) -> PlanDirective:\n    \"\"\"Deep-merge a partial directive (refinement output) over a base: any list\n    the patch sets non-empty replaces the base's; scalar/sub-model fields the\n    patch changed from their default win. Returns a new PlanDirective.\"\"\"\n\ndef build_directive_from_music(analysis: MusicAnalysis, *, target_ms: int,\n                               half_split: bool = True) -> PlanDirective:\n    \"\"\"Derive a TempoProfile (LEVER b) from analysis.energy_curve + sections.\n    half_split=True → 2 TempoBands (song halves): the higher-energy half gets\n    duration_multiplier<1 (snappier) and density_multiplier>1. Also populate\n    soft_align.section_starts_ms = [s.start_ms for s in sections] (enabled left\n    False until S-2.11.6's soft-align flag is turned on).\"\"\"\n\n# adjust_durations refinement tool JSON schema (emitted by Opus in stage9):\n_ADJUST_DURATIONS_SCHEMA = {\n  \"type\": \"object\",\n  \"required\": [\"positional_rules\"],\n  \"properties\": {\n    \"positional_rules\": {\"type\": \"array\", \"items\": {\n        \"type\": \"object\",\n        \"required\": [\"region\"],\n        \"properties\": {\n            \"region\": {\"type\": \"array\", \"items\": {\"type\": \"number\"}, \"minItems\": 2, \"maxItems\": 2},\n            \"photo_multiplier\": {\"type\": \"number\"},\n            \"photo_delta_ms\": {\"type\": \"integer\"},\n            \"neighbor_multiplier\": {\"type\": \"number\"},\n            \"neighbor_delta_ms\": {\"type\": \"integer\"},\n            \"label\": {\"type\": \"string\"}}}},\n    \"bands\": {\"type\": \"object\"},\n    \"rationale\": {\"type\": \"string\"}}}\n",
+          "prompt_or_config": "\nNo routing YAML change needed — the refinement `adjust_durations` tool reuses the existing Tier-M `parse_user_brief` op (schema-validated structured output), exactly like stage6_second_guess does today.\n\nNew refinement thinking-prompt block (stage9_refine.py `_PROMPT`, added strategy):\n```\n  6. adjust_plan_directive        — the user wants a PACING / DURATION / EMPHASIS\n                                     change, not a content change (e.g. \"make the\n                                     intro slower\", \"the opening clips too fast\",\n                                     \"hold the sunset longer\", \"punchier ending\").\n                                     Emit `positional_rules`: each a region\n                                     (fraction of the timeline 0..1) with a\n                                     photo_multiplier / photo_delta_ms and optional\n                                     neighbor_* to shrink clips around the emphasised\n                                     region. This re-renders WITHOUT a new content\n                                     judgment — same clips, new timing. Prefer this\n                                     over partial_fix_via_plan_edit whenever the user\n                                     is talking about speed/length/emphasis, not\n                                     which media appears.\n```\nJudge prompt (judge_narrative_arc jinja2): no change required — the directive shapes durations *after* the judge, so the judge keeps emitting 2–3s intents. Optionally (later story) surface the active positional/tempo intent to the judge so its intents pre-account for emphasis, but the deterministic directive is the guarantee.\n",
+          "test_plan": [
+            "DEFAULT_DIRECTIVE reproduces current output: run the existing test_stage6_plan.py suite unchanged — compile_plan with no directive must give byte-identical clip durations (band 1000/3000, cap 3/location). This is the regression guard.",
+            "PositionalRule opener-emphasis: 6 photos, target 18s, rule region=(0,0.2) photo_delta_ms=+2000 neighbor_delta_ms=-500 → clip[0] longer (clamped to band max after delta), clips in the neighbor shoulder shorter, total still ~target after _scale_to_target.",
+            "TempoProfile from synthetic MusicAnalysis: energy_curve with a loud first half → build_directive_from_music yields band[0].duration_multiplier<1 and density_multiplier>1; assert photos in the first-half fraction get shorter durations than an identical no-music run.",
+            "Soft-align: 4 photos on a standard-mode plan, soft_align.enabled=True with a section_start 150ms from a natural boundary and window_ms=400 → that boundary snaps to the section start; a section_start 900ms away leaves the boundary unchanged; total drift bounded by window_ms.",
+            "Soft-align is a no-op in music_video mode even when enabled (beat-snap path untouched) — assert plan.clips identical to no-directive music_video run.",
+            "merge_directive: base music-derived directive + refinement patch with one positional_rule → merged has the music tempo AND the new rule; a patch that sets bands.photo_max_ms overrides only that field.",
+            "Refinement adjust_plan_directive round-trip: stub the Tier-M call to emit a positional_rules payload, assert refine() returns a re-compiled plan (same candidate_refs/order, changed durations) and does NOT call judge_narrative_arc.",
+            "RenderPlan JSON round-trip carries the directive (load_plan(...).directive == the compiled directive) so refinement can merge over the persisted one.",
+            "End-to-end: full backend suite green (currently 419 pass) with the directive threaded, proving additive change."
+          ],
+          "shared_abstractions": "\nTHE shared lever, by design, is `PlanDirective` (new module `pipeline/plan_directive.py`). It is the single contract used by BOTH workstreams:\n\n- INITIAL PLANNING (this blueprint): runner builds a directive from music (LEVER b tempo + LEVER c section_starts) + any brief-derived positional rules (LEVER a), passes it to `compile_plan`, which applies it deterministically and PERSISTS it on `RenderPlan.directive` in plan.json.\n- REFINEMENT LAYER (sibling blueprint): the agentic `adjust_durations` tool emits a PARTIAL `PlanDirective`; refinement calls `merge_directive(prior_plan.directive, patch)` and re-enters `compile_plan` with the SAME arc_judgment — no re-judge for pure pacing edits. This is what finally makes second_guess's `shorten`/`lengthen` (currently no-op in apply_overrides) real.\n\nConcrete coordination contract for the refinement blueprint to depend on:\n1. Import surface: `from impact_crater.pipeline.plan_directive import PlanDirective, merge_directive, DEFAULT_DIRECTIVE`.\n2. Emission shape: the refinement tool must emit fields valid under `PlanDirective` (partial ok) — primarily `positional_rules` and `bands`; use `_ADJUST_DURATIONS_SCHEMA` above as the tool JSON schema so both sides agree.\n3. Merge semantics: patch fields that differ from their pydantic default win; non-empty patch lists replace base lists. Refinement must NOT hand-edit clip durations — it only produces a directive and re-runs Stage 6, so initial and refined renders are pixel-for-pixel the same code path.\n4. Persistence: `RenderPlan.directive` is the merge base for the NEXT refinement, so successive refinements compound (slow the intro, then later punch the ending) without losing prior shaping.\nOther reused levers already in Stage 6 that the directive now parameterises rather than hard-codes: the per-clip duration band (`_clip_band`), `_scale_to_target`, and `_cap_per_location`'s `max_per_loc`.\n",
+          "risks": [
+            "Density shaping (LEVER b `apply_density`) actually changes which/how-many clips are shown, which collides with Stage 4/5 selection and the per-viewpoint cap and coverage guarantees. Mitigation: ship duration-only tempo shaping first (apply_density defaults False); density is a gated follow-on story so it can't silently break coverage.",
+            "Positional multipliers + band re-clamp + _scale_to_target can fight each other (a +2s opener that then gets shrunk back by proportional scale). Fixed application ORDER (positional → tempo → scale) and the band clamp bound the outcome, but 'opener stays visibly longer' is only guaranteed if positional deltas widen the band for that clip; may need a per-clip band override (positional rule can raise photo_max for its region) — call it out for the test to pin.",
+            "Soft-align can drift total duration; bounded by window_ms per boundary but N boundaries could accumulate. Mitigation: cap cumulative drift and re-run a light _scale_to_target pass after align, or only snap the boundary nearest each section (not every boundary).",
+            "PlanDirective persisted on RenderPlan changes plan.json schema — bump `RenderPlan.schema_version` and ensure load_plan tolerates old plans lacking `directive` (default_factory handles it since it's additive with a default).",
+            "Two blueprints editing stage9_refine.py / stage6_plan.py concurrently → merge conflicts. Mitigation: land plan_directive.py + the Stage 6 consumption first (self-contained, no-op default), then refinement wires onto the stable import surface.",
+            "Scope creep into MVP: these levers are v1 polish, not MVP-gated. Track under a new E-2.12 with phase:v1 so they don't bloat MVP code paths (music-video beat-snap stays the only hard-pacing path at MVP)."
+          ],
+          "open_questions": [
+            "Is the sibling 'refinement blueprint' authoritative on the `adjust_durations` tool NAME and whether it's a full agentic tool-use loop (ADR-0014, 10-turn) vs the single Tier-M call stage9 uses today? I've assumed a single structured-output call emitting a partial PlanDirective (matches current stage9 + second_guess pattern); if refinement goes full tool-loop the directive is still the emitted payload, unchanged.",
+            "For LEVER (a) positional, should 'the beginning' be a fraction of the FINAL timeline (my assumption: region in [0,1]) or the first N clips / first N seconds? Fraction is renderer-agnostic and survives re-scaling; confirm the user's mental model ('beginning clips 50% longer') maps to a fraction band.",
+            "Should build_directive_from_music default to 2 song-halves (my assumption, matches the task's 'per song half' wording) or one TempoBand per detected Section? Halves are robust to noisy librosa section detection; per-section is finer but riskier. Recommend halves for the first cut, section-granularity behind a flag.",
+            "Does S-2.11.6's soft-align want to ship ENABLED by default in standard mode when a music track is present, or opt-in? The story says 'optional'; I've defaulted enabled=False and let the runner flip it on when music_analysis exists — confirm the desired default.",
+            "Should the deterministic per-viewpoint cap remain in Stage 6 (directive.max_clips_per_location) now that T-2.11.1.6 moved a version of it to Stage 4 candidate-level? If both fire, the directive value should match or be a strict secondary guard — confirm which layer owns the number to avoid double-capping."
+          ]
+        }
+      },
+      {
+        "key": "config_quickwins",
+        "design": {
+          "summary": "Two small, self-contained changes. (A) S-2.10.7 model bump: swap the four Anthropic model strings in config/llm-routing.yaml (claude-sonnet-4-5 → claude-sonnet-4-6 on the 5 Tier-M ops + orchestrator; claude-opus-4-5 → claude-opus-4-8 on judge_narrative_arc; Gemini untouched). Because the prompt loader resolves prompts/<op>/<provider>_<model>.jinja2 by the exact model string (prompts.py:57) and rate_cards resolves config/rate-cards/<provider>-<sanitized-model>-<version>.yaml by the exact model string (rate_cards.py:55), each renamed model requires (1) its .jinja2 prompt file renamed/copied to the new model string and (2) a matching rate-card YAML at the new model name — otherwise the router raises FileNotFoundError on load and cost falls to the M/L ballpark. No Haiku op exists today, so claude-haiku-4-5-20251001 is only added if a Haiku op is introduced (none in scope; documented as optional). max_tokens for Opus judge (8192) and Sonnet ops (≤2048) are well within 4.6/4.8 ceilings — no bump needed. (B) S-2.11.5 cost line-item: thread add_title_card into POST /api/cost-preview so the pre-job estimate shows an explicit \"AI title card\" line-item (~$0.04, gated on quota) computed from the generate_title_background route's rate card, and mirror the +image bump in runner._estimate_cost_per_provider[\"google\"] so the pre-flight quota check accounts for it. Cache-key risk is real but bounded: renaming a model string changes the cache key's `model` component, so every existing cache entry for the bumped ops is silently invalidated (cold cache → one-time re-spend), which is the intended semantic per ADR-0006 — flagged below.",
+          "new_files": [
+            {
+              "path": "prompts/extract_metadata_image/anthropic_claude-sonnet-4-6.jinja2",
+              "purpose": "Renamed/copied from anthropic_claude-sonnet-4-5.jinja2 so the per-model prompt loader (prompts.py:57 → {provider}_{model}.jinja2) resolves the bumped Sonnet op. Byte-identical copy keeps prompt_version (sha256 of text) unchanged; only the filename's model token changes."
+            },
+            {
+              "path": "prompts/parse_user_brief/anthropic_claude-sonnet-4-6.jinja2",
+              "purpose": "Renamed/copied from anthropic_claude-sonnet-4-5.jinja2 for the bumped parse_user_brief op (same loader-resolution reason)."
+            },
+            {
+              "path": "prompts/judge_narrative_arc/anthropic_claude-opus-4-8.jinja2",
+              "purpose": "Renamed/copied from anthropic_claude-opus-4-5.jinja2 so judge_narrative_arc resolves under the bumped Opus model string. This is the ONE Tier-L op; missing this file makes Stage 5 hard-fail at prompts.load()."
+            },
+            {
+              "path": "config/rate-cards/anthropic-claude-sonnet-4-6-latest.yaml",
+              "purpose": "Rate card for bumped Sonnet (input/output token rates). rate_cards.load resolves by sanitized model name; without it real-token costing (router._record_call) falls back to the M-tier ballpark $0.005. Copy sonnet-4-5 rates as a starting point, update per published pricing."
+            },
+            {
+              "path": "config/rate-cards/anthropic-claude-opus-4-8-latest.yaml",
+              "purpose": "Rate card for bumped Opus. Without it the Tier-L judge cost falls to the $0.50 ballpark instead of real token pricing. Copy opus-4-5 rates, update per published pricing."
+            }
+          ],
+          "files_to_change": [
+            {
+              "path": "config/llm-routing.yaml",
+              "change": "(A) Change model strings only. Lines 62/68/74/80/86/97 (extract_metadata_image, extract_metadata_video_scene, parse_user_brief, recommend_effort_level, explain_cost, explain_upgrade_path, orchestrator_reasoning): model claude-sonnet-4-5 → claude-sonnet-4-6. Line 115 judge_narrative_arc: model claude-opus-4-5 → claude-opus-4-8. Leave model_version:latest, tier, max_tokens, temperature, and all google/gemini + embedding ops unchanged. NOTE: only extract_metadata_image and parse_user_brief and judge_narrative_arc have on-disk prompt files today (extract_metadata_video_scene / recommend_effort_level / explain_cost / explain_upgrade_path / orchestrator_reasoning have NO prompt file in the repo — grep confirms only 6 .jinja2 files exist — so those ops presumably never dispatch or share a template; audit before bump: any op whose prompt file exists MUST get the renamed copy)."
+            },
+            {
+              "path": "prompts/extract_metadata_image/anthropic_claude-sonnet-4-5.jinja2",
+              "change": "(A) Delete after copying to the -4-6 filename (no dead/duplicate templates per coding standards). Same for anthropic_claude-opus-4-5.jinja2 under judge_narrative_arc and anthropic_claude-sonnet-4-5.jinja2 under parse_user_brief. Use `git mv` so history is preserved; the sha256 prompt_version is unchanged because content is identical."
+            },
+            {
+              "path": "backend/impact_crater/api/effort.py",
+              "change": "(B) Add optional `add_title_card: bool = False` to CostPreviewRequest. In post_cost_preview, when add_title_card is true, compute the title-card line-item from the generate_title_background route: read config/llm-routing.yaml route (google/gemini-2.5-flash-image) and price via rate_cards (fall back to a fixed ~$0.04 constant if no image rate card exists). Add it to tier_estimate under a new key 'title_card' (or fold into the existing 'M' tier but surface separately), include it in low/high, and add a CostPreviewResponse field e.g. `title_card_cost_usd: float | None`. Keep it a single flat per-job add (one call), not per-asset."
+            },
+            {
+              "path": "backend/impact_crater/pipeline/runner.py",
+              "change": "(B) In _estimate_cost_per_provider (line 720) accept the add_title_card flag (or add a small `title_card_cost` param) and add ~$0.04 to the 'google' estimate when set, so the pre-flight quota check (run_full_pipeline line 175) reserves budget for the image-gen call. Thread config.add_title_card into the call site. Alternatively read the route/rate-card for generate_title_background to avoid a magic number."
+            },
+            {
+              "path": "frontend/src/api/jobs.ts",
+              "change": "(B) Add `add_title_card?: boolean` to CostPreviewRequest interface and `title_card_cost_usd?: number | null` to CostPreviewResponse. (A) no change."
+            },
+            {
+              "path": "frontend/src/routes/EffortAndCost.tsx",
+              "change": "(B) Pass `add_title_card: draft.add_title_card` in the fetchCostPreview call (line 47-50), and re-fetch the preview when the toggle changes. Render the title-card line-item in the cost breakdown dl (line 151-158) with a label like 'AI title card' and a note '+ ~$0.04 for the AI-generated title background'. The draft already carries add_title_card (used at submit, line 83)."
+            },
+            {
+              "path": "tests/integration/test_real_providers.py",
+              "change": "(A) Update hardcoded model strings claude-sonnet-4-5/claude-opus-4-5 (lines 63/64/89/90) to the bumped values IF these integration tests are meant to exercise the production lineup. Gated/skipped by default (real API), so low risk, but keep them consistent."
+            },
+            {
+              "path": "tests/test_rate_cards.py",
+              "change": "(A) If keeping the -4-5 rate cards as historical, add cases for the new -4-6/-4-8 cards; if replacing, update the fixture filenames/assertions (lines 30-41)."
+            }
+          ],
+          "data_model": "// (A) No schema changes. OperationRoute (router.py:54) is populated from YAML; changing the `model` string flows through automatically. Cache key (cache.py:56) = sha256([content_hash, provider, model, model_version, operation, prompt_version, params_canonical]) — the `model` field changing is what invalidates old cache entries.\n\n// (B) effort.py additions:\nclass CostPreviewRequest(BaseModel):\n    media_count: int = Field(ge=0)\n    target_duration_seconds: int = Field(ge=1)\n    level_id: str | None = None\n    add_title_card: bool = False            # NEW (S-2.11.5)\n\nclass CostPreviewResponse(BaseModel):\n    estimated_cost_usd_low: float\n    estimated_cost_usd_high: float\n    cost_by_tier_usd: dict[str, float]\n    title_card_cost_usd: float | None = None   # NEW — the opt-in line-item, None when not requested\n    today_remaining_usd: float | None\n    fits_today_budget: bool\n    blocking_reason: str | None\n\n// Line-item computation (in post_cost_preview), reusing the router's config so the price tracks the real model:\ndef _title_card_cost() -> float:\n    # read the generate_title_background route (google/gemini-2.5-flash-image, model_version v1)\n    # try rate_cards.load(...) for a real image rate; else fixed fallback.\n    IMAGE_GEN_FALLBACK_USD = 0.04   # ~1024px Gemini image-out, snapshot pricing\n    return IMAGE_GEN_FALLBACK_USD",
+          "prompt_or_config": "config/llm-routing.yaml diff (A) — model-string swaps only, everything else identical:\n\n  extract_metadata_image:      model: claude-sonnet-4-5 → claude-sonnet-4-6\n  extract_metadata_video_scene: model: claude-sonnet-4-5 → claude-sonnet-4-6\n  parse_user_brief:            model: claude-sonnet-4-5 → claude-sonnet-4-6\n  recommend_effort_level:      model: claude-sonnet-4-5 → claude-sonnet-4-6\n  explain_cost:                model: claude-sonnet-4-5 → claude-sonnet-4-6\n  explain_upgrade_path:        model: claude-sonnet-4-5 → claude-sonnet-4-6\n  orchestrator_reasoning:      model: claude-sonnet-4-5 → claude-sonnet-4-6\n  judge_narrative_arc:         model: claude-opus-4-5   → claude-opus-4-8\n\nUnchanged: all google ops (caption_image, caption_video_scene, score_image, generate_title_background=gemini-2.5-flash-image, embed_*). model_version stays `latest` (Anthropic) / `v1` (Google). No max_tokens change (Opus judge 8192 and Sonnet ops ≤2048 are within 4.6/4.8 limits). Haiku (claude-haiku-4-5-20251001): NO routing entry uses Haiku today — only add an op+prompt+rate-card if a Haiku-tier op is introduced; out of scope for this bump.\n\nPrompt files to add (git mv, byte-identical → prompt_version unchanged):\n  prompts/extract_metadata_image/anthropic_claude-sonnet-4-5.jinja2 → anthropic_claude-sonnet-4-6.jinja2\n  prompts/parse_user_brief/anthropic_claude-sonnet-4-5.jinja2       → anthropic_claude-sonnet-4-6.jinja2\n  prompts/judge_narrative_arc/anthropic_claude-opus-4-5.jinja2      → anthropic_claude-opus-4-8.jinja2\n(The other 4 bumped ops have NO prompt file in the repo — verify they never dispatch, or they already fail today; do not fabricate templates.)",
+          "test_plan": [
+            "(A) Add/extend a test in tests/test_router.py asserting route_for('judge_narrative_arc').model == 'claude-opus-4-8' and route_for('extract_metadata_image').model == 'claude-sonnet-4-6' when loading the REAL config/llm-routing.yaml (existing test_router builds an inline config, so add one that points config_path at the repo YAML).",
+            "(A) Add a test that for every operation in the real YAML that has a corresponding prompts/<op>/ directory, prompts.load(op, provider, model) resolves (no FileNotFoundError) — this catches a model rename that forgot to rename its .jinja2. This is the single highest-value guard.",
+            "(A) Add a test that rate_cards.load(provider, model, model_version) resolves for each anthropic op in the real YAML (guards the missing rate-card → ballpark regression).",
+            "(A) Run the full suite (pytest, asyncio_mode=auto) — existing router/rate_cards tests use inline configs/fixtures so they should stay green; fix test_real_providers/test_rate_cards only if they assert the old strings.",
+            "(B) tests/test_api_effort_levels.py: add a case posting cost-preview with add_title_card=true and assert title_card_cost_usd is a positive float and is included in estimated_cost_usd_high; and with add_title_card=false (default) assert title_card_cost_usd is None and totals unchanged.",
+            "(B) Add a runner unit test that _estimate_cost_per_provider with the title-card flag returns a strictly higher 'google' figure than without, so the quota pre-check reserves for it.",
+            "(B) frontend EffortAndCost.test.tsx: assert the cost-preview fetch payload includes add_title_card and that the line-item renders when the draft has add_title_card=true.",
+            "Manual: submit a job with the title-card toggle on and confirm the preview line-item appears and the post-job cost_summary shows the generate_title_background spend (already flows through _record_call)."
+          ],
+          "shared_abstractions": "Both changes reuse the same three config-resolution levers already central to the pipeline: (1) config/llm-routing.yaml OperationRoute is the single source of provider+model+model_version+max_tokens+temperature — the model bump is a pure config edit, no code; (2) the per-model file-resolution convention (prompts/<op>/<provider>_<model>.jinja2 in prompts.py, and config/rate-cards/<provider>-<sanitized-model>-<version>.yaml in rate_cards.py) is the coupling that forces the prompt-file + rate-card renames to travel WITH any model-string change — a reusable checklist for every future model bump; (3) the cost-preview line-item reuses the exact rate_cards.load + route lookup path that runner._record_call already uses for post-job costing, so the pre-job estimate and post-job actuals price the title card the same way. The generate_title_background op (S-2.11.5) is already fully wired through the router/quota/telemetry — (B) only surfaces its cost EARLIER (pre-job), it adds no new dispatch path. Shared with the refinement-layer workstream: any op the refinement loop adds must follow the same route+prompt+rate-card triad, and its cost should likewise be reflected in the pre-job estimate.",
+          "risks": [
+            "CACHE INVALIDATION (the flagged risk): the cache key includes the `model` string (cache.py:56), so renaming claude-sonnet-4-5 → claude-sonnet-4-6 and claude-opus-4-5 → claude-opus-4-8 silently invalidates ALL existing cached results for those ops (extract_metadata_image, parse_user_brief, judge_narrative_arc, etc.). This is the DESIGNED behavior per ADR-0006 (a new model should not reuse another model's outputs), but the consequence is a one-time cold cache → full re-spend on the next run of any previously-cached asset. Renaming the PROMPT files is NOT what breaks cache keys — prompt_version is sha256 of the template TEXT, and a byte-identical git mv leaves prompt_version unchanged. It is the model-string change alone that rotates the key. So: intended, not a bug, but call it out to the user (expect a cost bump on first post-upgrade run).",
+            "MISSING PROMPT FILE → hard failure: if a model string is bumped but the matching prompts/<op>/<provider>_<model>.jinja2 is not created, prompts.load raises FileNotFoundError and the operation hard-fails at dispatch (Stage 5 judge is the worst case — it aborts the job). The new test that resolves every op's prompt is the guard.",
+            "MISSING RATE CARD → silent under-costing, not a crash: rate_cards.load raises FileNotFoundError which router._ballpark_cost swallows (router.py:721), so a bumped model with no rate card silently reverts to the tier ballpark ($0.005 M / $0.50 L). Quota then under-warns. Add the two new rate cards to avoid this.",
+            "The 4 Sonnet ops with NO prompt file in the repo (extract_metadata_video_scene, recommend_effort_level, explain_cost, explain_upgrade_path, orchestrator_reasoning) are ambiguous: either they never dispatch, or they'd already be failing today. Do not fabricate templates — audit whether these ops are live before assuming the bump is safe for them.",
+            "(B) The title-card line-item price is a fixed ~$0.04 fallback unless a google-gemini-2-5-flash-image-v1 rate card exists (it does NOT today — only 4 rate cards on disk). The pre-job estimate will therefore be a constant, not token-accurate; acceptable for a single sub-$0.05 call but note it. Adding that image rate card (separate from this change) would make it real.",
+            "(B) Double-counting guard: ensure the title-card cost is added in exactly ONE place in the preview total (either a dedicated 'title_card' tier key OR folded into 'M', not both), or the high-end estimate inflates."
+          ],
+          "open_questions": [
+            "(A) Should the old -4-5 rate cards and prompt files be deleted (git mv) or kept alongside for rollback? Coding standards say no dead code, but keeping the old rate card is harmless historical pricing. Recommend git mv the prompt files (rename) and add NEW rate cards while keeping the old ones (pricing history is legitimately append-only).",
+            "(A) Are the 5 Sonnet ops without on-disk prompt files (extract_metadata_video_scene, recommend_effort_level, explain_cost, explain_upgrade_path, orchestrator_reasoning) actually dispatched in production? If yes, they need prompt files created before OR after the bump (a pre-existing gap, not introduced here). If no, the bump is safe for them. Needs a one-line confirmation from the user / a grep of their call sites.",
+            "(A) Confirm the exact intended model_version tokens: keep `latest` for the bumped Anthropic models (so the rate-card filename is anthropic-claude-sonnet-4-6-latest.yaml), or move to a dated version like v20260601 to make cache rotation explicit and pin pricing? `latest` is the current convention.",
+            "(A) Haiku (claude-haiku-4-5-20251001) has no consumer today — is a Haiku-tier op planned (e.g. a cheap re-ranker or the recommend_* ops) that should land in THIS change, or is listing it purely aspirational? No op is added for it in this design.",
+            "(B) Should add_title_card also gate on a per-provider Google quota check specifically (the image-gen call is Google), or is the single total-cap check sufficient? Current cost-preview only checks the total cap.",
+            "(B) Should the preview re-fetch on every toggle change (extra API call) or compute the +$0.04 client-side once fetched? Client-side add is cheaper UX; server-side keeps a single source of truth."
+          ]
+        }
+      },
+      {
+        "key": "stage34_items",
+        "design": {
+          "summary": "Three Stage-3.5/4 items designed against the actual code. (A) S-2.10.4 cluster merge-pass: a deterministic post-clustering step inside media/cast.py (`_merge_oversplit_clusters`) that fuses person clusters whose L2-normalized centroids are cosine-close, run between `_cluster_faces` and the group/crowd loop in `build_cast_inventory`; pure/synthetic-testable, SAFE TO FULLY IMPLEMENT + TEST NOW. (B) S-2.10.6 capture-day stratified budget: an A/B-gated Stage-4 budget in stage4_prefilter.py that allocates the final `target_size` proportionally across capture-days (with a per-day floor) instead of one global top-K, so late trip days aren't starved; a new `PreFilterOverrides.stratify_by_capture_day` flag defaults False (global top-K unchanged) — SAFE TO FULLY IMPLEMENT + TEST NOW. (C) S-2.10.8 local CLIP/SigLIP embedder: a pluggable image-embedder backend mirroring the face-embed cloud-default/local-optional pattern, selected by a `KEY_IMAGE_EMBED_BACKEND` setting, wrapped around `router.embed_image` in stage2 so the default path is byte-for-byte unchanged and any failure falls back to the caption-then-embed op — the interface + config + fallback + a stub backend are SAFE NOW; the real weight-loading backend is STUB+FLAG ONLY (needs weights/GPU, never pulled into the repo/env). All three land the deterministic core now and gate anything requiring weights/GPU behind an off-by-default flag.",
+          "new_files": [
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/backend/impact_crater/media/image_embed.py",
+              "purpose": "(C, S-2.10.8) Pluggable local image-embedder backends mirroring media/face_embed.py. Defines an `ImageEmbedder` Protocol (`backend: str`; `async embed_image(image_bytes, *, content_hash) -> Embedding | None`), a `RouterImageEmbedder` (default; delegates to the existing `router.embed_image` caption-then-embed op — byte-for-byte the current behaviour), a `LocalClipImageEmbedder` STUB (lazy-imports open_clip/SigLIP; returns None to trigger fallback until weights are present — NO weights pulled at import), and a `build_image_embedder(backend, router)` factory. Includes an `EMBED_DIM`/backend registry note. SAFE NOW except the real open_clip inference body, which stays a documented stub."
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/tests/test_cluster_merge.py",
+              "purpose": "(A) Unit tests for `_merge_oversplit_clusters`: two cosine-close centroids (same person split by outfit/angle) merge into one Person; two orthogonal identities never merge; merge threshold boundary; merge preserves the union of content_hashes and re-derives appearance_count/distinct_days/breadth; a merge that pushes a borderline person over `group_min_*` correctly flips them to group. Synthetic unit-vector embeddings, no model."
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/tests/test_stage4_stratified_budget.py",
+              "purpose": "(B) Unit tests for capture-day stratified budget: with the flag OFF, output equals the current global top-K (regression guard on existing behaviour); with the flag ON, a 5-day trip whose day-5 shots score slightly lower still gets >=per-day-floor day-5 representatives where global top-K starved them; day allocation sums exactly to target_size; assets with no timestamp form a synthetic '?' day and are not dropped; interaction with floor/ceiling clamp holds."
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/tests/test_image_embed.py",
+              "purpose": "(C) Unit tests for the pluggable image embedder: `build_image_embedder(None/'router', router)` returns the router-delegating default and produces the same vector as calling `router.embed_image` directly (via a fake router); `build_image_embedder('local_clip', ...)` returns the stub which yields None per crop; the stage2 integration wrapper falls back to the router op when the selected backend returns None (asserts caption-then-embed vector still lands in Stage2AssetOutputs). No weights."
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/docs/architecture/ADR-0019-cluster-merge-and-stratified-budget.md",
+              "purpose": "Short ADR recording the two deterministic curation additions (A merge-pass, B stratified budget) as accepted, and noting they are independent of and complementary to ADR-0018's local embedder. (ADR-0018 already covers C; extend it in files_to_change to mark S-2.10.8's pluggable-interface-now / weights-later split rather than writing a second ADR for C.)"
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/project/stories/S-2.10.4.md",
+              "purpose": "Story file (frontmatter per project/README.md) for the cast cluster merge-pass. status: ready / phase: v1."
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/project/stories/S-2.10.6.md",
+              "purpose": "Story file for the capture-day stratified Stage-4 budget. status: ready / phase: v1."
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/project/stories/S-2.10.8.md",
+              "purpose": "Story file for the local CLIP/SigLIP image embedder. status: blocked-on-weights for the real backend; the pluggable interface + config + fallback + stub sub-task is status: ready. phase: v1. Links ADR-0018."
+            }
+          ],
+          "files_to_change": [
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/backend/impact_crater/media/cast.py",
+              "change": "(A, S-2.10.4) Add a deterministic merge-pass. New module const `_DEFAULT_CLUSTER_MERGE_THRESHOLD = 0.90` (cosine; tighter than the same-person cluster threshold so only genuinely-close over-split clusters fuse — tuned per backend later). New pure fn `_merge_oversplit_clusters(clusters: list[list[FaceObservation]], merge_threshold: float) -> list[list[FaceObservation]]`: recompute each cluster's unit centroid (mean of member embeddings, re-normalized; clusters whose members all lack embeddings are singletons and never merge), then greedily union any two clusters whose centroids have cosine >= merge_threshold (union-find or repeated single-linkage pass until stable). In `build_cast_inventory`, insert the merge between `clusters = _cluster_faces(...)` and the `for idx, members in enumerate(clusters)` loop, gated by a new kwarg `merge_oversplit: bool = True` and `cluster_merge_threshold: float = _DEFAULT_CLUSTER_MERGE_THRESHOLD` so it can be disabled/tuned. Add a `log.info('cast_merge before=%d after=%d', ...)`. Rationale: the same greedy single-pass clusterer in `_cluster_faces` order-dependently splits one person into two clusters when early crops are off-angle; a centroid-level second pass repairs that BEFORE the N-012 group/crowd recurrence math, so a split cousin isn't wrongly demoted to crowd. Fully synthetic-testable."
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/backend/impact_crater/pipeline/stage4_prefilter.py",
+              "change": "(B, S-2.10.6) Add capture-day stratified budget behind a flag. In `PreFilterOverrides` add `stratify_by_capture_day: bool | None = None  # default False` and `stratified_min_per_day: int | None = None  # default 3`. Add `_day_key(iso: str|None) -> str` (reuse the cast.py pattern: fromisoformat→%Y-%m-%d, else first 10 chars, else '?'). Replace the single Step-5 `chosen = ranked[:target_size]` with a branch: when the flag is on, call a new `_stratified_take(ranked, target_size, min_per_day, filter_log) -> list[_Asset]` that (1) buckets `ranked` by `_day_key(a.capture_timestamp)`, (2) gives each non-empty day `min(min_per_day, len(bucket))` guaranteed slots, (3) distributes the remaining budget across days proportional to each day's candidate count (largest-remainder rounding), (4) within each day takes the top-N by the already-computed combined-score order, (5) if a day under-fills, spills its unused slots to the global next-best so total == target_size exactly. Log drops with `reason='stratified_day_budget'` carrying the day and per-day cap so the inspect UI explains it. Default path (flag off) is the untouched `ranked[:target_size]` — zero behaviour change, satisfying the A/B gate. Also thread the flag from PreFilterOverrides through unchanged (no runner change needed for tests)."
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/backend/impact_crater/pipeline/stage2_bulk_ops.py",
+              "change": "(C, S-2.10.8) Route the embedding through the pluggable embedder with graceful fallback. Add a param `image_embedder: ImageEmbedder | None = None` to `run_stage2` (default None → build the router-delegating default via `build_image_embedder(backend, router)` where `backend` comes from settings, resolved by the caller). In `_run_for_asset`, replace the bare `embed_task = router.embed_image(...)` with `embed_task = _embed_with_fallback(image_embedder, router, image_bytes, cache_hash)`, a small helper: `try: v = await image_embedder.embed_image(bytes, content_hash=hash); return v if v is not None else await router.embed_image(bytes, content_hash=hash)`. When the default router embedder is selected the call collapses to exactly today's `router.embed_image` — no vector-space change, no re-tuning triggered. Only when a local backend is explicitly selected AND returns a real vector does the embedding space change (and ADR-0018's threshold re-tune applies). Keep the `embedding.ndim == 1` guard so a None/fallback shape mismatch is handled as today."
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/backend/impact_crater/storage/settings.py",
+              "change": "(C) Register the new key: `KEY_IMAGE_EMBED_BACKEND = 'image_embed_backend'  # 'router' (default, caption-then-embed) | 'local_clip' (opt-in, needs weights)`. Follows the existing KEY_CAST_BACKEND comment style."
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/backend/impact_crater/api/jobs.py",
+              "change": "(C) Add `_resolve_image_embed_backend()` (mirror of `_resolve_cast_settings`, defaulting to 'router') and thread the resolved string into the job config alongside `cast_backend`, so the runner can build the embedder. Default 'router' keeps every existing job on the current path. Guarded so an unknown/unavailable local backend logs and falls back to 'router'."
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/backend/impact_crater/pipeline/runner.py",
+              "change": "(C) Add `image_embed_backend: str | None = None` to the runner config dataclass(es) (both config shapes that currently carry `cast_backend`), and pass `image_embedder=build_image_embedder(config.image_embed_backend, router)` into the `stage2_bulk_ops.run_stage2(...)` call. (B) Optionally thread `PreFilterOverrides(stratify_by_capture_day=...)` from config if a job-level override UX is wanted later — not required for the deterministic core, so leave the runner default (flag off) for now."
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/backend/impact_crater/jobs/runner_glue.py",
+              "change": "(C) Add `image_embed_backend: str | None = None` param alongside the existing `cast_backend` and forward it into the runner config, matching the cast_backend plumbing at lines 133/163."
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/docs/architecture/ADR-0018-local-image-embedder.md",
+              "change": "(C) Update status note: mark that S-2.10.8 lands the *pluggable interface + config flag + graceful fallback + stub backend* now (safe, no weights), and that the real open_clip/SigLIP weight-loading backend + threshold re-tune remain deferred (weights/GPU). Add the `image_embed_backend` setting ('router' default | 'local_clip' opt-in) and the fallback contract (local backend returning None ⇒ router op) to the Consequences section."
+            },
+            {
+              "path": "D:/DEV/ClaudeProjects/ImpactCrater/docs/architecture/PIPELINE_DATAFLOW.md",
+              "change": "Refresh the Stage-3.5 (cast) entry to mention the centroid merge-pass (A) and the Stage-4 entry to mention the optional capture-day stratified budget (B) and the pluggable image-embedder indirection with router fallback (C). Keep it a maintained mirror per CLAUDE.md."
+            }
+          ],
+          "data_model": "\n# ---- (A) S-2.10.4 cluster merge-pass (media/cast.py) ----\n_DEFAULT_CLUSTER_MERGE_THRESHOLD = 0.90  # cosine; > per-crop cluster threshold\n\ndef _cluster_centroid(members: list[FaceObservation]) -> FaceVector | None:\n    embs = [m.embedding for m in members if m.embedding is not None]\n    if not embs:\n        return None\n    mean = np.mean(embs, axis=0)\n    n = float(np.linalg.norm(mean))\n    return mean / n if n else None\n\ndef _merge_oversplit_clusters(\n    clusters: list[list[FaceObservation]], merge_threshold: float\n) -> list[list[FaceObservation]]:\n    \"\"\"Single-linkage-until-stable merge of clusters whose unit centroids are\n    cosine >= merge_threshold. Embeddingless singletons never merge. Pure.\"\"\"\n    ...\n\n# build_cast_inventory gains kwargs:\ndef build_cast_inventory(\n    observations, *, cluster_threshold,\n    merge_oversplit: bool = True,\n    cluster_merge_threshold: float = _DEFAULT_CLUSTER_MERGE_THRESHOLD,\n    group_min_breadth=..., group_min_appearances=..., group_min_days=...,\n) -> CastInventory: ...\n\n# ---- (B) S-2.10.6 stratified budget (stage4_prefilter.py) ----\n@dataclass\nclass PreFilterOverrides:\n    ...  # existing fields unchanged\n    stratify_by_capture_day: bool | None = None   # default False (global top-K)\n    stratified_min_per_day: int | None = None     # default 3\n\ndef _stratified_take(\n    ranked: list[_Asset], target_size: int, min_per_day: int,\n    filter_log: list[dict[str, Any]],\n) -> list[_Asset]: ...   # returns exactly target_size assets (or fewer if ranked is smaller)\n\n# ---- (C) S-2.10.8 pluggable image embedder (media/image_embed.py) ----\nfrom impact_crater.llm_clients.base import Embedding  # numpy ndarray alias\n\nclass ImageEmbedder(Protocol):\n    backend: str\n    async def embed_image(self, image_bytes: bytes, *, content_hash: str) -> Embedding | None: ...\n\nclass RouterImageEmbedder:                 # default — today's behaviour\n    backend = \"router\"\n    def __init__(self, router: object) -> None: self._router = router\n    async def embed_image(self, image_bytes, *, content_hash):\n        return await self._router.embed_image(image_bytes, content_hash=content_hash)\n\nclass LocalClipImageEmbedder:              # STUB — weights/GPU, off by default\n    backend = \"local_clip\"\n    def __init__(self) -> None: self._model = None\n    async def embed_image(self, image_bytes, *, content_hash):\n        # lazy import open_clip / siglip; if unavailable or weights absent → None\n        # (caller falls back to the router op). NO weights pulled at import time.\n        return None  # until a real model is present\n\ndef build_image_embedder(backend: str | None, router: object) -> ImageEmbedder:\n    chosen = (backend or \"router\").strip().lower()\n    if chosen == \"local_clip\":\n        return LocalClipImageEmbedder()\n    return RouterImageEmbedder(router)\n\n# stage2 fallback helper\nasync def _embed_with_fallback(embedder, router, image_bytes, content_hash):\n    if embedder is not None:\n        v = await embedder.embed_image(image_bytes, content_hash=content_hash)\n        if v is not None:\n            return v\n    return await router.embed_image(image_bytes, content_hash=content_hash)\n",
+          "prompt_or_config": "No prompt template changes. Config additions only:\n\n# backend/impact_crater/storage/settings.py\nKEY_IMAGE_EMBED_BACKEND = \"image_embed_backend\"  # \"router\" (default) | \"local_clip\"\n\n# No config/llm-routing.yaml change is required for A/B. For C, the local embedder\n# does NOT go through the LLMRouter/routing.yaml at all (it is not a provider op) —\n# it is a media-layer backend selected by the settings key, exactly like KEY_CAST_BACKEND\n# selects gemini vs insightface. The existing embed_image route in llm-routing.yaml\n# remains the fallback and the default. This keeps ADR-0018's \"config flip, not rewrite\"\n# property: enabling local embedding is one settings row, and turning it off restores\n# the routed op with no cache/threshold disturbance.",
+          "test_plan": [
+            "(A) test_cluster_merge.py: two cosine-0.95 centroids (same person, outfit split) merge to one Person; two orthogonal identities stay separate; boundary at merge_threshold; merged Person's content_hashes = union and appearance_count/distinct_days/breadth recomputed from the union; a borderline person that only reaches group_min_days AFTER merge is correctly tagged is_group=True; merge_oversplit=False reproduces pre-merge output (regression guard).",
+            "(A) Extend tests/test_cast.py: existing group-vs-crowd test still passes with merge on by default (orthogonal ALICE/BOB/GUIDE never merge), proving the pass is inert on already-clean clusters.",
+            "(B) test_stage4_stratified_budget.py: flag OFF ⇒ identical items to current prefilter for the same fixture (byte-compare selected keys); flag ON with a 5-day fixture where day-5 scores ~0.05 lower ⇒ day-5 gets >= stratified_min_per_day reps that the global top-K dropped; sum of per-day allocations == target_size; timeless assets bucket under '?' and are eligible; stratified result still respects floor/ceiling clamp; filter_log carries reason='stratified_day_budget'.",
+            "(B) Add one test asserting Stage4EmptyCandidateSet still raises when stratify is on and everything is filtered upstream (guard not bypassed).",
+            "(C) test_image_embed.py: build_image_embedder(None) is RouterImageEmbedder and returns the fake router's vector unchanged; build_image_embedder('local_clip') is the stub returning None; _embed_with_fallback returns the router vector when the embedder returns None; when the embedder returns a real vector it is used verbatim (no router call — assert fake router NOT invoked).",
+            "(C) Extend tests/test_stage2_bulk_ops.py: run_stage2 with default image_embedder=None yields the same Stage2AssetOutputs.embedding as before (regression); run_stage2 passed a stub local embedder that returns None still produces the router embedding (fallback path lands a valid vector, embedding_dim>0).",
+            "Run full suite: cd backend && python -m pytest ../tests/test_cast.py ../tests/test_cluster_merge.py ../tests/test_stage4_prefilter.py ../tests/test_stage4_stratified_budget.py ../tests/test_stage2_bulk_ops.py ../tests/test_image_embed.py -q (asyncio_mode=auto)."
+          ],
+          "shared_abstractions": "Reusable levers this shares with the refinement layer / other workstreams: (1) The pluggable-backend factory pattern (`build_X(backend, router)` + Protocol + cloud-default/local-optional + graceful None→fallback) is now used in THREE places — face_embed.build_face_embedder, the new image_embed.build_image_embedder, and it is the template any future local model swap (local judge, local captioner) should copy. A future refactor could hoist a tiny `impact_crater/media/_backends.py` `resolve_backend(name, registry, default)` helper, but per CLAUDE.md 'no premature abstraction' keep it duplicated until a 4th caller appears. (2) `_day_key` (capture-day bucketing) already exists in media/cast.py and is re-derived in stage4 — the stratified budget (B) and any day-aware refinement directive (e.g. 'ensure each trip day appears') can share the same key function; worth centralizing into pipeline/_time.py if a third consumer lands. (3) PreFilterOverrides is the established A/B-gate mechanism (every new Stage-4 heuristic is an off-by-default field with a documented default), and it is the same object a job-level 'PlanDirective'/refinement lever would populate — so the stratified-budget flag is directly reusable as a refinement lever without new plumbing. (4) The filter_log reason-code convention ('stratified_day_budget', 'cast_merge') feeds the A-023 inspect UI and the feedback loop for free.",
+          "risks": [
+            "(A) Merge threshold is backend-dependent: the same 0.90 that is safe for insightface/ArcFace vectors may over-merge Gemini caption-embed face vectors (which already merge look-alikes). Mitigation: key the merge threshold off backend like CLUSTER_THRESHOLD does, and default merge_oversplit conservatively (high threshold). Over-merging two distinct people into one 'group member' would silently under-count the cast and skew coverage.",
+            "(A) Single-linkage-until-stable can chain-merge (A~B, B~C but A≁C) into a blob. Mitigation: cap with a stricter centroid-cosine gate or use average-linkage; add a test for the chain case. Given cast sizes are small this is cheap.",
+            "(B) Stratified budget can HURT quality when one day genuinely holds all the best moments and the min-per-day floor forces weaker later-day shots in — this is exactly why it is A/B-gated OFF by default; needs a real-job eval before default-on. Largest-remainder rounding + spill logic must guarantee sum==target_size or the envelope contract breaks; covered by tests.",
+            "(B) '?' timeless-day bucket: if many assets lack timestamps they clump into one giant pseudo-day and dominate its share. Mitigation: treat '?' as capped like any day; note in the story.",
+            "(C) BIGGEST: enabling local_clip changes the embedding space, which per ADR-0018 invalidates the semantic-dedup 0.93 cosine and diversity thresholds — but the cache key does NOT include the media-layer backend (only provider/model/model_version). Turning the flag on/off would mix caption-space and CLIP-space vectors in the SAME cache/cosine comparisons. Mitigation (design requirement): the local backend MUST write vectors under a distinct cache namespace / content_hash prefix (e.g. 'clip-'+hash) OR bump a version token, so caption-space and CLIP-space vectors never collide; and the stub must never populate the cache. Flag this explicitly in the story acceptance criteria.",
+            "(C) Weights/GPU: the real LocalClipImageEmbedder must lazy-import and must NOT pull weights at import or into the repo/env (CLAUDE.md hard rule). The stub returning None satisfies this; the risk is a future contributor filling in the body with an eager download. Mitigation: document the download-on-first-use-to-user-cache contract in the module docstring and the ADR."
+          ],
+          "open_questions": [
+            "(A) Should the merge-pass run on centroids only, or also require a minimum shared-context sanity check (e.g. don't merge two clusters that appear in the SAME photo, since one photo rarely contains the same person twice)? A 'never merge co-occurring-in-one-hash clusters' guard would cheaply prevent a class of false merges — worth adding as an option.",
+            "(A) Backend-specific merge thresholds: confirm the intended default backend (gemini caption-embed vs insightface) so the default merge_threshold is calibrated, not guessed.",
+            "(B) What is the right per-day floor and does it scale with target_size (min_per_day=3 starves a 12-day trip at target_size=50)? Should the floor be max(1, target_size // (2*num_days)) instead of a constant? Needs a real multi-day job to tune before enabling.",
+            "(B) Should stratification be by capture-DAY or by capture-day-AND-location (named-destination, ties into S-2.10.5 'the Vegas fix')? Day-only is the smaller change; location-aware overlaps with the per-viewpoint cap already in Stage 4.",
+            "(C) Cache-namespace strategy for CLIP vs caption vectors (see risks) — prefix the content_hash, add a backend token to the router cache key, or keep the local embedder entirely out of the shared cache with its own .npy sidecar? Pick before any real weights land.",
+            "(C) Which model exactly (open_clip ViT-L/14 vs SigLIP) and which runtime slot (ADR-0008) — deferred to when weights/GPU work is scheduled; the pluggable interface is model-agnostic so this does not block landing A/B/C-interface now."
+          ]
+        }
+      }
+    ],
+    "synth": {
+      "shared_abstractions": "THREE shared abstractions must be built first and used everywhere. All verified against the actual code.\n\n(1) PlanDirective (new backend/impact_crater/pipeline/plan_directive.py) — the SINGLE duration/positional/tempo shaping contract. Confirmed stage6_plan.py hard-codes _PHOTO_MIN_MS/_PHOTO_MAX_MS(1000/3000)/_VIDEO_MIN_MS/_MAX_CLIPS_PER_LOCATION(3) and apply_overrides() logs+skips shorten/lengthen (line 680 docstring + only drop_item/reorder handled). PlanDirective(bands, max_clips_per_location, positional_rules, tempo:TempoProfile, soft_align:SoftAlignSpec) with DEFAULT_DIRECTIVE == today's exact constants (no-op regression guard). merge_directive(base, patch) deep-merges: patch fields differing from pydantic default win, non-empty patch lists replace. compile_plan gains directive param (default→DEFAULT_DIRECTIVE), persists it on RenderPlan.directive (bump RenderPlan.schema_version 1→2; load_plan tolerates old plans via default_factory). Fixed application order in standard mode: montage-collapse → _cap_per_location(from directive.max_clips_per_location) → _apply_positional → _apply_tempo_profile → _scale_to_target(directive-aware bands) → optional _soft_align. Music-video path UNCHANGED (soft_align ignored; beat-snap owns pacing). build_directive_from_music(music_analysis, target_ms) derives TempoProfile (duration-only first cut, apply_density=False) + section_starts_ms.\n\n(2) ReservationSet + single reservation-merge path inside prefilter() (in new backend/impact_crater/pipeline/destinations.py). Confirmed prefilter() takes no brief and the final cut is `chosen = ranked[:target_size]` (stage4_prefilter.py:240) — a sparse named place is dropped by RANK, not quality. ReservationSet(keys:frozenset[str], reason_by_key, source:Literal['destination','refinement','feedback']) is source-agnostic so THREE consumers reuse ONE mechanism: S-2.10.5 builds it from map_destinations; the refinement layer's reserve_destination tool constructs source='refinement'; A-023 feedback persists source='feedback'. prefilter gains brief_intent (analysis path derives reservations internally) AND reservations (direct path). must_keep threads through every cut (`or a.key in must_keep`, reason='must_keep_destination_coverage'), EXCEPT safety (safety wins, reason='must_keep_overridden_by_safety'), plus a FINAL-GUARD append (reason='must_keep_forced') — that guard is the structural Vegas fix and works with today's global top-K. CoveragePlan on CandidateSet is the single coverage object Stage-4 populates, Stage-5 reads via extra_prompt_vars (judge prompt's named_destinations + chronological blocks ALREADY ship at lines 63-69/31-33 and no-op until fed — verified), diagnostics renders.\n\n(3) Refinement toolset ↔ pipeline mapping — the refinement layer NEVER invents force-keep or hand-edits durations; every tool maps to an existing pipeline entry point through the two abstractions above: reserve_destination(name)/force_include(ref) → prefilter(reservations=ReservationSet(source='refinement')) then re-judge; adjust_plan_directive → merge_directive(prior_plan.directive, patch) + re-run compile_plan ONLY (no new Opus judge for pure pacing — makes shorten/lengthen finally real); content edits ('more landscape') → existing partial_fix_via_plan_edit re-judge. This reuses stage9_refine's current single Tier-M parse_user_brief thinking-call pattern (verified) — just adds a 6th strategy adjust_plan_directive and wires reservations into the plan_edit path.\n\nCROSS-BLUEPRINT CONFLICT RESOLVED — ONE budget owner: S-2.10.6's _stratified_take consumes reservations.keys as inviolable per-bucket seeds (seeds each day-bucket's chosen with its must-keeps FIRST), NOT a second parallel reserve path. S-2.10.5 lands first (final-guard works with today's top-K); S-2.10.6 slots the same seeds into the stratifier. Also: the Stage-6 _cap_per_location(3) and the Stage-4 _cap_gps_viewpoints(4, T-2.11.1.6 already landed) both fire — directive.max_clips_per_location(default 3) must equal or be a strict secondary guard, never a third independent cap.",
+      "build_sequence": [
+        {
+          "step": 1,
+          "what": "FOUNDATION A — PlanDirective model + Stage-6 consumption (self-contained, no-op default). Build plan_directive.py (models + DEFAULT_DIRECTIVE + merge_directive + build_directive_from_music). Refactor stage6_plan.py to consume directive: replace module constants with DurationBands/directive-field defaults, thread directive through _clip_band/_scale_to_target/_cap_per_location, add _apply_positional/_apply_tempo_profile/_soft_align_boundaries, persist RenderPlan.directive (schema_version→2). Runner builds directive from music. ADR-0018 (plan-directive-shared-levers). Ships FIRST so refinement wires onto a stable import surface. All additive — existing test_stage6_plan.py must be byte-identical (regression guard).",
+          "files": "backend/impact_crater/pipeline/plan_directive.py (new); backend/impact_crater/pipeline/stage6_plan.py; backend/impact_crater/pipeline/runner.py; docs/architecture/ADR-0018-plan-directive-shared-levers.md (new); tests/test_plan_directive.py (new)"
+        },
+        {
+          "step": 2,
+          "what": "FOUNDATION B — destination reservation primitive + Stage-0.5 brief parse. Build brief_intent.py (BRIEF_SCHEMA adds named_destinations+chronological; parse_brief fail-soft→empty intent) and destinations.py (DestMatch, CoveragePlan, ReservationSet, map_destinations: text-match → optional reverse_geocode(try/except) → same-day drive-video bridge). Add named_destinations+chronological guidance bullets to prompts/parse_user_brief jinja2 (schema supplied at call time). reverse_geocoder is an optional pyproject dep behind try/except — text+day-bridge covers the SW-US trip without it. NO Stage-4 wiring yet.",
+          "files": "backend/impact_crater/pipeline/brief_intent.py (new); backend/impact_crater/pipeline/destinations.py (new); prompts/parse_user_brief/anthropic_claude-sonnet-4-5.jinja2; pyproject.toml; tests/test_brief_intent.py (new); tests/test_destinations.py (new)"
+        },
+        {
+          "step": 3,
+          "what": "Stage-4 reservation-merge path (the Vegas fix, S-2.10.5). Add prefilter(brief_intent=, reservations=) → merged must_keep set threaded through every cut with the safety-wins exception and the must_keep_forced FINAL GUARD. Add CandidateSet.coverage_plan + cluster_metadata['must_keep_satisfied']. _annotate dest=<name> (mirrors _annotate_cast). Wire runner: parse_brief after Stage-1 (fail-soft, mirror cast block 248-264), pass brief_intent into prefilter, thread coverage_plan+chronological into judge (extra_prompt_vars → auto-invalidates stale judge cache). diagnostics renders destination_coverage. Depends on step 2.",
+          "files": "backend/impact_crater/pipeline/stage4_prefilter.py; backend/impact_crater/pipeline/stage5_judge.py; backend/impact_crater/pipeline/runner.py; backend/impact_crater/pipeline/diagnostics.py; tests/test_stage4_prefilter.py"
+        },
+        {
+          "step": 4,
+          "what": "Cast cluster merge-pass (S-2.10.4) — fully deterministic, synthetic-testable, INDEPENDENT of steps 1-3. _merge_oversplit_clusters(clusters, threshold) between _cluster_faces (cast.py:150) and the group/crowd loop, gated by merge_oversplit kwarg (default True) + backend-keyed threshold. Add a 'never merge co-occurring-in-one-hash clusters' guard against false merges. Recompute appearance_count/distinct_days/breadth from the union. Can land in parallel with steps 1-3.",
+          "files": "backend/impact_crater/media/cast.py; tests/test_cluster_merge.py (new); tests/test_cast.py; docs/architecture/ADR-0019-cluster-merge-and-stratified-budget.md (new)"
+        },
+        {
+          "step": 5,
+          "what": "Stage-4 capture-day stratified budget (S-2.10.6), A/B-gated OFF. PreFilterOverrides.stratify_by_capture_day(default False)+stratified_min_per_day(default 3). _stratified_take buckets ranked by _day_key, guarantees min-per-day, distributes remainder by largest-remainder rounding, spills under-fills so sum==target_size. CRITICAL: seeds each bucket's chosen with reservations.keys FIRST (ONE budget owner — no second reserve). '?' timeless bucket capped like any day. Depends on step 3 (must consume the same reservations set).",
+          "files": "backend/impact_crater/pipeline/stage4_prefilter.py; tests/test_stage4_stratified_budget.py (new); docs/architecture/ADR-0019-cluster-merge-and-stratified-budget.md"
+        },
+        {
+          "step": 6,
+          "what": "Duration/tempo/positional levers wired into initial planning (E-2.12 stories). Runner already passes the music-derived directive (step 1); add brief-derived PositionalRule support + FullJobConfig.plan_directive injection. Refresh PIPELINE_DATAFLOW.md Stage-6 section (fixed lever order, directive persisted on plan.json). Depends on step 1.",
+          "files": "backend/impact_crater/pipeline/runner.py; docs/architecture/PIPELINE_DATAFLOW.md"
+        },
+        {
+          "step": 7,
+          "what": "FLAGSHIP refinement layer wiring — depends on steps 1 (directive) + 3 (reservations). Add strategy 6 adjust_plan_directive to stage9_refine._THINKING_SCHEMA/_PROMPT emitting a partial PlanDirective (_ADJUST_DURATIONS_SCHEMA); refine() calls merge_directive(prior_plan.directive, patch) + re-runs compile_plan ONLY (no re-judge). Add reserve_destination/force_include → prefilter(reservations=ReservationSet(source='refinement')) → re-judge. Optionally converge stage6_second_guess shorten/lengthen onto directive_patch. This is where PlanDirective + ReservationSet pay off — initial and refined renders run identical Stage-6/Stage-4 code.",
+          "files": "backend/impact_crater/pipeline/stage9_refine.py; backend/impact_crater/pipeline/stage6_second_guess.py (optional converge); tests/test_stage9_refine.py"
+        },
+        {
+          "step": 8,
+          "what": "Local CLIP/SigLIP image embedder — INTERFACE+STUB ONLY (weights/GPU deferred). image_embed.py: ImageEmbedder Protocol, RouterImageEmbedder (default=today's behaviour), LocalClipImageEmbedder STUB (returns None→fallback, NO weights at import), build_image_embedder factory. stage2 _embed_with_fallback wraps router.embed_image (default path byte-identical). KEY_IMAGE_EMBED_BACKEND setting ('router' default). jobs.py/runner.py/runner_glue.py thread the string. Extend ADR-0018-local-image-embedder Consequences with the cache-namespace requirement. INDEPENDENT — can land anytime.",
+          "files": "backend/impact_crater/media/image_embed.py (new); backend/impact_crater/pipeline/stage2_bulk_ops.py; backend/impact_crater/storage/settings.py; backend/impact_crater/api/jobs.py; backend/impact_crater/pipeline/runner.py; backend/impact_crater/jobs/runner_glue.py; tests/test_image_embed.py (new); tests/test_stage2_bulk_ops.py; docs/architecture/ADR-0018-local-image-embedder.md"
+        },
+        {
+          "step": 9,
+          "what": "Model bump (S-2.10.7) + cost line-item (S-2.11.5) — INDEPENDENT quick-wins, land anytime. Bump the 8 model strings in llm-routing.yaml (sonnet-4-5→4-6, opus-4-5→4-8); git mv the 3 EXISTING prompt files (extract_metadata_image, parse_user_brief, judge_narrative_arc — the other 5 Sonnet ops have NO prompt file, verified: only 6 jinja2 exist); add 2 new rate cards. Add a router-config resolution test (every op with a prompts/ dir must resolve — highest-value guard) + a rate-card resolution test. Cost: thread add_title_card into POST /api/cost-preview + runner._estimate_cost_per_provider google bump + frontend line-item.",
+          "files": "config/llm-routing.yaml; prompts/{extract_metadata_image,parse_user_brief}/anthropic_claude-sonnet-4-6.jinja2 (git mv); prompts/judge_narrative_arc/anthropic_claude-opus-4-8.jinja2 (git mv); config/rate-cards/anthropic-claude-sonnet-4-6-latest.yaml + anthropic-claude-opus-4-8-latest.yaml (new); backend/impact_crater/api/effort.py; backend/impact_crater/pipeline/runner.py; frontend/src/api/jobs.ts; frontend/src/routes/EffortAndCost.tsx; tests/test_router.py; tests/test_api_effort_levels.py"
+        }
+      ],
+      "now_vs_deferred": "FULLY IMPLEMENTABLE + TESTABLE NOW (no flags, no stubs, ship default-on where safe):\n- PlanDirective + Stage-6 consumption (step 1): DEFAULT_DIRECTIVE is a no-op reproducing today's constants byte-for-byte; music-derived tempo shaping ships duration-only (apply_density=False).\n- brief_intent + destinations + Stage-4 reservations (steps 2-3): parse_brief fail-soft (empty intent→current behaviour), reservations=None→unchanged. The Vegas fix (must_keep_forced final guard) works with today's global top-K. reverse_geocoder optional behind try/except.\n- Cast cluster merge-pass (step 4): pure/synthetic-testable, default merge_oversplit=True but backend-keyed conservative threshold + co-occurrence guard.\n- Duration/positional/tempo lever wiring (step 6) and refinement layer (step 7): fully implementable — refinement's single Tier-M thinking-call pattern already exists.\n- Model bump + cost line-item (step 9): pure config + file renames + a preview field.\n\nDEFAULT-OFF FLAG (implement + test the mechanism now, enable after a real-job eval):\n- Stage-4 capture-day stratified budget (S-2.10.6, step 5): PreFilterOverrides.stratify_by_capture_day defaults False. Full A/B gate — flag OFF must byte-match current selection (regression guard). Needs a real multi-day job eval before default-on (a min-per-day floor can force weaker later-day shots when one day genuinely holds the best moments).\n- SoftAlign lever (S-2.11.6 soft-align): SoftAlignSpec.enabled defaults False; runner flips it on when music present (confirm desired default with product).\n\nSTUB + FLAG (real backend needs weights/GPU — NEVER pulled into repo/env per CLAUDE.md hard rule):\n- Local CLIP/SigLIP image embedder REAL backend (S-2.10.8, step 8): the pluggable interface + KEY_IMAGE_EMBED_BACKEND config + graceful None→router fallback + LocalClipImageEmbedder STUB (returns None, lazy-import, no eager download) are ALL safe now. Only the open_clip/SigLIP inference body is deferred. Hard requirement even in the stub-era design: when the real backend lands it MUST write vectors under a distinct cache namespace (prefix the content_hash or add a backend token) because the cache key does NOT include the media-layer backend — mixing caption-space and CLIP-space vectors in the same 0.93 cosine dedup would corrupt selection. The stub must never populate the cache.",
+      "work_items": [
+        {
+          "id": "E-2.12",
+          "title": "Open-ended refinement layer + shared curation levers (PlanDirective + destination reservation)",
+          "kind": "epic"
+        },
+        {
+          "id": "S-2.10.5",
+          "title": "Named-destination coverage — brief-parse + Stage-4 reservation (the Vegas fix)",
+          "kind": "story"
+        },
+        {
+          "id": "S-2.12.1",
+          "title": "PlanDirective shared shaping model + Stage-6 directive consumption (no-op default)",
+          "kind": "story"
+        },
+        {
+          "id": "S-2.12.2",
+          "title": "Positional/tempo/soft-align duration levers wired into initial planning",
+          "kind": "story"
+        },
+        {
+          "id": "S-2.12.3",
+          "title": "Agentic refinement wiring — adjust_plan_directive + reserve_destination onto shared abstractions",
+          "kind": "story"
+        },
+        {
+          "id": "S-2.10.4",
+          "title": "Cast cluster merge-pass (centroid re-merge of over-split identities)",
+          "kind": "story"
+        },
+        {
+          "id": "S-2.10.6",
+          "title": "Capture-day stratified Stage-4 budget (A/B-gated, consumes reservation seeds)",
+          "kind": "story"
+        },
+        {
+          "id": "S-2.10.7",
+          "title": "Model bump — Sonnet 4-6 / Opus 4-8 (routing + prompt renames + rate cards)",
+          "kind": "story"
+        },
+        {
+          "id": "S-2.10.8",
+          "title": "Pluggable local CLIP/SigLIP image embedder (interface+stub now, weights deferred)",
+          "kind": "story"
+        },
+        {
+          "id": "S-2.11.5b",
+          "title": "AI title-card cost line-item in pre-job cost preview",
+          "kind": "story"
+        },
+        {
+          "id": "T-2.10.5.6",
+          "title": "Diagnostics: per-destination coverage (matched/reserved/basis) in inspect UI",
+          "kind": "task"
+        },
+        {
+          "id": "T-2.12.3.1",
+          "title": "Converge second_guess shorten/lengthen onto directive_patch mechanism",
+          "kind": "task"
+        }
+      ],
+      "adr_needed": "YES — three ADRs. (1) ADR-0018-plan-directive-shared-levers (new): locks PlanDirective as the single duration/positional/tempo contract shared by Stage-6 initial planning and Stage-9 refinement; records the fixed lever-application order (bands→positional→tempo→scale→soft-align), directive persisted on plan.json (schema_version bump, load_plan tolerant of old plans), refinement emits a PARTIAL merged over the persisted base rather than mutating clip durations, music-video hard beat-snap stays a separate path. (2) ADR-0019-cluster-merge-and-stratified-budget (new): records the two deterministic Stage-3.5/4 curation additions as accepted (merge-pass default-on with backend-keyed threshold; stratified budget A/B-gated OFF pending real-job eval) and the ONE-budget-owner contract between the reservation set and the stratifier. (3) ADR-0018-local-image-embedder (EXTEND existing, note the blueprint referenced both an existing ADR-0018 for the embedder and a new ADR-0018 for the directive — RESOLVE the collision: give the directive its own number, e.g. ADR-0020-plan-directive if 0018 is already the local-embedder ADR; confirm the next free ADR number before writing). The embedder ADR gains: the image_embed_backend setting ('router' default | 'local_clip' opt-in), the None→router fallback contract, and the mandatory distinct cache-namespace for CLIP-space vs caption-space vectors. The model bump (S-2.10.7) and cost line-item (S-2.11.5b) need NO ADR — pure config + a per-model file-resolution checklist (prompt file + rate card must travel with every model-string change).",
+      "risks": [
+        "Cross-story double-budgeting (S-2.10.5 reservations vs S-2.10.6 stratified budget). COVERED: S-2.10.5 lands first with the must_keep_forced final guard that works on today's global top-K; S-2.10.6's _stratified_take seeds each bucket with reservations.keys FIRST (never a second reserve). Test: prefilter(reservations={k}) force-keeps k under BOTH stratify=off and stratify=on with identical reason codes.",
+        "Triple-capping one viewpoint: Stage-4 _cap_gps_viewpoints(4, already landed) + Stage-6 _cap_per_location(3) + new directive.max_clips_per_location. COVERED: directive default (3) equals the Stage-6 cap; test asserts a directive-set max never conflicts with the deterministic Stage-6 guard (one owns the number).",
+        "PlanDirective persistence changes plan.json schema. COVERED: bump RenderPlan.schema_version, default_factory makes directive additive; test load_plan on an old plan lacking directive → DEFAULT_DIRECTIVE.",
+        "Regression from the no-op defaults not actually being no-ops. COVERED (highest-value guard): existing test_stage6_plan.py must be byte-identical with compile_plan(directive=None); existing test_stage4_prefilter.py + test_cast.py fixtures unchanged with reservations=None / merge_oversplit inert on clean clusters.",
+        "Model-string bump silently under-costs or hard-fails. COVERED: a router-config test that every op with a prompts/ dir resolves prompts.load (missing prompt=hard FileNotFoundError at dispatch, worst case Stage-5 judge aborts the job) + a rate_cards.load test for every anthropic op (missing rate card silently reverts to tier ballpark). Also flag to user: model rename rotates the cache key → one-time cold-cache re-spend (intended per ADR-0006).",
+        "Local embedder cache-space corruption if a future contributor fills the stub without namespacing. COVERED by design requirement in the ADR + acceptance criteria: local vectors under a distinct cache namespace, stub never populates cache, lazy-import with no eager weight download. Test asserts build_image_embedder('local_clip') stub returns None and the router fallback vector still lands.",
+        "Cast merge chain-merge (A~B, B~C, A≁C blob) or backend-mismatched threshold over-merging distinct people. COVERED: co-occurrence guard (never merge two clusters sharing one photo) + backend-keyed threshold + an explicit chain-case test; conservative default threshold (0.90, tighter than the cluster threshold).",
+        "parse_brief hiccup regressing every job. COVERED: wrapped exactly like the cast_builder fail-soft block (runner lines 248-264) → empty BriefIntent → current behaviour; unit test asserts router-error → empty intent.",
+        "Refinement hand-editing durations instead of emitting a directive (would diverge initial vs refined render paths). COVERED by the merge-semantics contract + a test asserting adjust_plan_directive re-compiles via compile_plan with SAME candidate_refs/order and does NOT call judge_narrative_arc.",
+        "Stratified budget hurting quality when one day holds all the best moments. COVERED by keeping it A/B-gated OFF (regression: flag-off byte-matches current selection) pending a real multi-day job eval; largest-remainder + spill logic tested to guarantee sum==target_size so the floor/ceiling envelope contract holds."
+      ]
+    }
+  },
+  "workflowProgress": [
+    {
+      "type": "workflow_phase",
+      "index": 1,
+      "title": "Design"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 2,
+      "title": "Synthesize"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 1,
+      "label": "design:refinement_agent",
+      "phaseIndex": 1,
+      "phaseTitle": "Design",
+      "agentId": "a93301523a2209d72",
+      "model": "claude-opus-4-8",
+      "state": "error",
+      "startedAt": 1782887123775,
+      "queuedAt": 1782887123761,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Replace the current single-shot stage9_refine.refine (a 5-s…",
+      "promptPreview": "Impact Crater: one-click media→video creator. Pipeline: Stage1 ingest → Stage2 bulk (Gemini Flash caption/quality/narrative/embed) → Stage3 metadata (Claude Sonnet incl specialness) → Stage3.5 cast (detect→embed→cluster→group/crowd) → Stage4 deterministic prefilter (no LLM) → Stage5 narrative judge (Claude Opus tool-use) → Stage6 compile_plan → Stage6.5 second-guess → Stage7 ffmpeg render → Stage9…",
+      "lastProgressAt": 1782887640488,
+      "error": "agent({schema}): StructuredOutput retry cap (5) exceeded — 5 failed calls with no valid output",
+      "tokens": 183381,
+      "toolCalls": 32,
+      "durationMs": 516713
+    },
+    {
+      "type": "workflow_agent",
+      "index": 2,
+      "label": "design:destination_coverage",
+      "phaseIndex": 1,
+      "phaseTitle": "Design",
+      "agentId": "aba76b9f9bde97d11",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1782887123776,
+      "queuedAt": 1782887123761,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "S-2.10.5 makes named destinations from the brief (e.g. \"Las…",
+      "promptPreview": "Impact Crater: one-click media→video creator. Pipeline: Stage1 ingest → Stage2 bulk (Gemini Flash caption/quality/narrative/embed) → Stage3 metadata (Claude Sonnet incl specialness) → Stage3.5 cast (detect→embed→cluster→group/crowd) → Stage4 deterministic prefilter (no LLM) → Stage5 narrative judge (Claude Opus tool-use) → Stage6 compile_plan → Stage6.5 second-guess → Stage7 ffmpeg render → Stage9…",
+      "lastProgressAt": 1782887317454,
+      "tokens": 176179,
+      "toolCalls": 35,
+      "durationMs": 193678,
+      "resultPreview": "{\"summary\":\"S-2.10.5 makes named destinations from the brief (e.g. \\\"Las Vegas\\\") survive Stage 4 to reach the judge. Root cause (verified): `prefilter()` takes no brief, so its global top-K (`ranked[:target_size]`, stage4_prefilter.py:240) drops all shots for a sparse/low-quality named place; `parse_user_brief` is wired as a route but never called in `run_headless_pipeline` (only stage6_second_gu…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 3,
+      "label": "design:duration_tempo_levers",
+      "phaseIndex": 1,
+      "phaseTitle": "Design",
+      "agentId": "a3a751ba77cdb30f5",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1782887123776,
+      "queuedAt": 1782887123761,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Design a structured `PlanDirective` pydantic model that Sta…",
+      "promptPreview": "Impact Crater: one-click media→video creator. Pipeline: Stage1 ingest → Stage2 bulk (Gemini Flash caption/quality/narrative/embed) → Stage3 metadata (Claude Sonnet incl specialness) → Stage3.5 cast (detect→embed→cluster→group/crowd) → Stage4 deterministic prefilter (no LLM) → Stage5 narrative judge (Claude Opus tool-use) → Stage6 compile_plan → Stage6.5 second-guess → Stage7 ffmpeg render → Stage9…",
+      "lastProgressAt": 1782887299407,
+      "tokens": 98930,
+      "toolCalls": 19,
+      "durationMs": 175631,
+      "resultPreview": "{\"summary\":\"Design a structured `PlanDirective` pydantic model that Stage 6 consumes as the single source of truth for duration/positional/tempo shaping, replacing today's hard-coded module constants (_PHOTO_MAX_MS, _MAX_CLIPS_PER_LOCATION, etc.) with a directive-parameterised band-and-scale pipeline. Three LEVERS all read from one directive: (a) POSITIONAL — per-region duration multipliers keyed …"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 4,
+      "label": "design:config_quickwins",
+      "phaseIndex": 1,
+      "phaseTitle": "Design",
+      "agentId": "ae6fae9dc986ae3bd",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1782887123776,
+      "queuedAt": 1782887123761,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Two small, self-contained changes. (A) S-2.10.7 model bump:…",
+      "promptPreview": "Impact Crater: one-click media→video creator. Pipeline: Stage1 ingest → Stage2 bulk (Gemini Flash caption/quality/narrative/embed) → Stage3 metadata (Claude Sonnet incl specialness) → Stage3.5 cast (detect→embed→cluster→group/crowd) → Stage4 deterministic prefilter (no LLM) → Stage5 narrative judge (Claude Opus tool-use) → Stage6 compile_plan → Stage6.5 second-guess → Stage7 ffmpeg render → Stage9…",
+      "lastProgressAt": 1782887283208,
+      "tokens": 89843,
+      "toolCalls": 31,
+      "durationMs": 159432,
+      "resultPreview": "{\"summary\":\"Two small, self-contained changes. (A) S-2.10.7 model bump: swap the four Anthropic model strings in config/llm-routing.yaml (claude-sonnet-4-5 → claude-sonnet-4-6 on the 5 Tier-M ops + orchestrator; claude-opus-4-5 → claude-opus-4-8 on judge_narrative_arc; Gemini untouched). Because the prompt loader resolves prompts/<op>/<provider>_<model>.jinja2 by the exact model string (prompts.py…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 5,
+      "label": "design:stage34_items",
+      "phaseIndex": 1,
+      "phaseTitle": "Design",
+      "agentId": "a8738a7c5e9e37f78",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1782887123776,
+      "queuedAt": 1782887123761,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Three Stage-3.5/4 items designed against the actual code. (…",
+      "promptPreview": "Impact Crater: one-click media→video creator. Pipeline: Stage1 ingest → Stage2 bulk (Gemini Flash caption/quality/narrative/embed) → Stage3 metadata (Claude Sonnet incl specialness) → Stage3.5 cast (detect→embed→cluster→group/crowd) → Stage4 deterministic prefilter (no LLM) → Stage5 narrative judge (Claude Opus tool-use) → Stage6 compile_plan → Stage6.5 second-guess → Stage7 ffmpeg render → Stage9…",
+      "lastProgressAt": 1782887309476,
+      "tokens": 81439,
+      "toolCalls": 27,
+      "durationMs": 185700,
+      "resultPreview": "{\"summary\":\"Three Stage-3.5/4 items designed against the actual code. (A) S-2.10.4 cluster merge-pass: a deterministic post-clustering step inside media/cast.py (`_merge_oversplit_clusters`) that fuses person clusters whose L2-normalized centroids are cosine-close, run between `_cluster_faces` and the group/crowd loop in `build_cast_inventory`; pure/synthetic-testable, SAFE TO FULLY IMPLEMENT + TE…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 6,
+      "label": "synthesize",
+      "phaseIndex": 2,
+      "phaseTitle": "Synthesize",
+      "agentId": "a90e2b42a75047272",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1782887640502,
+      "queuedAt": 1782887640490,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "THREE shared abstractions must be built first and used ever…",
+      "promptPreview": "Impact Crater: one-click media→video creator. Pipeline: Stage1 ingest → Stage2 bulk (Gemini Flash caption/quality/narrative/embed) → Stage3 metadata (Claude Sonnet incl specialness) → Stage3.5 cast (detect→embed→cluster→group/crowd) → Stage4 deterministic prefilter (no LLM) → Stage5 narrative judge (Claude Opus tool-use) → Stage6 compile_plan → Stage6.5 second-guess → Stage7 ffmpeg render → Stage9…",
+      "lastProgressAt": 1782887785331,
+      "tokens": 112079,
+      "toolCalls": 9,
+      "durationMs": 144828,
+      "resultPreview": "{\"shared_abstractions\":\"THREE shared abstractions must be built first and used everywhere. All verified against the actual code.\\n\\n(1) PlanDirective (new backend/impact_crater/pipeline/plan_directive.py) — the SINGLE duration/positional/tempo shaping contract. Confirmed stage6_plan.py hard-codes _PHOTO_MIN_MS/_PHOTO_MAX_MS(1000/3000)/_VIDEO_MIN_MS/_MAX_CLIPS_PER_LOCATION(3) and apply_overrides() …"
+    }
+  ],
+  "totalTokens": 741851,
+  "totalToolCalls": 153
+}

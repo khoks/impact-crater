@@ -1,3 +1,5 @@
+> **Historical (2026-10-24).** This checklist verified the M0 scaffolding install path in May 2026 and is kept for reference only. The current developer setup is the README quick start plus `scripts/windows/start.ps1`; real-provider smoke runs are the `--integration` pytest suite and a small job through the UI (the M1-era `scripts/wiki_smoke_test.py` was removed in S-2.13.6).
+
 # M0 smoke test — what to walk through after the M0 PR merges
 
 This is the manual verification checklist for M0 (E-2.1 Scaffolding). It exists because per [`CLAUDE.md`](../../CLAUDE.md) hard rules, dependency installation (`pip install`, `npm install`) is not run automatically by Claude — the user runs it post-merge to verify the M0 install path on their own machine.

@@ -5,24 +5,26 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "impact-crater"
 version = "0.0.1"
-description = "AI-driven photo and video curator. Self-hosted, open under BSL 1.1."
+description = "One-click media-to-video creator: drop photos and videos, describe the video you want, and the AI selects, sequences, scores and renders it. Self-hosted, source-available under BSL 1.1."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "Rahul Singh Khokhar" }]
-keywords = ["media", "curation", "ai", "llm", "video", "photo"]
+keywords = ["video", "photo", "media", "ai", "llm", "ffmpeg", "youtube", "instagram", "reels", "self-hosted"]
 classifiers = [
-    "Development Status :: 1 - Planning",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: End Users/Desktop",
-    "License :: Other/Proprietary License",
     "Operating System :: OS Independent",
+    "Topic :: Multimedia :: Video",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
 
 dependencies = [
-    "fastapi>=0.115",
+    # fastapi 0.136 / starlette 1.0 are what the lock file pins; the full suite
+    # passes against that major (2026-10-24), so the floor stays and a <1 cap guards fastapi.
+    "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.32",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
@@ -30,12 +32,12 @@ dependencies = [
     "aiofiles>=24.1",
     "cryptography>=43.0",
     # M1 LLM stack
-    "anthropic>=0.40",
-    "google-genai>=1.0",
+    "anthropic>=0.40,<1",
+    "google-genai>=1.0,<2",
     "tenacity>=9.0",
     "jinja2>=3.1",
     "pyyaml>=6.0",
-    "numpy>=2.0",
+    "numpy>=2.0,<3",
     # M1 media pipeline
     "pillow>=11.0",
     "pillow-heif>=0.21",
@@ -47,13 +49,13 @@ dependencies = [
     # alone covers beats + sections + energy at MVP-acceptable accuracy;
     # the MusicAnalyzer abstraction lets v1 swap to BeatNet/Madmom when
     # the local-LLM runtime brings torch into deps anyway.
-    "librosa>=0.11",
+    "librosa>=0.11,<0.12",
     "soundfile>=0.13",
     # M5 privacy + face detection. ADR-0010 named pyexiv2 + dlib's
     # face-recognition; we substitute piexif (pure Python) + mediapipe
     # (pre-built wheels for Python 3.12 + Windows).
     "piexif>=1.1",
-    "mediapipe>=0.10",
+    "mediapipe>=0.10,<0.11",
     # M7 YouTube connector per ADR-0013.
     "google-auth-oauthlib>=1.2",
     "google-api-python-client>=2.150",
