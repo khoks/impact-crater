@@ -7,3 +7,4 @@ Raw outputs of the multi-agent design passes that preceded the E-2.10 / E-2.11 /
 | `designs.json` | 2026-06-29 | Per-subsystem design proposals for the feedback-driven curation-quality pass (E-2.10): confirmed mechanisms, proposed changes, affected files, from a parallel agent workflow. |
 | `critique.md` | 2026-06-29 | The adversarial critique of those proposals — verified corrections, conflicts between designs, and what was already true in the code. |
 | `refinement_design.json` | 2026-06-30 | The six-agent design + synthesis for open-ended refinement and the shared curation levers (PlanDirective, ReservationSet, agentic refinement loop) that became E-2.12 (ADR-0019 / ADR-0020). |
+| `eval_headless_2026-06.py` | 2026-06-29 | The ad-hoc metric probe (video share, roles, chronology back-steps, same-day/role runs) run by hand on a saved headless result during the E-2.10 pass; the seed of the planned eval harness (S-3.10.1). Historical, untested. |
