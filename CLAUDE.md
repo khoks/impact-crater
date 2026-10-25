@@ -8,6 +8,8 @@ This file is the entry point for any Claude Code session working in this repo. R
 
 Impact Crater is a dead-simple, one-click media-to-video creator: you dump a pile of photos and videos (often thousands from a trip, event, or shoot), describe in your own words what kind of video(s) you want and which platform(s) they're for, click Submit, and you're done — the AI handles everything else. Behind that one click, the AI prepares, plans, curates (picking the best moments and sequencing them into a narrative with fitted music — per-location reels, multi-photo albums, full-journey music-scored videos, montages), synthesizes, and (only after a preview-and-approve gate — the one intentional pause) publishes to the connected platforms (Instagram, Facebook, YouTube, X, etc). It automatically runs locally or via remote APIs based on the user's hardware (GPU class / VRAM) and budget — favoring locally hosted models (≤ 32B parameters) within configured API quotas — and the user never picks a model. Self-hosted-first; open-source under BSL 1.1; designed so any future hosted-service mode is a config flip rather than a rewrite.
 
+*Shipped state as of 2026-10-25 (the paragraph above is intent):* one artifact type (16:9 1080p Story Video), all AI calls go to Anthropic / Google through `config/llm-routing.yaml` (no local LLM runtime exists — the slot is reserved per [ADR-0008](./docs/architecture/ADR-0008-local-llm-runtime-slot.md)), and no publish of any kind has executed yet (see "The MVP gate").
+
 ---
 
 ## Decisions locked
@@ -21,8 +23,10 @@ Impact Crater is a dead-simple, one-click media-to-video creator: you dump a pil
 | Session housekeeping | Two project-local skills (`knowledge-curator`, `work-tracker`) auto-run via the `Stop` hook in `.claude/settings.json` | Persists session knowledge into the right docs and into `project/` without relying on conversation history |
 | Skill git autonomy | Branch + commit + push + open a PR against `master` via `gh`, then **auto-merge with `--squash --delete-branch --admin`** (per [ADR-0004](./docs/architecture/ADR-0004-skill-pr-auto-merge.md)) | Live in-session review is the authoritative review; `--admin` bypasses the branch-protection "require review" rule that has no second human to satisfy; merged PRs remain revertible via `gh pr revert`; branches don't accumulate. Applies to skill PRs *and* feature PRs. Drop `--admin` only when ADR-0004's revisit triggers fire (second contributor, CI gate, or user redirects). |
 | Primary OS for dev | Windows 11 (WSL2 for any Docker work) | User's machine; macOS/Linux supported via OS adapter scripts later |
+| Tech stack | Python 3.12 + FastAPI (3.11 is still the declared floor until S-3.11.4), React 18 + Vite + TypeScript + Tailwind, SQLite (aiosqlite, WAL) with a per-project tree under `~/.impact-crater`, ffmpeg, librosa, remote-first LLM routing through the `LLMClient` protocol (Anthropic + Google) with a reserved local slot, env-var connectors with a dry-run default | [ADR-0005](./docs/architecture/ADR-0005-process-topology-language-stack.md) / [0006](./docs/architecture/ADR-0006-storage-layout.md) / [0007](./docs/architecture/ADR-0007-remote-llm-abstraction.md) / [0008](./docs/architecture/ADR-0008-local-llm-runtime-slot.md) / [0009](./docs/architecture/ADR-0009-cost-tiered-model-lineup.md) / [0012](./docs/architecture/ADR-0012-music-alignment-strategy.md) (librosa amendment pending) / [0013](./docs/architecture/ADR-0013-connector-layer.md) (env-var amendment pending) |
+| MVP closure | On the amended `MVP.md` pre-flight once the first real private YouTube publish lands; `mvp-hardening` = the tail of the MVP initiative from 2026-06-11 until the formal v1 opening (the 06-11 → 07-01 round recorded retroactively; continues through restart Phases 0–2 under E-2.13 / E-3.10 / E-3.11) | D-057 (2026-10-25) |
 
-Tech stack, MVP scope, agent harness shape, vision-model choices, sandbox approach for media processing, storage layout, and connector strategy are **all deferred** to grooming sessions — and will be locked one-at-a-time as ADRs in `docs/architecture/`.
+Tech stack, MVP scope, storage layout, vision-model lineup, music analysis, privacy posture and connector strategy are **locked** — ADR-0005..ADR-0020 (ADR-0018 proposed / staged) in `docs/architecture/`, [`docs/roadmap/MVP.md`](./docs/roadmap/MVP.md), and D-057 for the closure rule. The agent harness shipped as a **deterministic 9-stage runner with single-shot structured LLM calls** (no tool-call orchestrator was built); ADR-0021 recording that and superseding ADR-0014's harness section is pending in S-2.13.5. New architectural choices still land one-at-a-time as ADRs.
 
 ---
 
@@ -30,15 +34,17 @@ Tech stack, MVP scope, agent harness shape, vision-model choices, sandbox approa
 
 - **Consolidated product & architecture overview (external-facing):** [`docs/OVERVIEW.md`](./docs/OVERVIEW.md). A single plain-language document describing the whole application — features, phases, techniques, outputs, architecture diagrams, flows, roadmap — written for a general/outside audience with **no internal IDs or codenames**. It is a *maintained mirror*, not working notes: **whenever the product's features, architecture, flows, or core design materially change, update `docs/OVERVIEW.md` to match** (and keep it free of tracker IDs / ADR numbers / milestone shorthand). The fragmented internal docs below remain the working source for active development.
 - **The user's verbatim original vision:** [`docs/vision/RAW_VISION.md`](./docs/vision/RAW_VISION.md). Source-of-truth for *intent*. Never edit; addenda go below the rule.
-- **Groomed feature catalog (MVP/v1/v2/v3-tagged):** [`docs/vision/GROOMED_FEATURES.md`](./docs/vision/GROOMED_FEATURES.md). Stub today; populated in the vision-grooming session.
+- **Groomed feature catalog (MVP/v1/v2/v3-tagged):** [`docs/vision/GROOMED_FEATURES.md`](./docs/vision/GROOMED_FEATURES.md). Populated (round-1 grooming closed 2026-04-26); every feature carries a phase tag.
 - **Gaps the user didn't mention but the product needs:** [`docs/vision/RECOMMENDED_ADDITIONS.md`](./docs/vision/RECOMMENDED_ADDITIONS.md).
 - **Novel-ideas / inventions log (N-NNN entries):** [`docs/vision/NOVEL_IDEAS.md`](./docs/vision/NOVEL_IDEAS.md). File ideas here *before* a public commit if you want pre-publication priority.
 - **Architecture map:** [`docs/architecture/ARCHITECTURE.md`](./docs/architecture/ARCHITECTURE.md).
 - **End-to-end job data flow (every module, AI + non-AI):** [`docs/architecture/PIPELINE_DATAFLOW.md`](./docs/architecture/PIPELINE_DATAFLOW.md). A code-level, module-by-module trace of how a job is processed from input media to rendered MP4 — each step labelled AI-prompt / AI-embedding / deterministic / external-tool, with files, prompts, and data objects. Maintained mirror of the pipeline (curator-refreshed); the doc to feed NotebookLM for visualizing processing.
 - **ADRs:** [`docs/architecture/ADR-*.md`](./docs/architecture/). Update or add an ADR for any architectural change.
 - **Decision log:** [`docs/decisions/DECISIONS_LOG.md`](./docs/decisions/DECISIONS_LOG.md). Append-only D-NNN entries.
-- **MVP scope:** [`docs/roadmap/MVP.md`](./docs/roadmap/MVP.md). Locked once chosen — anything outside it becomes a backlog Story.
+- **MVP scope:** [`docs/roadmap/MVP.md`](./docs/roadmap/MVP.md). Locked (D-006 / D-007 / D-014) and amended 2026-10-25 (D-057) — anything outside it becomes a backlog Story.
 - **Roadmap:** [`docs/roadmap/ROADMAP.md`](./docs/roadmap/ROADMAP.md).
+- **Publishing connectors (env-var setup, dry-run default):** [`docs/connectors/README.md`](./docs/connectors/README.md) plus the [YouTube](./docs/connectors/youtube-setup.md), [Instagram](./docs/connectors/instagram-setup.md) and [Facebook](./docs/connectors/facebook-setup.md) guides. Code under `backend/impact_crater/connectors/`; none has been live-tested.
+- **Board generator:** [`scripts/tracker_board.py`](./scripts/tracker_board.py). `project/BOARD.md` is generated from the item files — never hand-edit it; run `python scripts/tracker_board.py` after editing items and `python scripts/tracker_board.py --check` before a PR.
 - **Restart landscape + phase-wise plan (2026-10-24):** [`docs/roadmap/LANDSCAPE-AND-PLAN-2026-10-24.md`](./docs/roadmap/LANDSCAPE-AND-PLAN-2026-10-24.md). Audited state of the project after the mid-2026 pause — what is done at macro/medium/micro level, the honest MVP gaps, every pending feature / improvement / decision / test / future item, a 7-phase plan, and the handoff prompt for the next session. **Read it after BOARD.md until its Phase 0 has been worked through.**
 - **Live work tracking:** [`project/BOARD.md`](./project/BOARD.md). **Read this every session before starting work.**
 
@@ -51,13 +57,17 @@ Tech stack, MVP scope, agent harness shape, vision-model choices, sandbox approa
 Every session that touches code or scope follows this loop:
 
 1. Read [`project/BOARD.md`](./project/BOARD.md) — what's `in-progress`, what's `Up Next`?
-2. Pick a Task (or get one from the user). Set `status: in-progress`. Append to its activity log: `YYYY-MM-DD — picked up`. Update `BOARD.md`.
-3. Do the work.
-4. When complete, set `status: done`. Append: `YYYY-MM-DD — done`. Update `BOARD.md`. Commit.
-5. New requirement from a discussion? **Create the matching item** (Initiative / Epic / Story / Task — pick the smallest level that fits). Don't just remember it.
-6. Cancelled scope? Set `status: canceled`, add the reason to the activity log.
+2. Reconcile the inboxes: `python scripts/feedback.py list` for pending user feedback and `GET /api/workplan/overrides` (or the `workplan_overrides` table) for in-app priority changes — see "Picking up user feedback" below.
+3. Before any paid run, verify that the pinned model IDs in `config/llm-routing.yaml` are still served by the providers (S-2.10.9 / S-2.13.8 — until the pre-spend ping exists, a retired model fails only after Stage 2 spend).
+4. Pick a Task (or get one from the user). Set `status: in-progress`. Append to its activity log: `YYYY-MM-DD — picked up`. Regenerate the board.
+5. Do the work.
+6. When complete, set `status: done`. Append: `YYYY-MM-DD — done`. Regenerate the board. Commit.
+7. New requirement from a discussion? **Create the matching item** (Initiative / Epic / Story / Task — pick the smallest level that fits). Don't just remember it.
+8. Cancelled scope? Set `status: canceled`, add the reason to the activity log.
 
-Conventions and frontmatter schema live in [`project/README.md`](./project/README.md). Templates are in [`project/TEMPLATES/`](./project/TEMPLATES/).
+`project/BOARD.md` is **generated** by [`scripts/tracker_board.py`](./scripts/tracker_board.py) from the item files — never hand-edit it. After editing any item run `python scripts/tracker_board.py`; run `python scripts/tracker_board.py --check` before opening a PR (it exits 1 when the board has drifted from the items).
+
+Conventions, the frontmatter schema, the phase vocabulary (`mvp`, `mvp-hardening`, `v1`…) and the `plan-phase-N` tags live in [`project/README.md`](./project/README.md). Templates are in [`project/TEMPLATES/`](./project/TEMPLATES/).
 
 The `work-tracker` skill (under `.claude/skills/`) automates this loop at end-of-session, opens a PR with the resulting board changes, and immediately auto-merges it with `--squash --delete-branch` per [ADR-0004](./docs/architecture/ADR-0004-skill-pr-auto-merge.md).
 
@@ -73,22 +83,35 @@ The `knowledge-curator` skill (under `.claude/skills/`) runs on the `Stop` hook 
 - Architecture / scaling / tech-stack / infra discussion → `docs/architecture/ARCHITECTURE.md` (or a new ADR)
 - Crucial decisions (option chosen, alternative rejected, scope deferred) and significant bug root-causes → `docs/decisions/DECISIONS_LOG.md` as a new D-NNN entry
 - Novel mechanism / non-obvious idea → `docs/vision/NOVEL_IDEAS.md` as a new N-NNN entry
-- Long verbatim user dumps → `docs/vision/notes/YYYY-MM-DD-slug.md`
+- Long verbatim user dumps (and clearly labelled reconstructions when a transcript is lost) → `docs/vision/notes/YYYY-MM-DD-slug.md`
 
 It commits on a fresh branch, pushes, opens a PR against `master` via `gh`, and immediately auto-merges it with `--squash --delete-branch` per [ADR-0004](./docs/architecture/ADR-0004-skill-pr-auto-merge.md). If the session contained nothing capture-worthy, it exits as an explicit no-op.
 
 ---
 
-## Coding standards (apply once code lands)
+## Coding standards
 
-Most coding standards are deferred until the first ADR locks the language(s) and frameworks. The few rules that apply already:
+The stack is Python (FastAPI) under `backend/impact_crater` and TypeScript (React + Vite) under `frontend/`. The tooling below is configured in `pyproject.toml` and `frontend/package.json`; there is no CI yet (only `pages.yml` — test CI is S-3.11.2), so each PR runs these locally.
+
+**Backend** (run from the repo root with the `.venv` tools — the lock file pins ruff 0.15.12 / mypy 1.20.2 / pytest 9.0.3)
+
+- `ruff check backend/impact_crater tests scripts` — line-length 100, rules `E W F I N UP B A C4 SIM RUF`, `E501` ignored; `ruff format` with double quotes. **Current state (2026-10-25):** the tree is not clean — `ruff check` reports 108 pre-existing violations in `backend/impact_crater` (E402, SIM105, UP037, RUF002 lead) and 67 in `tests/` + `scripts/` (mostly I001), and `ruff format --check` would reformat 88 files. Rule until the sweep lands: a PR adds **zero** new violations in the files it touches, and formats the files it touches; the repo-wide sweep has no story yet.
+- `mypy --strict` over `backend/impact_crater` (the only `files` target; third-party stubs listed in `[[tool.mypy.overrides]]` are `ignore_missing_imports`). **Current state (2026-10-25):** 68 errors in 24 of 77 files (type-arg, no-any-return, valid-type, arg-type, 11 unused-ignore). Same rule: no new errors in touched files.
+- `pytest` from the **repo root**: `testpaths = ["tests"]`, `asyncio_mode = "auto"`, `--strict-markers --strict-config`. Must be green (477 pass as of 2026-10-25). Tests that hit the real Anthropic / Google APIs carry the `integration` marker and are skipped unless `--integration` is passed (7 today; they cost money — ask first).
+- When testing a worktree, the venv lives in the main repo: set `PYTHONPATH=<worktree>/backend` so pytest / ruff / mypy exercise the worktree's code, not the main tree.
+
+**Frontend** (run inside `frontend/`)
+
+- `npm run typecheck` (`tsc -b --noEmit`) and `npm test` (`vitest run`, 38 tests) must be green — both are clean as of 2026-10-25.
+
+**Style rules (both sides)**
 
 - **Comments are rare.** Default to none. Add one only when the *why* is non-obvious.
 - **No dead code.** Delete; don't comment out. No `// removed` tombstones.
 - **Validate at boundaries; trust internal code.** No defensive try/catch for impossible cases.
 - **No premature abstraction.** Three similar lines beats a generic helper. Don't introduce adapters or interfaces beyond what the architecture explicitly calls for.
-
-The full coding-standards section will be filled in once the language stack ADR lands.
+- **Forward-slash, POSIX-style paths** in code and docs (see "OS notes").
+- **Conventional Commits with the work-item ID** in the subject (see "Commit style").
 
 ---
 
@@ -149,9 +172,9 @@ Each item names the `phase`, `verdict`, the specific `content_hash` / `decision_
 
 ## The MVP gate
 
-The MVP scope (which artifact types, which platforms, which model routing rules) is **not yet chosen**. It will be locked in [`docs/roadmap/MVP.md`](./docs/roadmap/MVP.md) during the roadmap-grooming session. Once locked, anything outside that scope:
+The MVP scope is **locked** in [`docs/roadmap/MVP.md`](./docs/roadmap/MVP.md): one artifact type (Story Video, D-006), one platform end-to-end (YouTube, D-007), and the D-014 success criterion. It was **amended by D-057 on 2026-10-25**: the curate→preview half of D-014 passed on 2026-06-18 on a real 1,663-asset trip; the publish half has never executed, so **the MVP closes on the first real (private) YouTube publish** against the amended pre-flight, and the `mvp-hardening` phase (the tail of the MVP initiative from 2026-06-11 until the formal v1 opening — the 06-11 → 07-01 round recorded retroactively, continuing through restart Phases 0–2) is defined in [`project/README.md`](./project/README.md). Anything outside the gate:
 
-- Goes into `project/` as a new Story or Epic with `status: backlog` and `phase: v1` (or v2/v3).
+- Goes into `project/` as a new Story or Epic with `status: backlog` and `phase: v1` (or v2/v3), plus a `plan-phase-N` tag when the restart plan schedules it.
 - Does **not** land in MVP code.
 
 Every "while we're at it…" idea is a chance to bloat the MVP into oblivion. Resist.
