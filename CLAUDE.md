@@ -126,15 +126,18 @@ If you change the tech stack, swap a library, change a security or sandboxing mo
 
 ## Picking up user feedback (A-023)
 
-The app has an in-product feedback loop: on the preview page, "Inspect & give feedback" opens per-phase diagnostics (Stage 4 keep/drop decisions with reasons, the Stage 5 narrative selection, the Stage 6 clips, the trip cast), and the user can mark any decision **correct / incorrect / should-be-different** with a note. Feedback is stored in the `feedback` table and mirrored to `~/.impact-crater/feedback.jsonl`.
+The app has an in-product feedback loop: on the preview page, "Inspect & give feedback" opens per-phase diagnostics (Stage 4 keep/drop decisions with reasons, the Stage 5 narrative selection, the Stage 6 clips, the trip cast), and the user can mark any decision **correct / incorrect / should-be-different** with a note. **The SQLite `feedback` table is the authoritative store.** `~/.impact-crater/feedback.jsonl` is an append-only event log of submissions only — status changes, triage notes and out-of-band deletions never reach it (it has already diverged from the table), so never read it as a mirror or reconcile from it.
 
 When the user asks you to "pick up the submitted feedback" / "work on my feedback", run:
 
 ```bash
 python scripts/feedback.py list           # pending items (status=new)
 python scripts/feedback.py show <id>      # full decision context for one item
-python scripts/feedback.py mark <id> addressed   # after you've acted on it
+python scripts/feedback.py mark <id> addressed --note "S-x.y.z, PR #NN"   # after you've acted on it
+python scripts/feedback.py mark <id> triaged  --note "still open: <root cause>, re-verify on <item>"
 ```
+
+Every item that leaves `new` carries a `--note` naming the story / PR that addressed it or the follow-up that will, so `list` never shows an unexplained item and `list --all` reads as a decision log.
 
 Each item names the `phase`, `verdict`, the specific `content_hash` / `decision_ref`, the user's `comment`, a `context` snapshot of the decision the UI showed, and a `screenshot_path` (a PNG of the whole page at submit time, under `~/.impact-crater/feedback_screenshots/`, viewable at `GET /api/feedback/{id}/screenshot.png` — `Read` the file to see exactly what the user saw).
 

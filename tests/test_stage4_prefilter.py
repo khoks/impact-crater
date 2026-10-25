@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import zlib
+
 import pytest
 from impact_crater.pipeline.brief_intent import BriefIntent, NamedDestination
 from impact_crater.pipeline.destinations import ReservationSet
@@ -433,7 +435,7 @@ def test_prefilter_default_target_is_30_percent() -> None:
 def _one(ch, *, quality, narrative=0.6, specialness=0.5, phash=None, ts=None, loc="spot"):
     rec = MediaRecord(
         content_hash=ch, source_path=f"/tmp/{ch}.jpg", media_type="photo", file_size=1,
-        quick_stats={"phash": phash or _spread_phash(abs(hash(ch)) % 1000), "dhash": "0"},
+        quick_stats={"phash": phash or _spread_phash(zlib.crc32(ch.encode()) % 1000), "dhash": "0"},
         capture_timestamp=ts, capture_source="exif" if ts else None,
     )
     s2 = Stage2AssetOutputs(content_hash=ch, caption=ch, quality_score=quality,
@@ -546,7 +548,7 @@ def test_viewpoint_candidate_cap_limits_per_gps_cell() -> None:
     media, stage2, stage3 = [], [], []
     def add(ch, lat, lon, q):
         m = MediaRecord(content_hash=ch, source_path=f"/tmp/{ch}.jpg", media_type="photo",
-                        file_size=1, quick_stats={"phash": _spread_phash(abs(hash(ch)) % 900), "dhash": "0"},
+                        file_size=1, quick_stats={"phash": _spread_phash(zlib.crc32(ch.encode()) % 900), "dhash": "0"},
                         gps_lat=lat, gps_lon=lon)
         media.append(m)
         stage2.append(Stage2AssetOutputs(content_hash=ch, caption=ch, quality_score=q,

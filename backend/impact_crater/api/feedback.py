@@ -1,9 +1,11 @@
 """User feedback capture for the in-app feedback loop (A-023).
 
-Stores structured feedback on pipeline decisions in the `feedback` table
-AND mirrors each item to an append-only `~/.impact-crater/feedback.jsonl`
-so a later Claude session can pick it up out-of-band (read the JSONL or
-query the table) and act on the improvements.
+Stores structured feedback on pipeline decisions in the `feedback` table,
+which is the authoritative store (status, priority, triage note). Each
+submission is also appended to `~/.impact-crater/feedback.jsonl`, an
+append-only event log of POSTs: status changes and deletions never reach
+it, so it is a history of what was submitted, not a mirror of the table.
+`scripts/feedback.py` reads the table.
 """
 
 from __future__ import annotations
@@ -76,7 +78,7 @@ class FeedbackPatch(BaseModel):
 
 @router.post("", response_model=FeedbackResponse, status_code=status.HTTP_201_CREATED)
 async def post_feedback(req: FeedbackRequest) -> FeedbackResponse:
-    """Store one piece of feedback; mirror it to feedback.jsonl."""
+    """Store one piece of feedback; append the submission to feedback.jsonl."""
     context_json = json.dumps(req.context) if req.context is not None else None
     async with connection() as db:
         cursor = await db.execute(
@@ -305,7 +307,7 @@ def _save_screenshot(feedback_id: int, data_url: str | None) -> str | None:
 
 
 def _append_jsonl(payload: dict[str, Any]) -> None:
-    """Append one feedback record to ~/.impact-crater/feedback.jsonl."""
+    """Append one submission to the ~/.impact-crater/feedback.jsonl event log."""
     try:
         path = paths.home() / "feedback.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)

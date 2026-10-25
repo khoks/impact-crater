@@ -10,26 +10,34 @@ Usage:
     python scripts/feedback.py list            # pending (status=new), newest first
     python scripts/feedback.py list --all      # every status
     python scripts/feedback.py show <id>       # full detail incl. decision context
-    python scripts/feedback.py mark <id> <status>   # new|triaged|addressed|dismissed
+    python scripts/feedback.py mark <id> <status> [--note "..."]
+                                               # new|triaged|addressed|dismissed
 
-Reads the same SQLite DB the app writes (~/.impact-crater/db/...); the
-append-only ~/.impact-crater/feedback.jsonl is an alternative source.
+The SQLite `feedback` table (~/.impact-crater/db/...) is the authoritative
+store. ~/.impact-crater/feedback.jsonl is an append-only event log of
+submissions only: status changes, triage notes and out-of-band deletions
+never reach it, so it is not a mirror and must not be read as one.
+Pending schema migrations are applied before any command runs, so the CLI
+works against a DB the app has not opened since an upgrade.
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import contextlib
 import json
 import sqlite3
 import sys
 
 from impact_crater import paths
+from impact_crater.storage import migrations
 
 _VALID_STATUS = ("new", "triaged", "addressed", "dismissed")
 
 
 def _conn() -> sqlite3.Connection:
+    asyncio.run(migrations.run_pending_migrations())
     db = sqlite3.connect(str(paths.db_path()))
     db.row_factory = sqlite3.Row
     return db
@@ -60,7 +68,12 @@ def cmd_list(args: argparse.Namespace) -> int:
             print(f"         “{comment}”")
         if r["snapshot_id"]:
             print(f"         snapshot={r['snapshot_id']}")
-    print("\nUse `show <id>` for the full decision context, `mark <id> <status>` to triage.")
+        if r["triage_note"]:
+            print(f"         triage ({(r['triaged_at'] or '')[:10]}): {r['triage_note']}")
+    print(
+        "\nUse `show <id>` for the full decision context, "
+        "`mark <id> <status> --note ...` to triage."
+    )
     return 0
 
 
@@ -83,12 +96,16 @@ def cmd_mark(args: argparse.Namespace) -> int:
         print(f"status must be one of {_VALID_STATUS}", file=sys.stderr)
         return 2
     db = _conn()
-    cur = db.execute("UPDATE feedback SET status = ? WHERE id = ?", (args.status, args.id))
+    cur = db.execute(
+        "UPDATE feedback SET status = ?, triage_note = COALESCE(?, triage_note), "
+        "triaged_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (args.status, args.note, args.id),
+    )
     db.commit()
     if cur.rowcount == 0:
         print(f"No feedback #{args.id}.", file=sys.stderr)
         return 1
-    print(f"#{args.id} → {args.status}")
+    print(f"#{args.id} → {args.status}" + (f" — {args.note}" if args.note else ""))
     return 0
 
 
@@ -107,6 +124,10 @@ def main(argv: list[str] | None = None) -> int:
     p_mark = sub.add_parser("mark", help="set an item's status")
     p_mark.add_argument("id", type=int)
     p_mark.add_argument("status", help="|".join(_VALID_STATUS))
+    p_mark.add_argument(
+        "--note",
+        help="why it leaves `new`: the story / PR that addressed it, or the follow-up that will",
+    )
     p_mark.set_defaults(func=cmd_mark)
 
     args = parser.parse_args(argv)
