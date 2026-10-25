@@ -42,7 +42,9 @@ dependencies = [
     "pillow>=11.0",
     "pillow-heif>=0.21",
     "imagehash>=4.3",
-    "scenedetect[opencv-headless]>=0.6.5",
+    # scenedetect 0.7 requires opencv-python directly; its "opencv-headless" extra is gone
+    # (mediapipe already pulls opencv-contrib-python, so the install has two cv2 wheels either way).
+    "scenedetect>=0.6.5",
     "ffmpeg-python>=0.2",
     # M4 music analysis. Madmom was the ADR-0012 first choice but does not
     # build on Python 3.12 (last release 2024-01, predates 3.12). librosa
