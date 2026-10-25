@@ -121,3 +121,17 @@ The table in the Decision names Sonnet 4.7 / Opus 4.7 / `text-embedding-004`; no
 Removed by S-2.13.7 (routed, never dispatched, no router method): `recommend_effort_level`, `explain_cost`, `explain_upgrade_path`, `orchestrator_reasoning` (ADR-0021), `caption_video_scene`, `extract_metadata_video_scene`. Never routed, never built: `analyze_music_duration_mismatch` (ADR-0012 amendment).
 
 Also true today: `model_version: latest` on the Anthropic operations means a provider-side model roll does **not** invalidate cached results — the reason S-2.10.9 pins a real token; `pipeline/runner.py::_TIER_BY_OPERATION` mirrors this yaml for `JobCostSummary`; telemetry puts roughly 99 % of spend on Anthropic (S-2.13.8). Everything else in this ADR stands — three tiers, cheapest model that meets the bar, Tier-L reserved for the single judge call, a static table until the N-002 router. The cost envelope loses its "~80 orchestrator turns" line (ADR-0021).
+
+### 2026-10-25 — Phase 1 targets (D-061)
+
+The pins above are what runs today. D-061 decides what S-2.10.9 bumps them to, after running both providers' list-models endpoints with the owner's keys and reading the official pricing and deprecation pages on 2026-10-25:
+
+| Tier / role | Today | Target | `model_version` | Fallback |
+|---|---|---|---|---|
+| S — captions, scores | `gemini-2.5-flash` | `claude-haiku-5-5`, `effort: low` | `2026-10-07` | `gemini-3.5-flash-lite`, `thinking_level: minimal` |
+| M — metadata, brief, second-guess, refinement planner, title text | `claude-sonnet-4-6` | `claude-haiku-5-5`, `effort: low` (A/B-gated) | `2026-10-07` | `claude-sonnet-5-5`, `effort: low` |
+| L — judge | `claude-opus-4-8` | `claude-opus-5-5`, `effort: high` | `2026-09-21` | `claude-fable-5-1` only on eval evidence |
+| embedding | `gemini-embedding-001` (caption text) | `gemini-embedding-2` (image bytes) | `2026-04-22` | — |
+| image generation | `gemini-2.5-flash-image` (shutdown 2027-03-15) | `gemini-3.1-flash-lite-image` | `2026-06-30` | `gemini-nano-banana-2.1` (2K) |
+
+Two corrections to this ADR's cost assumptions: the Opus rate cards in `config/rate-cards/` carry $15 / $75 per 1M, three times the official Opus 4.5 / 4.8 price of $5 / $25, so every Tier-L figure derived from them (including the "per-job MVP cost envelope" above and the SW-US run's $2.67 judge cost) is overstated; and Gemini image input tokens are not captured by the telemetry, so the Tier-S share of past bills is unknown. Both are fixed in S-2.10.9. With the target lineup a 1,663-asset job is expected to cost ≈ $2–3 in AI calls instead of ≈ $17–20.
