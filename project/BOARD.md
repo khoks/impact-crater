@@ -15,6 +15,7 @@
 | ID | Title | Type | Priority | Phase |
 |---|---|---|---|---|
 | [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | Initiative | P0 | mvp |
+| [E-2.13](./epics/E-2.13-restart-close-out-and-hygiene.md) | **Restart close-out + hygiene — Phase 0 of the 2026-10-24 plan (8 stories; zero spend; picked up 2026-10-24)** | Epic | P0 | mvp-hardening |
 | [E-2.9](./epics/E-2.9-cross-project-profile-mvp.md) | Cross-project profile + polish + **D-014 validation** (reopened 2026-06-11) | Epic | P0 | mvp |
 | [S-2.10.8](./stories/S-2.10.8-local-image-embedder.md) | Local CLIP/SigLIP embedder — pluggable interface + stub landed; real weights backend deferred (GPU) | Story | P1 | v1 |
 
@@ -22,14 +23,12 @@
 
 | ID | Title | Type | Priority | Phase |
 |---|---|---|---|---|
-| [E-2.13](./epics/E-2.13-restart-close-out-and-hygiene.md) | **Restart close-out + hygiene — Phase 0 of the 2026-10-24 plan (8 stories; zero spend)** | Epic | P0 | mvp-hardening |
 | [S-2.13.1](./stories/S-2.13.1-tracker-reconciliation-pr.md) | Tracker reconciliation PR — regenerate BOARD from frontmatter, fix every known contradiction, file the plan's new stories | Story | P0 | mvp-hardening |
 | [S-2.13.2](./stories/S-2.13.2-d057-mvp-closure-and-honest-preflight.md) | D-057 MVP-closure decision + honest MVP.md pre-flight (blocked by S-2.13.1) | Story | P0 | mvp-hardening |
 | [S-2.13.4](./stories/S-2.13.4-public-trust-docs-pass.md) | Public-trust docs pass — OVERVIEW stops claiming publish / learning profile / privacy controls; README, CLAUDE.md, ROADMAP, GROOMED, ARCHITECTURE, PIPELINE_DATAFLOW | Story | P0 | mvp-hardening |
 | [S-2.13.8](./stories/S-2.13.8-owner-model-availability-check-and-spend-envelope.md) | Owner-side $0 check: which Claude / Gemini model IDs still resolve; pick targets + Phase 1 spend envelope | Story | P0 | mvp-hardening |
 | [S-2.13.3](./stories/S-2.13.3-feedback-inbox-triage.md) | Feedback inbox triage — close the A-023 loop for the 11 rows still `new` | Story | P1 | mvp-hardening |
 | [S-2.13.5](./stories/S-2.13.5-adr-truth-bundle-and-governance-files.md) | ADR truth bundle (ADR-0007/0009/0010/0012/0013/0018/0020 + ADR-0021) + NOTICE / CONTRIBUTING / SECURITY / CODE_OF_CONDUCT / dependabot | Story | P1 | mvp-hardening |
-| [S-2.13.6](./stories/S-2.13.6-repo-and-session-hygiene.md) | Repo + session hygiene — stale worktree, .scratch, launch.json, hook allow entry, lock file, D-050 metadata, stale assets | Story | P1 | mvp-hardening |
 | [S-2.13.7](./stories/S-2.13.7-dead-code-sweep.md) | Dead-code sweep — placeholder router, six unimplemented routed ops, unused events/client methods (blocked by S-2.13.5) | Story | P2 | mvp-hardening |
 | [S-2.10.9](./stories/S-2.10.9-model-lineup-bump-current-ga-ids.md) | **Model-lineup bump to current GA IDs** — pinned model_version, rate cards, data-driven temperature guard, model-not-found mapping, real key ping (Phase 1; blocked by S-2.13.8) | Story | P0 | mvp-hardening |
 | [S-2.9.18](./stories/S-2.9.18-token-aware-pre-job-cost-estimate.md) | Token-aware pre-job cost estimate (align preview with the accurate meter; D-048) | Story | P2 | mvp-hardening |
@@ -51,6 +50,7 @@
 
 | ID | Title | Type | Done |
 |---|---|---|---|
+| **[S-2.13.6](./stories/S-2.13.6-repo-and-session-hygiene.md)** | **Repo + session hygiene — worktree pruned, `.scratch` → `docs/design/`, launch.json, lock file + upper bounds, favicon, smoke assets removed, D-050 metadata** | Story | 2026-10-24 |
 | **[E-2.12](./epics/E-2.12-open-ended-refinement-and-shared-curation-levers.md)** | **Open-ended refinement + shared curation levers — PlanDirective + ReservationSet + agentic refinement loop; renders a child snapshot [D-056, ADR-0019/0020]** | Epic | 2026-07-01 |
 | **[S-2.12.4](./stories/S-2.12.4-title-card-refinement.md)** | **Refine the title card — text / image / placement / appearance in plain language + re-inject the card on every refine (live-verified)** | Story | 2026-07-01 |
 | **[S-2.12.3](./stories/S-2.12.3-agentic-refinement-loop.md)** | **Agentic refinement loop — interprets arbitrary NL → pacing/coverage/content levers → child snapshot (live-verified)** | Story | 2026-07-01 |

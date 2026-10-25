@@ -1,0 +1,134 @@
+## conflicts
+VERIFIED corrections first (I read the code):
+
+(0) CAST DESIGN IS PARTLY STALE — its headline is wrong. cast.py:165-169 ALREADY uses a conjunctive gate: is_group = (len(members) >= group_min_appearances AND distinct_days >= group_min_days AND breadth >= group_min_breadth), with constants appearances=3, days=2, breadth=3 (cast.py:46-47,40). So "replace the additive breadth test" is already done — the additive gate no longer exists. What is genuinely NEW in the cast design: (a) raise group_min_appearances 3→5; (b) drop the breadth term entirely; (c) the _merge_fragments centroid pass (NOT present — grep found nothing); (d) detection-confidence bumps. Treat the cast Story as a TUNE + MERGE-PASS, not a gate rewrite, and re-scope its first Task accordingly.
+
+(1) THREE designs all rewrite the same Stage4 selection block (stage4_prefilter.py:164-180) and they CONFLICT on mechanism for F4: the `stage4` design replaces the global top-K with a capture-DAY stratified proportional allocator (_stratified_select); the `brief` and `architecture` designs instead keep a global rank but RESERVE per-destination/per-location must-keeps before the cut. These are NOT independent — if you implement both naively you get double budgeting (a Vegas shot reserved by the brief layer AND a Vegas day-bucket floor from the stratifier). RESOLUTION: adopt ONE budget owner. Recommend the stage4 design's _stratified_select as the F4 mechanism, and feed the brief design's must_keep_keys INTO it as the seed step (the stage4 design already specifies exactly this in its Part C2: "seed each bucket's chosen with its must-keeps first"). The architecture design's separate "two-tier reserve then global fill" is a THIRD variant of the same idea — drop it in favor of stage4's stratified-with-seed, since stratified-by-day also fixes the Grand-Canyon-split-across-time_of_day-buckets problem that a flat per-location reserve does not.
+
+(2) BUCKET-KEY conflict: stage4 buckets by capture-DAY; brief/architecture lean on location (and an optional reverse_geocoder). For THIS trip capture-day and destination are nearly 1:1 (you drive to the next park on a new day), so day-buckets approximate destination coverage for free — but they do NOT guarantee a NAMED destination with sparse media survives (Vegas was 37 shots possibly spanning the same 1-2 days as Grand Canyon departure). So you need BOTH: day-stratified budget (F4 balance) AND must_keep reservation (F1 named coverage). They compose cleanly only if must_keeps are inviolable seeds inside the stratifier. Make that the contract.
+
+(3) COVERAGE CONTRACT END-TO-END must be made consistent across 4 designs that each describe it differently: brief design emits CandidateSet.destination_coverage{name->{matched,reserved,basis}} AND tags metadata_summary with dest=<name>; stage4 emits must_keep_satisfied count; architecture emits a CoveragePlan dataclass on CandidateSet with per_location_min/target_balance/video_floor; stage5 reads "named_destinations" via extra_prompt_vars. PICK ONE object. Recommend: a single CoveragePlan/destination_coverage object on CandidateSet carrying {named_destinations:[{name,matched,reserved_keys,basis,chronological_hint}], people_landscape_target, video_floor}. Stage4 populates it, Stage5 reads it via extra_prompt_vars, diagnostics renders it. Without this consolidation the three teams will ship three incompatible fields.
+
+(4) SPECIALNESS double-surfacing (not a conflict, a coordination note): feedback_ui (F8c) adds specialness to the diagnostics drop cards by spreading **_scores(asset) onto filter_log entries; stage4 (F5) adds specialness to _combined_score and changes which entries get logged. Both edit the same drop-log sites (lines 172-178, 492-499, 546, 615-619, 681). Sequence stage4 F5 first OR have one person own the filter_log entry shape so the two edits don't collide. The feedback_ui _scores() helper is the right shared primitive — land it once.
+
+(5) WEIGHTS TUPLE arity change is a breaking ripple: stage4 changes weights from 3-tuple to 4-tuple. _apply_semantic_dedup signature (stage4_prefilter.py:564-566) is typed tuple[float,float,float] and _combined_score (712-714) too; _apply_dedup hardcodes _DEFAULT_WEIGHTS at line 546. Every _combined_score call site and these type hints must change together in ONE commit or the module won't run. This is a single-PR atomic change, not splittable across the F5 Task and the F4 Task.
+
+(6) Stage5 video-share (F2) vs Stage4 video survival: the stage5 design's 25%-min-video-share rule is only satisfiable if Stage4 keeps enough video scenes. Today 58 survive (good), but if the stage4 day-stratified budget + people/landscape balance squeezes video out of dense days, the Stage5 floor becomes unsatisfiable and the judge will (correctly) override it via arc_reasoning. Add a video floor to the Stage4 budget too, OR accept Stage5's documented escape hatch. Low risk for this job but a latent coupling.
+
+## regression_risks
+The existing 23-shot arc is strong (conf 0.85) — main risk is over-correcting into incoherence:
+
+R1 (HIGH) — Specialness rescue threshold mis-set floods the cut. stage4 F5 proposes specialness_rescue (keep if specialness>=0.75 even when quality<0.4) AND specialness as 0.20 of _combined_score. EVIDENCE CHECK: the Hoover Dam shot has specialness 0.72 < 0.75, so the RESCUE would NOT save it — and it was dropped by rank_below_target_size (a Vegas shot in the global cut), NOT by the quality floor. So specialness-in-combined-score and the rescue do essentially NOTHING for the headline Vegas case; that case is fixed ONLY by coverage reservation. Don't oversell F5 as the Vegas fix. F5's real, narrower payoff is the "specialness-0.82 dropped by quality floor" and "specialness-0.95 lost a semantic-dedup tie-break" cases. Keep the rescue threshold at 0.75 (genuinely rare) — lowering it toward 0.7 starts admitting low-quality shots and will degrade the arc.
+
+R2 (HIGH) — Day-stratified budget can REGRESS a justified emphasis. The current global top-K gave Grand Canyon 8 clips because GC genuinely had the strongest + most narratively-relevant shots. A proportional day budget with min_per_bucket=2 will forcibly pull clips from weak days (a travel/rest day) and forcibly cap strong days. This can lower overall quality to buy balance the brief did not strictly demand ("roughly chronological", "balance of people and landscapes" — NOT "equal time per park"). Mitigation: make min_per_bucket small (1, not 2) and keep the proportional share generous so strong days still dominate; the floor should guarantee PRESENCE, not parity. Validate that GC still gets the most clips after the change.
+
+R3 (MED) — Stage5 hard caps fight the judge's coherence. Six near-identical GC golden-hour shots (F3) is real, but a rigid "max 2 consecutive same (subject+location+tod+framing)" + "<=25% peak role" could force the judge to insert a weaker variety shot mid-climax and flatten the emotional peak that currently works. Keep these as STRONG instructions with an explicit "justify in arc_reasoning if you must violate" escape, NOT a deterministic post-judge reject/repair loop (which nobody has scoped and which would warrant its own ADR). temperature=0 means the prompt edits are deterministic enough to test.
+
+R4 (MED) — Strict-forward-after-opener (F7) over-constrains. The fix "position 1 must resume from earliest" is correct for the observed bug (Apr-5 opener then Apr-4), but "captured non-decreasing except callbacks" forbids ALL intentional flashback structure. Fine for this chronological brief (chronological=true), but gate the strict rule behind the parsed chronological flag so non-chronological briefs aren't broken.
+
+R5 (MED) — Cast appearance threshold 3→5 may drop a real minor party member. The cliff is 332,221,193,189,123 then 46...; 5 is safely below 46 so the core party is fine. But a child/companion photographed exactly 4 times across 2 days would now be demoted to crowd, losing their cast= annotation to the judge. Since the gate is ALREADY conjunctive (days>=2), the false-positive strangers are mostly already excluded; raising appearances to 5 is incremental, not the big win. Consider 4, or keep 3 and rely on the merge pass + detection-confidence bumps (which attack the false-positive root cause more directly). LOW confidence this tuning alone lands at "4-6 party members".
+
+R6 (MED) — _merge_fragments centroid merge at threshold-delta can OVER-merge look-alikes under the gemini caption-embedding backend (whose own docstring warns it confuses identity). Two similar-looking people merged into one inflates that person's appearance count and could wrongly promote a merged stranger to group. The architecture design's real fix (default to insightface/ArcFace where it imports) is the safer lever; do the merge pass only on the insightface backend, or keep delta tiny (0.06) and test on the snapshot's known party.
+
+R7 (LOW) — feedback_ui cacheBust:false could serve a STALE screenshot if an image changed in-session. Acceptable: the screenshot is a best-effort context aid, and a bounded 4s timeout with possibly-stale images beats an infinite hang. Keep.
+
+R8 (LOW) — model bump (Opus 4.5→4.8, Sonnet 4.5→4.6) plus model_version cache-token bump invalidates Stage2/3/5 cache for ALL jobs → full re-analysis cost on next run of every existing snapshot. Intended but schedule it deliberately; don't bundle it into a "small safe fix" PR.
+
+## threshold_validation
+Validating proposed thresholds/weights against the evidence:
+
+SPECIALNESS in _combined_score (F5, proposed delta=0.20, weights 0.25/0.40/0.20/0.15): Directionally right but WOULD NOT have saved the headline Hoover Dam shot. That shot (specialness 0.72) was dropped by rank_below_target_size as one of the 32 Nevada shots in the GLOBAL cut, not by the quality floor or a dedup tie-break. Adding 0.20*specialness to its score raises it modestly but it still competes globally against 621 candidates and likely still loses. CONCLUSION: F5 weighting does NOT fix Vegas; only must_keep reservation does. F5's valid wins are narrower: (a) the specialness-0.82 shot dropped by the hard quality floor — the rescue (keep if specialness>=0.75) only helps if quality<0.4 AND specialness>=0.75; 0.82>=0.75 so IF its quality was the thing below 0.4, rescue saves it (plausible); (b) the specialness-0.95 shot that lost a semantic-dedup tie-break — with specialness in _combined_score it now wins its burst (0.20*0.95 = +0.19 edge, almost certainly decisive within a near-identical burst). Both (a) and (b) are real and the weights are reasonable. Keep delta=0.20 and rescue=0.75; do NOT lower rescue to 0.70 (would start admitting the long tail).
+
+RESCUE THRESHOLD 0.75 vs Hoover Dam 0.72: note the rescue threshold sits ABOVE the Hoover Dam specialness — intentional or not, it means Hoover Dam relies entirely on coverage reservation, which is the correct fix anyway. Leave at 0.75; don't tune it to 0.72 just to catch one shot.
+
+VIDEO SHARE 25% min (F2): With 58 video scenes surviving Stage4 and 23 selected items, 25% = ~6 videos. The kept videos include strong candidates (Narrows hikers, winding road into Zion q0.95, family waving, stormy Horseshoe Bend) — q0.85-0.95, so the floor is satisfiable with genuinely good footage, not filler. The rule "minimum 2 when >=2 motion candidates" is a safe lower bound. 25% is defensible for a "highlight VIDEO"; the real fix is the MOTION tag + motion_summary so the judge stops seeing videos as weak stills. The floor without the representation fix would force the judge to pick videos it still thinks are stills — so the tag MUST ship with the floor.
+
+CONSECUTIVE-SIMILARITY cap "max 2 same (subject+location+tod+framing)" (F3): The six GC golden-hour shots came from one ~17-min session, phash hamming 26-40 (not pixel dups, so phash dedup correctly skipped them; embedding dedup missed them because caption-embeddings collapse them — the true root cause is P2.3 CLIP). A consecutive cap of 2 directly addresses the symptom and is the right SHORT-TERM lever. Validate it keeps the single best 1-2 of that session (the rule says so) — confirm the arc still lands a GC peak, just not six of them.
+
+PEAK ROLE <=25% (F3): currently 10/23 = 43% peak. 25% = ~6 peaks. A story with 6 peaks across 23 shots is still peak-heavy but coherent; 25% is a reasonable ceiling. Safe.
+
+PEOPLE/LANDSCAPE "neither >65%" (F3/F4): the brief says "good balance of people and landscapes". 65% ceiling = at least 35% each — a soft, sane band. The "people-forward = non-empty subjects=[...]" heuristic is crude but available with zero new compute. Acceptable proxy.
+
+CAST appearances>=5 / days>=2 (F6): The appearance cliff (332,221,193,189,123 | 46,...) means ANY appearance threshold between 6 and 123 isolates exactly the top 5. So days>=2 AND appearances>=5 lands the real party at ~5 — MATCHES the claimed "4-6". BUT: the gate is ALREADY conjunctive with appearances>=3 today, and 3 already sits below the 46 long-tail entries only if those tail members also clear days>=2; the 81-group problem implies many tail members DID clear days>=2 at appearances 3-4. So raising 3->5 is the operative change and it DOES land ~5. The merge pass is what's needed to stop ONE party member fragmenting into several sub-5 clusters that then each fail the gate (under-counting), so merge + threshold=5 must ship together or threshold=5 risks dropping a fragmented real member. Net: threshold 5 is correct ONLY with the merge pass; alone it's risky (see R5/R6).
+
+MIN_PER_BUCKET=2 (F4 day stratifier): risky (R2) — with ~10-12 trip days and target_size ~23, reserving 2/day = 20-24 slots leaves almost no room for proportional quality-driven fill, forcing parity over quality. RECOMMEND min_per_bucket=1, letting proportional share + must_keeps do the rest. Re-validate that Grand Canyon still gets the most clips post-change.
+
+## ranked_plan
+P0 — highest leverage, do first (fixes the user-visible failures with smallest blast radius):
+- P0.1 F8a feedback hang (capturePageScreenshot Promise.race 4s + cacheBust:false). WITHOUT this, NO feedback is ever captured — it blocks the entire feedback loop the user relies on. Tiny, self-contained, frontend-only. NO deps.
+- P0.2 F8b video scene thumbnails (thumb.jpg?scene=N + _find_scene_frame glob). Unblocks reviewing the F2 video decisions in the UI. Backend-only, additive. NO deps.
+- P0.3 F8c drop-card scores (_scores() spread onto filter_log + diagnostics surfacing). Small; makes Stage4 decisions reviewable. Lands the shared _scores() helper other work reuses. NO deps (but coordinate with P1.2 filter_log edits — see order).
+- P0.4 F1 brief-parse wiring + named_destinations schema (brief design Layer 1 + parse_user_brief prompt/schema edit). This is the STRUCTURAL unlock for F1 and the prerequisite for all coverage work. One cached Tier-M call. Depends on nothing; everything coverage-related depends on it.
+
+P1 — high leverage, moderate effort, depends on P0:
+- P1.1 F1 destination mapping + Stage4 must_keep reservation (brief Layer 2/3), implemented as SEED INPUT to the stratified selector (resolve conflict #1). Depends on P0.4.
+- P1.2 F4+F5 Stage4 selection rewrite: 4-term _combined_score (atomic weights-tuple change across _combined_score/_apply_dedup/_apply_semantic_dedup/_cap_location_clusters), specialness rescue past quality floor, AND _stratified_select (day buckets + min_per_bucket + largest-remainder) seeded with must_keeps. ONE atomic PR (conflict #5). Depends on P1.1 contract for the seed param. Emits the consolidated CoveragePlan/destination_coverage object (conflict #3).
+- P1.3 F2+F3+F7 Stage5: plumb MOTION/STILL tag + motion_summary into candidate text (2 string edits in _to_candidate_ref/_summarize_metadata), rewrite Constraints (video share, consecutive-variety, peak cap, people/landscape, per-location), strict-forward-after-opener gated on chronological flag, render coverage block from CoveragePlan via extra_prompt_vars. Depends on P1.2 (CoveragePlan) and on the F8b plumbing being harmless. The candidate-text edits live in Stage4 file but feed Stage5 — sequence after P1.2.
+
+P2 — real but lower leverage / higher cost / needs ADR:
+- P2.1 Cast tuning: merge pass + detection-confidence bumps + (maybe) appearances 3→5. Modest output impact (cast annotation is advisory to the judge), and the additive-gate problem is already fixed. Low urgency.
+- P2.2 Model routing bump (Opus 4.8 / Sonnet 4.6 + cache-token bump). Quality lift but full-cache-invalidation cost; schedule deliberately.
+- P2.3 Local CLIP/SigLIP image embedder replacing caption-then-embed (architecture ADR-0018). HIGHEST true leverage on F2/F3 root cause (semantic dedup + diversity ride a text-of-caption signal today) but LARGEST effort: new dependency tree, runtime slot (ADR-0008 cascade), threshold re-tuning, weight pull. v1, not this session.
+- P2.4 Offline reverse_geocoder for GPS->place coverage join. Optional; text+day-bridge matching covers this trip without it.
+
+IMPLEMENTATION ORDER (dependency-respecting): P0.1 -> P0.2 -> P0.3 -> P0.4 -> P1.1 -> P1.2 -> P1.3, then P2.1 / P2.2 (independent) and P2.3 / P2.4 (v1 backlog). The hard dependency edges: P0.4 before P1.1 before P1.2 (seed contract) before P1.3 (CoveragePlan + candidate text). P0.3 and P1.2 both edit filter_log entries — land P0.3's _scores() helper first, then P1.2 reuses it.
+
+## implement_first
+Five SAFE + HIGH-LEVERAGE changes for this session (small, well-contained, test-backed, no ADR, no model/dep change):
+
+1. F8a — feedback hang fix. File: frontend/src/api/diagnostics.ts capturePageScreenshot() — wrap toPng in Promise.race with a 4000ms timeout resolving undefined, set cacheBust:false and skipFonts:true. Optionally reorder DiagnosticsPanel.tsx onSubmit (lines ~273-299) to submit-first. TEST: open Inspect, submit feedback on any decision, assert POST /api/feedback fires within ~4s and the button leaves "Saving…"; assert python scripts/feedback.py list shows the new row. This is the single most important fix — the feedback loop is currently 100% broken.
+
+2. F8b — video scene thumbnails. Files: backend/impact_crater/pipeline/diagnostics.py _thumb_url(content_hash, scene_index=None) -> append ?scene=N; pass scene at call sites lines 110/144/176 (NOT cast line 205). backend/impact_crater/api/media.py get_media_thumb: accept scene: int|None = Query(None), add _find_scene_frame() globbing projects/*/cache/scenes/<hash>/scene-<N>-{middle,start,end}.png, FileResponse PNG, else fall through to photo thumb/404. TEST: GET /api/media/<videohash>/thumb.jpg?scene=0 returns 200 image/png for a known Stage1 scene frame; DecisionCard renders it.
+
+3. F8c — Stage4 drop-card scores. Files: backend/impact_crater/pipeline/stage4_prefilter.py add _scores(a) helper returning {quality_score, narrative_relevance, specialness_score}; spread **_scores(asset) onto the keep entry (line 180) and the rank_below_target_size drop (lines 172-178) and the other drop sites (546, 615-619, 681; quality floor 492-499 add narrative+specialness). diagnostics.py lines 101-104 read narrative_relevance + specialness_score from entry; add both to the excluded-from-extra keys (line 108). Frontend diagnostics.ts add specialness_score?:number|null; DecisionCard render q/n/s line. TEST: re-run snapshot b4b73c7b1fe044b7 diagnostics export, assert rank_below_target_size drop cards now carry non-null quality_score/narrative_relevance/specialness_score.
+
+4. F1 (structural unlock, not full coverage yet) — brief parse wiring. Files: NEW backend/impact_crater/pipeline/brief_intent.py (BRIEF_SCHEMA with named_destinations+chronological, BriefIntent, parse_brief()); runner.py run_headless_pipeline call parse_brief right after Stage1 ingest, store on HeadlessJobResult; prompts/parse_user_brief/anthropic_claude-sonnet-4-5.jinja2 add the named_destinations + chronological guidance bullets. TEST: run the snapshot's brief through parse_brief, assert named_destinations == [Zion, Bryce, Horseshoe Bend, Grand Canyon, Las Vegas] and chronological==true. This lands the contract everything else consumes WITHOUT yet touching Stage4 selection, so it can't regress the existing arc.
+
+5. F7 — chronology opener tightening (prompt-only, gated). File: prompts/judge_narrative_arc/anthropic_claude-opus-4-5.jinja2 line 38: replace the soft chronology paragraph with the strict-forward-after-opener rule, conditioned on a chronological flag passed via extra_prompt_vars (default to current soft behavior when absent so non-chronological briefs are unaffected). TEST: re-run Stage5 on the snapshot (cache invalidates on prompt change), assert position 1 capture_timestamp >= position 0 is NOT required but position-1-going-backward-a-day is gone; manually confirm opener is the earliest strong shot.
+
+These five touch 3 isolated subsystems (feedback UI, diagnostics/Stage4 logging, brief parse + one prompt line) with no cross-dependencies except #3's _scores() helper, which the later P1.2 rewrite will reuse. None changes the selection algorithm, so the strong 23-shot arc is untouched this session.
+
+## recommended_adrs_and_items
+ADRs TO CREATE (consolidate the overlapping ADR proposals into TWO, not four):
+
+ADR-0017 "Brief-driven coverage & balance: structured intent + Stage4 must-keep reservation + Stage5 coverage contract". Merges the brief design's "Named-destination coverage contract" ADR, the stage4 design's "specialness-weighted scoring + capture-day stratified budget + must-keep hook" ADR, and the architecture design's ADR-0017. Records: (1) parse_user_brief now runs in the analysis path (Stage 0.5, after ingest, can run concurrent with Stage2) producing BriefIntent incl. named_destinations + chronological; (2) Stage4 stays no-LLM but its final global top-K is replaced by a capture-day stratified proportional allocator (largest-remainder, min_per_bucket=1) SEEDED with inviolable must_keep_keys for named-destination coverage; (3) _combined_score becomes 4-term (adds specialness 0.20) with a specialness>=0.75 rescue past the quality floor; (4) a single CoveragePlan/destination_coverage object on CandidateSet is the contract Stage5 reads via extra_prompt_vars and diagnostics renders. Amends/supersedes the ADR-0011 Stage4 "take top target_size" + combined_score sections. Load-bearing decisions to record: capture-day bucket (vs GPS) and must-keep ownership boundary (brief layer computes keys, Stage4 enforces).
+
+ADR-0018 "Local image embedder (CLIP/SigLIP) replaces caption-then-embed". The F2/F3 root-cause fix; cascades from ADR-0008 (runtime slot), ADR-0009 (routing). v1, separate from this session. Records similarity-threshold re-tuning implications.
+
+NOT ADRs: Stage5 prompt-only constraint changes (within existing N-001/ADR-0011 Stage5 design); cast tuning + merge pass (tunes N-012 — log as a D-NNN decision entry, refresh PIPELINE_DATAFLOW.md line 141 "breadth>=3 => group" to the conjunctive rule); F8 bug fixes (within A-023); model routing bump (chore per ADR-0009 model_version mechanism). The optional ArcJudgment.balance_check field is a non-breaking additive schema extension — no ADR.
+
+PROJECT WORK-ITEM HIERARCHY TO CREATE:
+
+EPIC "Brief-aware curation: structured intent drives selection, coverage, and balance" [high, mvp]
+  STORY "Wire parse_user_brief into the analysis path (Stage 0.5); add named_destinations+chronological; thread BriefIntent to Stage4/Stage5" [high, mvp]
+    TASK Add pipeline/brief_intent.py (BRIEF_SCHEMA, BriefIntent, parse_brief); call after Stage1; persist on HeadlessJobResult
+    TASK Extend prompts/parse_user_brief sonnet jinja2 + schema with named_destinations + chronological
+  STORY "Stage4 selection rewrite: 4-term specialness score + specialness rescue + capture-day stratified budget seeded with must-keeps" [high, mvp]
+    TASK Atomic weights 3->4 tuple across _combined_score/_apply_dedup/_apply_semantic_dedup/_cap_location_clusters (remove hardcoded _DEFAULT_WEIGHTS@546, quality*0.5+narrative*0.5@681)
+    TASK _apply_quality_floor specialness rescue (>=0.75)
+    TASK _stratified_select (day buckets, largest-remainder, min_per_bucket=1) replacing global top-K@164-180
+    TASK map_destinations() (text + capture-day bridge; GPS optional) -> must_keep_keys; seed into stratifier; emit destination_coverage/CoveragePlan on CandidateSet
+    TASK filter_log reasons: specialness_rescue / stratified_budget_bucket_full / must_keep_destination_coverage + cluster_metadata counters
+  STORY "Stage5 judge: video-share, intra-section variety, people/landscape + per-location balance, strict-forward-after-opener, consume CoveragePlan" [high, mvp]
+    TASK Plumb MOTION/STILL tag + motion_summary(scene_summary) into _to_candidate_ref/_summarize_metadata
+    TASK Rewrite judge jinja2 Constraints + chronology blocks; render coverage block from CoveragePlan via extra_prompt_vars; gate strict-forward on chronological flag
+    TASK (optional) ArcJudgment.balance_check additive field (base.py + anthropic_client tool schema) surfaced in Inspect UI
+    TASK Stage5 regression test over snapshot b4b73c7b1fe044b7: video-share floor, consecutive-similarity cap, peak<=25%, chronology monotonicity, per-destination presence
+
+STORY "Fix feedback modal hang + complete inspect diagnostics (F8 a/b/c)" [high, mvp]  (DO FIRST, independent)
+  TASK Bound capturePageScreenshot 4s Promise.race + cacheBust:false (F8a)
+  TASK Serve video scene frames via /api/media/{hash}/thumb.jpg?scene=N + thread scene_index through _thumb_url (F8b)
+  TASK Record q/n/specialness on all Stage4 filter_log entries (_scores helper) + render on drop/keep cards (F8c)
+
+STORY "Tighten trip-cast group classification: appearance-threshold tune + fragment-merge pass + stricter face detection (F6)" [med, v1]
+  (RE-SCOPED: gate is already conjunctive; do NOT 'replace additive gate')
+  TASK Raise group_min_appearances 3->5 (ship WITH merge pass; validate against appearance cliff)
+  TASK _merge_fragments centroid pass + extract _centroid helper (apply on insightface backend; tiny delta on gemini)
+  TASK Raise detection confidence (mediapipe 0.5->0.6; Haar minNeighbors 5->8, minSize 30->40)
+  TASK Update tests/test_cast.py: merge + same-day-stranger rejection + fragment-rejoin cases
+  TASK (low) Default cast_backend to insightface where it imports (config-default change; the strongest single lever per face_embed.py docstring)
+
+STORY "Bump LLM routing (judge Opus 4.8, metadata/brief/second-guess Sonnet 4.6) + model_version cache-token bump" [med, mvp] (chore; schedule deliberately — full cache invalidation)
+
+STORY "Local CLIP/SigLIP image embedder replacing caption-then-embed (ADR-0018)" [high, v1]
+  TASK Offline reverse_geocoder for GPS->place coverage join key [low, v1]

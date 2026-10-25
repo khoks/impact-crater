@@ -1,4 +1,4 @@
-"""Impact Crater — AI-driven photo and video curator.
+"""Impact Crater — one-click media-to-video creator.
 
 See README.md and docs/ for product + architecture context.
 """
