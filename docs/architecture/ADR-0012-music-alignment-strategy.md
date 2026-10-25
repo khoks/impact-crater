@@ -169,3 +169,14 @@ Both modes run an ffmpeg `loudnorm` two-pass at the final encode step. Target -1
 - Cascades to: ADR-0014 (orchestrator harness — `analyze_music_duration_mismatch` joins the tool surface), ADR-0015 (resource accounting — duration-strategy choice surfaced via cost-transparency UI).
 - Decision-log entries: D-030 (this ADR), D-031 (A-013 v1 → MVP scope reclassification, filed in the same round-2 PR).
 - Project task: T-1.3.2.3 in [`project/tasks/`](../../project/tasks/T-1.3.2.3-adr-0012-music-alignment.md).
+
+## Amendments
+
+### 2026-10-25 — librosa-only accepted; BeatNet rides E-3.1; no duration-mismatch tool (S-2.13.5)
+
+Verified against `media/music.py`, `pipeline/stage6_plan.py`, `pipeline/stage7_render.py` and `config/llm-routing.yaml` on master `d9bb392`.
+
+- **librosa only — now the accepted decision, not a temporary swap.** Madmom's last release (2024-01) predates Python 3.12 and does not build on the development machine, so M4 (2026-05-05) took this ADR's own escape hatch. `media/music.py::LibrosaMusicAnalyzer` (`analyzer="librosa-only"`, part of the cache key so a future swap invalidates cached analyses) runs `librosa.beat.beat_track` for beats, an agglomerative segmentation with heuristic section labels, RMS energy at 100 Hz and spectral novelty. **Downbeats are not detected**: `downbeats_ms` is every fourth beat (assumes 4/4), so bar alignment of the cut grid is approximate. The `MusicAnalyzer` protocol remains the swap point.
+- **BeatNet when torch arrives (E-3.1).** BeatNet (CC BY 4.0) brings real beat + downbeat tracking but depends on torch and madmom; it lands with the local-runtime work in E-3.1, not before. Licence check recorded in D-059 / `NOTICE.md`: BeatNet's own code and model are CC BY 4.0, while madmom's *bundled models* are CC BY-NC-SA 4.0 — the adoption story must confirm BeatNet uses only madmom's BSD-licensed decoder code before it becomes a dependency, otherwise the downbeat tracker is re-chosen.
+- **No `analyze_music_duration_mismatch`.** The agentic fade / loop / truncate-at-section picker was never routed or built (ADR-0021 §4). What runs: `stage7_render.py` Phase 3 does a two-pass `loudnorm` (-16 LUFS / TP -1.5 dB / LRA 11), trims the music to the **actual** timeline length and applies `plan.music.fade_in_ms` / `fade_out_ms`; music shorter than the timeline is not looped. No fade / loop / truncate picker is scheduled.
+- **Music-video mode shipped at M4**: `stage6_plan.compile_plan(mode="music_video")` requires a `cut_grid` and snaps clips to it (`tests/test_stage6_music_video.py`); the `stage6_plan.py` docstring that still says music-video raises `NotImplementedError` is corrected in S-2.13.7. S-2.11.6 added a per-section `mood` (calm / moderate / energetic) so standard mode also matches clip mood to the song; the section-to-media NL spec (A-013) reaches the Stage 5 judge as decided.

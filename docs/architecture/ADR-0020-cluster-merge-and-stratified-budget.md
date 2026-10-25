@@ -50,3 +50,7 @@ feedback:
   real multi-day eval; flag-off byte-matches the current global top-K.
 - Both are deterministic, no-LLM, and log their drops (`cast_merge`,
   `stratified_day_budget`) for the inspect UI.
+
+## Amendment 2026-10-25 — the stratified-budget A/B is restart Phase 2 (S-2.13.5)
+
+Status unchanged. `_merge_oversplit_clusters` runs by default. `_stratified_take` is still **OFF** and unreachable by users: `PreFilterOverrides.stratify_by_capture_day` defaults to `False` and nothing outside `stage4_prefilter.py` sets it — no setting, API field or job option reaches the flag (verified against master `d9bb392`). The A/B that decides ON / OFF runs on the frozen SW-US + Zion fixtures once the E-3.10 eval harness exists (restart Phase 2; plan §4.3 #20) and is recorded as a D-NNN; until then the flag is test-only. Feedback items #1, #5, #6 and #8 (triaged 2026-10-25, S-2.13.3) are the evidence the A/B must answer, together with ADR-0018's embedder.

@@ -144,3 +144,17 @@ The orchestrator (per ADR-0005) maintains an `asyncio` task pool with:
 - Novel mechanism: **N-008** (person-library + reference-collage face recognition) — see [`docs/vision/NOVEL_IDEAS.md`](../vision/NOVEL_IDEAS.md).
 - Decision-log entry: D-028 in [`docs/decisions/DECISIONS_LOG.md`](../decisions/DECISIONS_LOG.md).
 - Project task: T-1.3.2.1 in [`project/tasks/`](../../project/tasks/T-1.3.2.1-adr-0010-media-pipeline.md).
+
+## Amendments
+
+### 2026-10-25 — the media stack as built (S-2.13.5)
+
+Verified against master `d9bb392`; the dependency list is `pyproject.toml`.
+
+- **EXIF: `piexif`, not pyexiv2.** pyexiv2 ships no Python 3.12 / Windows wheel. `media/timeline.py` reads capture time and GPS through piexif (A-021 chronology); `media/privacy.py::strip_exif` strips through it — as a library with zero call sites (ADR-0016; `ARCHITECTURE.md` → Amendments; S-3.1.4 wires it).
+- **Face detection: the OpenCV Haar cascade in practice (D-044).** `media/_face_detect.py` tries mediapipe's legacy `mp.solutions.face_detection` and falls back to `cv2`'s bundled `haarcascade_frontalface_default.xml`. mediapipe 0.10.35 — the locked version — removed `mp.solutions`, so the Haar path is what runs for both the privacy blur and the trip cast (A-018). `mediapipe` stays a declared dependency only until the Phase 3 detector decision (plan §4.3 #14: drop it, adopt OpenCV Zoo YuNet — MIT, D-059). Face *identity* for the cast uses Gemini embeddings of face crops by default with an opt-in insightface backend (D-044); insightface's `buffalo_l` pack is non-commercial-research-only, so it stays opt-in (D-059).
+- **No RAW decoding — and RAW is no longer advertised.** `rawpy` is not a dependency and `stage1_ingest._PHOTO_EXTS` is JPEG / PNG / WebP / AVIF / HEIC / HEIF / BMP / TIFF; RAW files are skipped by the folder scan and the ingest. The "Skip RAW at MVP" alternative is therefore what happened. The `api/folder.py` docstring that still lists RAW is corrected in S-2.13.7; adding rawpy is not scheduled and reopens as a v1 story when a user asks.
+- **Centre crop, not smartcrop.py.** `stage7_render._video_filter("smart_crop")` is `scale … force_original_aspect_ratio=increase, crop=1920:1080` — a deterministic centre crop; smartcrop.py is not a dependency and no saliency or face-aware bias exists. Output is 16:9 1080p only (`RenderPlan.output_*` is declared but never read; S-3.3.3 adds 9:16 / 1:1).
+- **N-008 reference collage: built, never called.** `media/collage.py::build_reference_collage` and the persons tables exist; `pipeline/stage3_metadata.py` sends only the asset image, so `recognized_persons` is never populated. The Phase 3 cast-quality work decides whether the A-018 cast supersedes N-008 (S-2.6.2, deferred to E-3.1).
+- **Dedup runs by default inside Stage 4** — perceptual-hash near-duplicates and caption-embedding semantic duplicates are dropped by `stage4_prefilter`, not surfaced as an opt-in review. The ADR's "never silently drop" intent is honoured differently: every drop is logged with its reason into the snapshot diagnostics and the user can mark it incorrect through the in-app feedback loop (A-023, D-045).
+- **Still as decided:** Pillow + pillow-heif, imagehash perceptual hashes, PySceneDetect `ContentDetector` with three representative frames per scene, ffmpeg through `media/ffmpeg.py` subprocesses (worker-pool cancellation: SIGTERM, then SIGKILL after a grace period), max one concurrent render.

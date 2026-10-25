@@ -27,7 +27,7 @@ Self-hosted-first. Open-source under [BSL 1.1](./LICENSE) (auto-converts to Apac
 
 ## Status
 
-**MVP: curate→preview proven, publish not yet exercised** (as of 2026-10-25). The curate→preview half of the MVP gate passed on 2026-06-18 on a real 1,663-asset trip (1,481 photos + 182 videos → 2,067 shots → a publish-ready 108-second Story Video). Hardening continued through 2026-07-01. Publishing has never been exercised: the connectors default to dry-run and read their credentials from environment variables, and no real post of any kind has been made. The project resumed on 2026-10-24 with an audited restart plan — [`docs/roadmap/LANDSCAPE-AND-PLAN-2026-10-24.md`](./docs/roadmap/LANDSCAPE-AND-PLAN-2026-10-24.md) — whose Phase 0 (truth-and-hygiene) is in progress; Phase 1 is the first real private YouTube publish, which closes the MVP. Under the hood: 20 ADRs, 57 recorded decisions, 15 novel mechanisms, and 29 recommended additions; the locked scope is in [`docs/roadmap/MVP.md`](./docs/roadmap/MVP.md) and the phase-tagged feature catalog in [`docs/vision/GROOMED_FEATURES.md`](./docs/vision/GROOMED_FEATURES.md).
+**MVP: curate→preview proven, publish not yet exercised** (as of 2026-10-25). The curate→preview half of the MVP gate passed on 2026-06-18 on a real 1,663-asset trip (1,481 photos + 182 videos → 2,067 shots → a publish-ready 108-second Story Video). Hardening continued through 2026-07-01. Publishing has never been exercised: the connectors default to dry-run and read their credentials from environment variables, and no real post of any kind has been made. The project resumed on 2026-10-24 with an audited restart plan — [`docs/roadmap/LANDSCAPE-AND-PLAN-2026-10-24.md`](./docs/roadmap/LANDSCAPE-AND-PLAN-2026-10-24.md) — whose Phase 0 (truth-and-hygiene) is in progress; Phase 1 is the first real private YouTube publish, which closes the MVP. Under the hood: 21 ADRs, 58 recorded decisions, 15 novel mechanisms, and 29 recommended additions; the locked scope is in [`docs/roadmap/MVP.md`](./docs/roadmap/MVP.md) and the phase-tagged feature catalog in [`docs/vision/GROOMED_FEATURES.md`](./docs/vision/GROOMED_FEATURES.md).
 
 ## Quick start
 
@@ -74,6 +74,7 @@ Connectors for **YouTube**, **Instagram** (container → poll → publish; needs
 - **Roadmap (scaffolding → MVP → v1 → v2 → v3):** [`docs/roadmap/ROADMAP.md`](./docs/roadmap/ROADMAP.md)
 - **Publishing connectors (setup guides):** [`docs/connectors/`](./docs/connectors/)
 - **Live status board (Initiatives / Epics / Stories / Tasks):** [`project/BOARD.md`](./project/BOARD.md)
+- **Contributing, security policy, conduct, third-party notices:** [`CONTRIBUTING.md`](./CONTRIBUTING.md) (DCO sign-off, branch → PR → squash, the checks to run), [`SECURITY.md`](./SECURITY.md) (loopback-only today, no API auth yet, how to report), [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md), [`NOTICE.md`](./NOTICE.md) (dependency and ML-model licences)
 - **For Claude Code sessions:** [`CLAUDE.md`](./CLAUDE.md)
 
 ## Platforms
@@ -82,4 +83,4 @@ Windows 11 is the platform the project is developed and tested on; macOS and Lin
 
 ## License
 
-[Business Source License 1.1](./LICENSE). Free to self-host for personal, family, or internal team use. Hosting Impact Crater as a paid service to third parties is not permitted until the Change Date (2030-04-25), at which point the code converts to Apache License 2.0.
+[Business Source License 1.1](./LICENSE). Free to self-host for personal, family, or internal team use. Hosting Impact Crater as a paid service to third parties is not permitted until the Change Date (2030-04-25), at which point the code converts to Apache License 2.0. Third-party components and ML model assets — including the opt-in insightface model pack, which is non-commercial-research-only — are listed with their licences in [`NOTICE.md`](./NOTICE.md).

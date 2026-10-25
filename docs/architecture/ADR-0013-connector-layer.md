@@ -1,6 +1,6 @@
 # ADR-0013 — Connector layer credential model + audit-log shape
 
-**Status:** Accepted
+**Status:** Accepted — amended 2026-10-25 (see [Amendments](#amendments): the env-var credential layer and dry-run default that shipped are layered beside the OAuth / Fernet design below, which is dormant, not superseded; key management added)
 **Deciders:** Rahul Singh Khokhar
 **Date:** 2026-05-03
 **Phase:** scaffolding
@@ -215,3 +215,38 @@ Cross-platform formatting (aspect ratio, duration per platform per A-008 / A-009
 - ADR-0005 (FastAPI + websocket — local OAuth callback, upload-progress stream), ADR-0006 (SQLite + audit-log path; `connector_credentials` table extension), ADR-0007 (orchestrator harness uses connector tools), ADR-0010 (artifact format produced by render), ADR-0011 (orchestrator's publish step), ADR-0014 (orchestrator's tool surface includes `validate_publish_artifact`, `upload_to_youtube`, `record_audit_event`), ADR-0015 (cost-transparency UI surfaces quota status + connector errors).
 - Decision-log entry: D-032 in [`docs/decisions/DECISIONS_LOG.md`](../decisions/DECISIONS_LOG.md).
 - Project task: T-1.3.3.1 in [`project/tasks/`](../../project/tasks/T-1.3.3.1-adr-0013-connector-layer.md).
+
+## Amendments
+
+### 2026-10-25 — what shipped: env-var credentials and a dry-run default, layered beside the dormant OAuth / Fernet path (S-2.13.5)
+
+Verified against master `d9bb392`. PR #19 (2026-05-05) added `connectors/{base,youtube}.py` behind the `Connector` protocol; PR #34 (2026-05-11) added `instagram.py`, `facebook.py`, `dry_run.py` and the env-var credential path. **Zero publishes of any kind have executed**: the audit table was empty at the 2026-10-24 restart audit and none of the three connectors has been live-tested. The first real (private) YouTube publish is restart Phase 1 and closes the MVP (D-057).
+
+**Protocol as built.** `Connector` exposes `validate_artifact / upload / refresh_credentials / is_connected / disconnect` — no `authenticate`, and `revoke_credentials` became `disconnect`. `PublishMetadata` is `title / description / tags / visibility / category`; no language, thumbnail or `publish_at`. Errors are `ConnectorError` → `ConnectorAuthError / ConnectorValidationError / ConnectorRateLimitError`, each carrying `status_code` and `suggested_action` (no `ConnectorUploadError`, no `user_actionable` flag). `connectors.get_connector(platform)` is the registry; `Platform` is `youtube | instagram | facebook`.
+
+**Credential model as built — two layers, both present.**
+
+1. *Env-var layer — what runs.* Each connector reads credentials from the process environment: YouTube `IC_YOUTUBE_CLIENT_ID` / `IC_YOUTUBE_CLIENT_SECRET` / `IC_YOUTUBE_REFRESH_TOKEN` (a `google.oauth2.credentials.Credentials` is built from them and `videos.insert` runs as a resumable upload in a worker thread — 8 MB chunks, not 256 MB, and progress is reported only at completion); Instagram `IC_INSTAGRAM_ACCESS_TOKEN` / `IC_INSTAGRAM_USER_ID`; Facebook `IC_FACEBOOK_PAGE_ACCESS_TOKEN` / `IC_FACEBOOK_PAGE_ID`. The one-time consent flow that mints the YouTube refresh token is a manual procedure in `docs/connectors/youtube-setup.md`, not app code. Env vars take precedence over the database.
+2. *OAuth / Fernet layer — dormant, not superseded.* The `connector_credentials` table, the Fernet key at `~/.impact-crater/db/.fernet-key` and the `youtube.py` read / upsert / delete helpers exist, and `api/publish.py` still reads `user_handle` from the table for `GET /api/connectors/youtube/status`. Nothing writes the table because the loopback OAuth init / callback was never built. This layer is the base **S-3.3.5** (Connect YouTube in Settings, restart Phase 1) builds on: the design above becomes real there, with env vars demoted to a documented fallback.
+
+**Dry-run default.** `IC_PUBLISH_DRY_RUN` is read by `connectors/dry_run.py::is_dry_run_enabled`; unset, or any value other than `0 / false / no / off`, means **on**. `get_connector` then wraps the connector in `DryRunConnector`, which runs the full `validate_artifact` preflight and returns a synthetic `dry-run-…` id with a `https://dry-run.local/…` URL; the audit row's `platform` reads `<platform> (dry-run)` and the publish modal shows a DRY-RUN badge. The first real publish sets `IC_PUBLISH_DRY_RUN=0` for one session and flips it back.
+
+**Instagram needs a public HTTPS media URL.** The Graph API pulls the video from a URL Meta's servers can reach, so a real Instagram post requires `IC_PUBLIC_BASE_URL` pointing at an HTTPS host serving `/api/snapshots/{id}/render.mp4`. Today that means exposing the running server (the setup doc suggests an ngrok tunnel), which exposes the whole unauthenticated API — so **no tunnel until S-3.11.3** (loopback-only default, `--allow-remote`, per-install bearer token) has landed; the long-term shape is a signed media URL only. Instagram has no per-post visibility: the connector rejects anything but `public`.
+
+**Visibility defaults.** The API keeps `public` as its default (`PublishRequest.visibility`, `PublishMetadata.visibility`) — Q1 stands for the API contract. The **UI default becomes private-first**: the publish form pre-selects `private` on first use (today `frontend/src/routes/JobPreview.tsx` pre-selects `public`) and remembers the last-used visibility per platform afterwards; `docs/connectors/youtube-setup.md` already tells the user to start with a private test post. Implemented with S-3.3.5, whose connector-status work derives the default visibility; the Approve button keeps showing the selected visibility.
+
+**Audit as built.** `audit.AuditEntry` appends to `audit.jsonl` and the `audit` table: `platform`, `external_id / external_url`, `response_code / response_summary`, `description_full`, `visibility`, and a `user_approval_token` minted per publish (`secrets.token_urlsafe(16)`). There is no `render_content_hash` and no nested `publish_metadata` object.
+
+**Not built:** `publishAt` scheduling, custom thumbnails, the YouTube quota readout, upload-progress streaming, the token-refresh background task, X / LinkedIn / TikTok (X is S-3.3.4).
+
+### 2026-10-25 — Key management (S-2.13.5)
+
+This section is the single home for the Fernet key; `SECURITY.md` and ADR-0006 point here.
+
+- **What the key protects.** The Anthropic and Google API keys in the `settings` table (`storage/settings.py`, rows flagged `encrypted`) and — once S-3.3.5 writes them — the OAuth tokens in `connector_credentials`. Everything else under `~/.impact-crater` (SQLite metadata, cache payloads, renders, telemetry, audit log, feedback screenshots) is plaintext.
+- **Where it lives.** `~/.impact-crater/db/.fernet-key` (`paths.fernet_key_path`), one line of URL-safe base64, generated on first use by `crypto.get_or_create_key`, beside the SQLite file. `IMPACT_CRATER_HOME` moves the whole tree, key included.
+- **Permissions, honestly.** `paths.harden_secret_file` runs `chmod 0600` on POSIX and is a **no-op on Windows**: the "restrictive file permissions" claim in `crypto.py`'s docstring does not hold on NTFS, where the file inherits the user-profile ACL — readable by every process running as the user and by local administrators. That is the same exposure as the SQLite file beside it and as an OS-keyring entry on a single-user machine, so it is **accepted**; a `win32security` / `icacls` tightening is not scheduled. The key defends against casual inspection and against a backup of the database alone, not against code already running as the user.
+- **Backup / restore.** Back up `~/.impact-crater` as one unit — `db/` (SQLite + `.fernet-key`), `projects/`, `cache/`, `audit.jsonl`, `telemetry.jsonl`, `feedback.jsonl`, `feedback_screenshots/`, `profile/`. Restoring the database without the key leaves every encrypted setting unreadable; restoring the key without the database is harmless. On a new machine, restore the tree (or point `IMPACT_CRATER_HOME` at the restored copy) **before** the first start, otherwise the first start mints a fresh key and the restored ciphertexts never decrypt.
+- **Key loss or corruption.** `crypto.get_or_create_key` raises `FernetUnavailableError` when the file exists but is not a valid key; `decrypt` raises it when a ciphertext does not validate against the current key. Recovery: delete `.fernet-key`, restart (a new key is generated), re-enter the Anthropic / Google API keys in the setup wizard or Settings, and reconnect each connector (or re-export its env vars). No other data is affected. The error surface is still raw — the UI does not yet say "key changed, re-enter your keys"; that copy belongs to S-3.11.3's `SECURITY.md` work.
+- **Rotation.** Not supported; there is no re-encrypt path. Rotating means the recovery procedure above.
+- **Env-var credentials sit outside this model.** `IC_*` values live in the user's shell or launcher script; `.gitignore` excludes `.env*`, `*.key`, `.fernet-key` and the personal `start-impact-crater.*` launchers.
