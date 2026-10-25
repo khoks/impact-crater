@@ -4,7 +4,7 @@ title: Short noun-phrase title (under 60 chars)
 type: initiative
 status: backlog                # backlog | in-progress | done | canceled
 priority: P0                   # P0 | P1 | P2 | P3
-phase: mvp                     # scaffolding | mvp | v1 | v2 | v3
+phase: mvp                     # scaffolding | mvp | v1 | v2 | v3   (mvp-hardening epics may sit under an mvp or v1 initiative)
 tags: []
 created: YYYY-MM-DD
 updated: YYYY-MM-DD

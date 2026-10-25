@@ -2,12 +2,12 @@
 id: T-N.M.K.J
 title: Short imperative title (under 80 chars)
 type: task
-status: todo                   # todo | in-progress | review | done | blocked | canceled
+status: todo                   # todo | in-progress | review | done | blocked | deferred | canceled  (never `ready`)
 priority: P0                   # P0 | P1 | P2 | P3
 estimate: XS                   # XS<1h | S<4h | M<1d | L<3d | XL>3d
 parent: S-N.M.K
-phase: mvp                     # scaffolding | mvp | v1 | v2 | v3
-tags: []
+phase: mvp                     # scaffolding | mvp | mvp-hardening | v1 | v2 | v3  — must equal the parent epic's phase
+tags: []                       # add plan-phase-N for restart-plan items
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 ---

@@ -26,7 +26,9 @@ This initiative consumes the architecture cleanly: ADR-0005 (Python+FastAPI+Reac
 
 ## Scope
 
-Nine epics, one per milestone (M0..M9 from MVP.md):
+Thirteen epics: nine milestone epics (M0..M9 from MVP.md) plus four post-gate epics (E-2.10..E-2.13). The post-gate four are the rounds that followed the 2026-06-18 D-014 curate→preview pass — two feedback-driven curation-quality rounds on the real SW-US-trip job, the open-ended refinement layer, and the 2026-10-24 restart close-out — all still hardening the single Story Video rather than adding a v1 feature.
+
+Milestone epics:
 
 - **E-2.1 Scaffolding** (M0) — `pip install impact-crater` + CLI + FastAPI + React shell + first-time-setup wizard + SQLite schema
 - **E-2.2 Headless curation through Stage 5** (M1) — `LLMClient` + Anthropic + Google + LLMRouter + telemetry + worker pool + pipeline Stages 1–5 working end-to-end without UI; ArcJudgment JSON output
@@ -37,6 +39,13 @@ Nine epics, one per milestone (M0..M9 from MVP.md):
 - **E-2.7 Agentic refinement + orchestrator second-guess** (M6) — Stage 9 N-009 thinking step with 5 strategies; Stage 6 second-guess + user reconfirm UI; snapshot chain
 - **E-2.8 YouTube publish** (M7) — `YouTubeConnector` with OAuth + resumable upload; publish UI with visibility selector; audit-log writer; full end-to-end demo
 - **E-2.9 Cross-project user profile + polish + D-014 validation** (M8 + M9 rolled in) — feedback log + deterministic profile derivation + profile-driven suggestions on job creation; bug fixes + edge-case handling; D-014 success-criterion verified end-to-end on a real user dataset
+
+Post-gate epics:
+
+- **E-2.10 Feedback-driven curation quality** — coverage, balance, video share, specialness, trip cast, working inspect/feedback loop (from the SW-US-trip per-decision feedback)
+- **E-2.11 Snappier, fuller edits + output polish + observability** — clip-duration caps, burst-montage, opt-in AI title card, music mood/section matching, job/phase-level feedback, richer live progress
+- **E-2.12 Open-ended refinement layer + shared curation levers** — PlanDirective + destination reservation + the single-call refinement planner that re-renders child snapshots
+- **E-2.13 Restart close-out + hygiene** — Phase 0 of the 2026-10-24 restart plan: tracker, docs, ADRs, feedback inbox and repo made true again; D-057 MVP-closure shape; zero spend
 
 ## Out of scope
 
@@ -63,18 +72,19 @@ Anything explicitly tagged out-of-MVP in [`docs/roadmap/MVP.md`](../../docs/road
 
 ## Children
 
-- E-2.1 — Scaffolding (done — 2026-05-03; first commit of code; M0)
-- E-2.2 — Headless curation through Stage 5 (**done** — 2026-05-04; M1 LLM stack + Stages 1-5 + headless API)
-- E-2.3 — Render + standard mode (**done** — 2026-05-04; M2 Stages 6-7 + render API)
-- E-2.4 — UI MVP loop closed (**done** — 2026-05-05; M3 React UI + async jobs + WS progress + preview)
-- E-2.5 — Music-video mode + section-to-media NL (todo, **Up Next**)
-- E-2.6 — Person library + privacy panel (todo, **Up Next, parallelizable with E-2.5**)
-- E-2.4 — UI MVP loop closed (todo, blocked by E-2.3)
-- E-2.5 — Music-video mode + section-to-media NL (todo, blocked by E-2.4)
-- E-2.6 — Person library + face recognition + privacy panel (todo, blocked by E-2.4)
-- E-2.7 — Agentic refinement + orchestrator second-guess (todo, blocked by E-2.4 + E-2.6)
-- E-2.8 — YouTube publish (todo, blocked by E-2.3)
-- E-2.9 — Cross-project user profile + polish + D-014 validation (todo, blocked by all of E-2.1..E-2.8)
+- E-2.1 — Scaffolding (done — 2026-05-03; M0; PRs #11/#12)
+- E-2.2 — Headless curation through Stage 5 (done — 2026-05-04; M1; PR #13)
+- E-2.3 — Render + standard mode (done — 2026-05-04; M2; PR #14)
+- E-2.4 — UI MVP loop closed (done — 2026-05-05; M3; PR #15)
+- E-2.5 — Music-video mode + section-to-media NL (done — 2026-05-05; M4; PR #16)
+- E-2.6 — Person library + face recognition + privacy panel (done at MVP scope — 2026-05-05; M5; PR #17; privacy transforms, N-008 Stage-3 recognition and N-011 routing are unwired — see its Status section)
+- E-2.7 — Agentic refinement + orchestrator second-guess (done — 2026-05-05; M6; PR #18; delivered epic-level, no stories; the shipped refine is E-2.12's single-call planner, the reconfirm UI was never built)
+- E-2.8 — YouTube publish (done — 2026-05-05; M7; PR #19; delivered epic-level, no stories; connector + dry-run + audit writer only — in-app OAuth never built, zero publishes executed)
+- E-2.9 — Cross-project user profile + polish + D-014 validation (in-progress — curate→preview half of D-014 passed 2026-06-18; closes on the first real YouTube publish in restart Phase 1)
+- E-2.10 — Feedback-driven curation quality (done — 2026-07-01; PR #72; post-gate)
+- E-2.11 — Snappier, fuller edits + output polish + observability (done — 2026-06-30; PR #67; post-gate)
+- E-2.12 — Open-ended refinement layer + shared curation levers (done — 2026-07-01; PRs #72/#73; post-gate)
+- E-2.13 — Restart close-out + hygiene (in-progress — Phase 0 of the restart plan, picked up 2026-10-24; mvp-hardening)
 
 ## Linked decisions and ADRs
 
@@ -96,3 +106,4 @@ All E-1.3 architecture ADRs (ADR-0005..0016) and all E-1.2/E-1.3 D-NNN entries (
 - 2026-05-04 — **E-2.3 done.** All 4 stories closed in the same session. The full M2 pipeline (Stages 1-7) returns a rendered MP4 via `POST /api/jobs/render` against real Anthropic Opus + Google Flash + ffmpeg in ~22s on a 3-photo + 4s-tone smoke test. ffmpeg 8.1 installed via winget on dev. 169/169 tests green. **E-2.4 (M3 UI MVP loop closed) is now Up Next.**
 - 2026-05-05 — **E-2.4 done.** All 5 stories closed. The full UI loop (Wizard → Dashboard → New Project → Effort+Cost → In-Progress → Preview) is wired against an async-jobs API with WebSocket progress events. Settings panel ships in the same epic. M3 also piggybacked an M1 follow-up: per-call LLMCallEvent telemetry + ProgressSink in the router, so JobCostSummary actually populates and the live-spend panel updates in real time. **218 tests green** (185 backend unit + 26 frontend unit + 7 backend integration). **E-2.5 (M4 music-video) and E-2.6 (M5 person library + privacy) are now Up Next — parallelizable.**
 - 2026-10-24 — **Restart audit** (docs/roadmap/LANDSCAPE-AND-PLAN-2026-10-24.md). After ~4 idle months: the curate→preview half of D-014 stands (1,663 assets, 60 min warm after a 2h55m cold run, ~$50 total); the publish half has never executed (audit table 0 rows; in-app OAuth never built; dry-run default). E-2.13 filed as Phase 0 (honest close-out + hygiene) and S-2.10.9 (model-lineup bump) as the first Phase 1 story. I-2 stays in-progress until S-2.13.2 records D-057 and Phase 1 lands the real publish. Children list is stale (rewritten in S-2.13.1).
+- 2026-10-24 — S-2.13.1 (tracker reconciliation, per the restart audit): Children rewritten to exactly E-2.1..E-2.13 with status and done date from each epic file and git (the old list carried duplicate E-2.4/E-2.5/E-2.6 lines and pre-M4 "blocked by" states; E-2.5–E-2.8 went done 2026-05-05 in PRs #16–#19, E-2.10 is marked done 2026-07-01 in the same reconciliation, E-2.11 done 2026-06-30, E-2.12 done 2026-07-01, E-2.13 in-progress). Scope reworded from "nine epics" to thirteen (nine milestone + four post-gate). Status unchanged: in-progress until the first real publish closes E-2.9.

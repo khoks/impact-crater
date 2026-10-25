@@ -2,12 +2,12 @@
 id: E-N.M
 title: Short title (under 70 chars)
 type: epic
-status: todo                   # todo | in-progress | review | done | blocked | canceled
+status: todo                   # todo | in-progress | review | done | blocked | deferred | canceled
 priority: P0                   # P0 | P1 | P2 | P3
 estimate: L                    # XS<1h | S<4h | M<1d | L<3d | XL>3d
 parent: I-N
-phase: mvp                     # scaffolding | mvp | v1 | v2 | v3
-tags: []
+phase: mvp                     # scaffolding | mvp | mvp-hardening | v1 | v2 | v3
+tags: []                       # add plan-phase-N for restart-plan items
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 ---
@@ -31,7 +31,7 @@ What this Epic does not cover. Move these into separate epics or stories.
 
 ## Acceptance criteria
 
-- [ ] Bullet list of testable conditions for "Epic done."
+- [ ] Bullet list of testable conditions for "Epic done." (when the epic is done, every unchecked box carries `— verified by … (date)`, `— deferred → … (date)` or `— superseded by … (date)`)
 
 ## Dependencies
 
