@@ -36,7 +36,6 @@
 | [S-3.11.2](./stories/S-3.11.2-test-ci.md) | Test CI — ruff / mypy / pytest / vitest / build / mkdocs on ubuntu and windows; branch protection; ADR-0004 --admin → --auto (plan-phase-1) | Story | P0 | mvp-hardening | todo |
 | [E-3.5](./epics/E-3.5-power-user-polish-bundle.md) | Power-user + polish bundle (plan-phase-1, plan-phase-2, plan-phase-3) | Epic | P1 | v1 | todo |
 | [S-2.9.19](./stories/S-2.9.19-persist-job-registry-survive-restart.md) | Persist the job registry so live/preview views survive a restart (plan-phase-2) | Story | P1 | mvp-hardening | todo |
-| [S-2.13.3](./stories/S-2.13.3-feedback-inbox-triage.md) | Feedback inbox triage — close the A-023 loop for the 11 rows still status=new (plan-phase-0) | Story | P1 | mvp-hardening | todo |
 | [S-2.13.5](./stories/S-2.13.5-adr-truth-bundle-and-governance-files.md) | ADR truth bundle (ADR-0007/0009/0010/0012/0013/0018/0020 + ADR-0021) and repo governance files (plan-phase-0) | Story | P1 | mvp-hardening | todo |
 | [S-3.5.5](./stories/S-3.5.5-refine-as-job-and-publish-from-any-snapshot.md) | Refine as a job + publish from any snapshot (SnapshotInspect canonical preview) (plan-phase-1, plan-phase-2) | Story | P1 | v1 | todo |
 | [S-3.10.2](./stories/S-3.10.2-golden-set-from-feedback.md) | Golden set — export the owner's decision-level feedback verdicts; harness reports agreement (plan-phase-2) | Story | P1 | mvp-hardening | todo |
@@ -99,6 +98,7 @@ Placeholder stories backfilled on 2026-06-14 plus later filings whose restart-pl
 
 | ID | Title | Type | Done |
 |---|---|---|---|
+| [S-2.13.3](./stories/S-2.13.3-feedback-inbox-triage.md) | Feedback inbox triage — close the A-023 loop for the 11 rows still status=new | Story | 2026-10-25 |
 | [S-3.3.2](./stories/S-3.3.2-facebookconnector-xconnector.md) | FacebookConnector (Page video) | Story | 2026-10-24 |
 | [S-3.3.1](./stories/S-3.3.1-instagramconnector-graph-api-facebook-login.md) | InstagramConnector — env-var credentials, dry-run only, never live-tested | Story | 2026-10-24 |
 | [S-2.13.6](./stories/S-2.13.6-repo-and-session-hygiene.md) | Repo + session hygiene — worktree, .scratch, launch.json, hook allow entry, lock file, metadata, stale assets | Story | 2026-10-24 |
@@ -186,6 +186,6 @@ Regenerate with `python scripts/tracker_board.py`; `--check` fails when this fil
 |---|---|---|---|---|---|---|---|
 | Initiative | 2 | 0 | 0 | 1 | 2 | 0 | 5 |
 | Epic | 0 | 0 | 0 | 16 | 3 | 19 | 38 |
-| Story | 0 | 1 | 1 | 72 | 0 | 69 | 143 |
+| Story | 0 | 1 | 1 | 73 | 0 | 68 | 143 |
 | Task | 0 | 0 | 0 | 30 | 0 | 0 | 30 |
-| **All** | 2 | 1 | 1 | 119 | 5 | 88 | 216 |
+| **All** | 2 | 1 | 1 | 120 | 5 | 87 | 216 |

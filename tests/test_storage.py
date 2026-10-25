@@ -88,3 +88,11 @@ async def test_setup_complete_flag() -> None:
     assert await settings.is_setup_complete() is False
     await settings.mark_setup_complete()
     assert await settings.is_setup_complete() is True
+
+
+async def test_migration_007_adds_feedback_triage_columns() -> None:
+    await migrations.run_pending_migrations()
+    async with connection() as db:
+        cursor = await db.execute("PRAGMA table_info(feedback)")
+        columns = {row["name"] for row in await cursor.fetchall()}
+    assert {"triage_note", "triaged_at"} <= columns
