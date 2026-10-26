@@ -1,16 +1,16 @@
 """Pluggable image-embedder backends (S-2.10.8, ADR-0018).
 
 Mirrors the cast face-embed cloud-default/local-optional pattern. The default
-`RouterImageEmbedder` delegates to the existing caption-then-embed router op, so
-the default path is byte-for-byte unchanged. A local CLIP/SigLIP backend can be
+`RouterImageEmbedder` delegates to the router's `embed_image` op (gemini-embedding-2
+on the image bytes), so the default path is the routed one. A local CLIP/SigLIP backend can be
 selected by the `image_embed_backend` setting; it is a STUB here (returns None →
 the caller falls back to the router op) because loading weights requires GPU and
 weights are never pulled into the repo/env.
 
 Hard requirement for the future real backend: local vectors MUST be written under
 a distinct cache namespace (the router cache key does not include the media-layer
-backend), or caption-space and CLIP-space vectors would collide in the 0.93
-cosine dedup and corrupt selection. The stub never populates the cache.
+backend), or the remote (gemini-embedding-2) and local (CLIP/SigLIP) vector spaces
+would collide in the Stage 4 cosine dedup and corrupt selection. The stub never populates the cache.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ class ImageEmbedder(Protocol):
 
 
 class RouterImageEmbedder:
-    """Default — delegates to the router's caption-then-embed op (today's path)."""
+    """Default — delegates to the router's `embed_image` op (gemini-embedding-2, image bytes)."""
 
     backend = "router"
 

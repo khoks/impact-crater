@@ -1,41 +1,36 @@
 """AnthropicLLMClient — implementation against the official `anthropic` SDK.
 
-Uses the Messages API throughout; structured-output operations use Anthropic's
-tool-use mode (the model is forced to invoke a single tool whose input_schema
-is the desired JSON Schema, then we parse `tool_input` as the structured result).
+Uses the Messages API throughout. Structured-output operations use tool use with
+`tool_choice: auto` (the 5.x models reject forced tool choice): the prompt tells the
+model to call the tool exactly once, a text-only reply is retried once, and the
+caller's pydantic parse validates the result. Only `submit_score` is `strict: true` —
+the D-009 metadata schema exceeds the strict limits (a map-typed field, more than
+24 optional parameters, tuple fields).
 
-Per ADR-0009, this client serves Tier-M Sonnet (`extract_metadata_image`,
-`parse_user_brief`) and Tier-L Opus (`judge_narrative_arc`).
+Per D-061 this client serves Tier-S and Tier-M Haiku 5.5 (`caption_image`,
+`score_image`, `extract_metadata_image`, `parse_user_brief`, `generate_title_text`)
+and Tier-L Opus 5.5 (`judge_narrative_arc`). Thinking is on by default on these
+models and controlled through `output_config.effort`; `temperature` is never sent
+(non-default values are rejected, and the parameter is gone in API version
+2026-10-21).
 """
 
 from __future__ import annotations
 
 import base64
 import io
-import json
 import logging
 from typing import Any, Literal
 
 import anthropic
-import numpy as np
 from PIL import Image, ImageOps
 from tenacity import (
     AsyncRetrying,
+    RetryError,
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
 )
-
-log = logging.getLogger(__name__)
-
-# Models that deprecated the `temperature` sampling parameter and reject any
-# request that includes it (400 invalid_request_error). Extend as new models land.
-_TEMPERATURE_UNSUPPORTED_MODELS = frozenset({"claude-opus-4-8"})
-
-
-def _supports_temperature(model: str) -> bool:
-    return model not in _TEMPERATURE_UNSUPPORTED_MODELS
-
 
 from impact_crater.llm_clients.base import (
     ArcJudgment,
@@ -46,6 +41,11 @@ from impact_crater.llm_clients.base import (
     SelectedItem,
 )
 from impact_crater.llm_clients.exceptions import LLMOperationFailed, LLMTransientError
+
+log = logging.getLogger(__name__)
+
+# Backoff between transient retries; tests swap in `wait_none()`.
+_RETRY_WAIT = wait_exponential(multiplier=1.0, min=1.0, max=8.0)
 
 
 class AnthropicLLMClient:
@@ -89,6 +89,23 @@ class AnthropicLLMClient:
             last_error="anthropic provider does not support generate_image; route to google",
         )
 
+    async def verify_model(self, model: str) -> str:
+        try:
+            info = await self._client.models.retrieve(model)
+        except anthropic.NotFoundError as e:
+            raise _verify_failed(
+                model,
+                f"model {model!r} is not available to this Anthropic key (404 not_found_error)",
+            ) from e
+        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as e:
+            raise _verify_failed(
+                model,
+                f"Anthropic rejected the API key (HTTP {e.status_code}, authentication_error)",
+            ) from e
+        except anthropic.APIError as e:
+            raise _verify_failed(model, f"Anthropic models.retrieve failed: {str(e)[:200]}") from e
+        return str(info.id)
+
     # -- Vision-language captioning + scoring ------------------------------
 
     async def caption_image(
@@ -116,17 +133,15 @@ class AnthropicLLMClient:
         dimension: str,
         params: CallParams,
     ) -> float:
-        # Forced-tool-use to get a single float in [0, 1].
         tool = {
             "name": "submit_score",
             "description": f"Submit a {dimension} score in [0.0, 1.0]",
+            "strict": True,
             "input_schema": {
                 "type": "object",
                 "required": ["score"],
-                "properties": {
-                    "score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-                    "reasoning": {"type": "string"},
-                },
+                "properties": {"score": {"type": "number"}},
+                "additionalProperties": False,
             },
         }
         result = await self._call_tool_use(
@@ -143,7 +158,7 @@ class AnthropicLLMClient:
             ],
             tool_name="submit_score",
         )
-        return float(result["score"])
+        return max(0.0, min(1.0, float(result["score"])))
 
     # -- Structured-output extraction --------------------------------------
 
@@ -179,7 +194,7 @@ class AnthropicLLMClient:
     ) -> ArcJudgment:
         # The prompt_template is rendered upstream (by the router/prompts loader)
         # with brief + target_duration + music_spec + candidates already
-        # interpolated. Here we just send it + force a tool that returns the
+        # interpolated. Here we just send it; the prompt asks for the tool that returns the
         # structured ArcJudgment.
         tool = {
             "name": "submit_arc_judgment",
@@ -265,16 +280,15 @@ class AnthropicLLMClient:
             "max_tokens": params.max_tokens,
             "messages": messages,
         }
-        # Some newer models (e.g. Opus 4.8) deprecated `temperature` and reject
-        # the request outright when it is present. Only send it where supported.
-        if _supports_temperature(params.model):
-            kwargs["temperature"] = params.temperature
+        if params.effort:
+            kwargs["output_config"] = {"effort": params.effort}
         if system:
             kwargs["system"] = system
         if tools:
             kwargs["tools"] = tools
         msg = await _retry(params, lambda: self._client.messages.create(**kwargs))
         _apply_usage(params, msg)
+        _check_stop_reason(params, msg)
         return msg
 
     async def _call_tool_use(
@@ -285,20 +299,32 @@ class AnthropicLLMClient:
         messages: list[dict[str, Any]],
         tool_name: str,
     ) -> dict[str, Any]:
-        msg = await self._call_messages(
-            params,
-            messages=messages,
-            tools=tools,
-        )
-        for block in msg.content:
-            if block.type == "tool_use" and block.name == tool_name:
-                return dict(block.input)
+        text = ""
+        stop_reason: Any = None
+        for attempt in (1, 2):
+            msg = await self._call_messages(params, messages=messages, tools=tools)
+            for block in msg.content:
+                if block.type == "tool_use" and block.name == tool_name:
+                    return dict(block.input)
+            text = next((b.text for b in msg.content if b.type == "text"), "")
+            stop_reason = getattr(msg, "stop_reason", None)
+            log.warning(
+                "anthropic_tool_not_called operation=%s model=%s attempt=%d/2 stop_reason=%s text=%r",
+                params.operation,
+                params.model,
+                attempt,
+                stop_reason,
+                text[:160],
+            )
         raise LLMOperationFailed(
             operation=params.operation,
             provider=self.provider,
             model=params.model,
-            attempts=1,
-            last_error=f"model did not call expected tool {tool_name!r}",
+            attempts=2,
+            last_error=(
+                f"model did not call expected tool {tool_name!r} "
+                f"(stop_reason={stop_reason}, text={text[:160]!r})"
+            ),
         )
 
     async def _extract_via_tool(
@@ -452,7 +478,9 @@ def _resize_to_max_edge(img: Image.Image, max_edge: int) -> Image.Image:
     if longest <= max_edge:
         return img
     scale = max_edge / longest
-    return img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
+    return img.resize(
+        (max(1, round(w * scale)), max(1, round(h * scale))), Image.Resampling.LANCZOS
+    )
 
 
 def _apply_usage(params: CallParams, msg: Any) -> None:
@@ -461,8 +489,8 @@ def _apply_usage(params: CallParams, msg: Any) -> None:
     Anthropic's `usage.input_tokens` already includes image-input tokens, so
     we fold everything into input/output and leave image_tokens at 0. Cache
     tokens are added defensively (they're 0 unless prompt caching is used,
-    which we don't). Read by LLMRouter._record_call to price the call via the
-    rate card instead of the flat ballpark fallback.
+    which we don't). Accumulates, so a retried tool call meters both attempts;
+    read by LLMRouter._record_call to price the call via the rate card.
     """
     u = getattr(msg, "usage", None)
     if u is None:
@@ -470,9 +498,49 @@ def _apply_usage(params: CallParams, msg: Any) -> None:
     in_tok = int(getattr(u, "input_tokens", 0) or 0)
     in_tok += int(getattr(u, "cache_creation_input_tokens", 0) or 0)
     in_tok += int(getattr(u, "cache_read_input_tokens", 0) or 0)
-    params.usage_input_tokens = in_tok
-    params.usage_output_tokens = int(getattr(u, "output_tokens", 0) or 0)
-    params.usage_image_tokens = 0
+    params.usage_input_tokens += in_tok
+    params.usage_output_tokens += int(getattr(u, "output_tokens", 0) or 0)
+
+
+def _check_stop_reason(params: CallParams, msg: Any) -> None:
+    reason = getattr(msg, "stop_reason", None)
+    if reason == "refusal":
+        details = getattr(msg, "stop_details", None)
+        raise LLMOperationFailed(
+            operation=params.operation,
+            provider=params.provider,
+            model=params.model,
+            attempts=1,
+            last_error=(
+                f"stop_reason=refusal category={getattr(details, 'category', None)} "
+                f"explanation={str(getattr(details, 'explanation', '') or '')[:200]!r}"
+            ),
+        )
+    if reason == "model_context_window_exceeded":
+        raise LLMOperationFailed(
+            operation=params.operation,
+            provider=params.provider,
+            model=params.model,
+            attempts=1,
+            last_error="stop_reason=model_context_window_exceeded",
+        )
+    if reason == "max_tokens":
+        raise LLMOperationFailed(
+            operation=params.operation,
+            provider=params.provider,
+            model=params.model,
+            attempts=1,
+            last_error=(
+                f"stop_reason=max_tokens (thinking + answer exceeded max_tokens={params.max_tokens}; "
+                "raise it for this operation in config/llm-routing.yaml)"
+            ),
+        )
+
+
+def _verify_failed(model: str, reason: str) -> LLMOperationFailed:
+    return LLMOperationFailed(
+        operation="verify_model", provider="anthropic", model=model, attempts=1, last_error=reason
+    )
 
 
 def _first_text(msg: anthropic.types.Message) -> str:
@@ -490,10 +558,9 @@ def _first_text(msg: anthropic.types.Message) -> str:
 
 def _is_transient(e: BaseException) -> bool:
     if isinstance(e, anthropic.APIStatusError):
-        return e.status_code in (408, 425, 429, 500, 502, 503, 504)
-    if isinstance(e, anthropic.APIConnectionError | anthropic.APITimeoutError):
-        return True
-    return False
+        # 529 = overloaded_error, Anthropic's capacity signal.
+        return e.status_code in (408, 425, 429, 500, 502, 503, 504, 529)
+    return isinstance(e, anthropic.APIConnectionError | anthropic.APITimeoutError)
 
 
 async def _retry(params: CallParams, callable_: Any) -> Any:
@@ -502,46 +569,48 @@ async def _retry(params: CallParams, callable_: Any) -> Any:
     `callable_` is a zero-arg awaitable factory so we can re-invoke on retry.
     Every transient retry + every terminal failure is logged with the
     operation/model/attempts so a developer can see retry storms in the
-    server log without needing to dig through telemetry.
+    server log without needing to dig through telemetry. An exhausted retry
+    surfaces as LLMOperationFailed like any other terminal failure.
     """
     attempts = 0
-    last_error: BaseException | None = None
-    async for attempt in AsyncRetrying(
-        stop=stop_after_attempt(4),
-        wait=wait_exponential(multiplier=1.0, min=1.0, max=8.0),
-        retry=retry_if_exception_type(LLMTransientError),
-        reraise=True,
-    ):
-        with attempt:
-            attempts += 1
-            try:
-                return await callable_()
-            except Exception as e:
-                last_error = e
-                if _is_transient(e):
-                    log.warning(
-                        "anthropic_transient operation=%s model=%s attempt=%d/4 error=%r",
+    last_error: Exception | None = None
+    try:
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(4),
+            wait=_RETRY_WAIT,
+            retry=retry_if_exception_type(LLMTransientError),
+        ):
+            with attempt:
+                attempts += 1
+                try:
+                    return await callable_()
+                except Exception as e:
+                    last_error = e
+                    if _is_transient(e):
+                        log.warning(
+                            "anthropic_transient operation=%s model=%s attempt=%d/4 error=%r",
+                            params.operation,
+                            params.model,
+                            attempts,
+                            str(e)[:200],
+                        )
+                        raise LLMTransientError(str(e)) from e
+                    log.error(
+                        "anthropic_failed operation=%s model=%s attempts=%d error=%r",
                         params.operation,
                         params.model,
                         attempts,
-                        str(e)[:200],
+                        str(e)[:300],
                     )
-                    raise LLMTransientError(str(e)) from e
-                log.error(
-                    "anthropic_failed operation=%s model=%s attempts=%d error=%r",
-                    params.operation,
-                    params.model,
-                    attempts,
-                    str(e)[:300],
-                )
-                raise LLMOperationFailed(
-                    operation=params.operation,
-                    provider=params.provider,
-                    model=params.model,
-                    attempts=attempts,
-                    last_error=e,
-                ) from e
-    # Unreachable; tenacity reraise=True covers the loop exit.
+                    raise LLMOperationFailed(
+                        operation=params.operation,
+                        provider=params.provider,
+                        model=params.model,
+                        attempts=attempts,
+                        last_error=e,
+                    ) from e
+    except RetryError:
+        pass
     log.error(
         "anthropic_retries_exhausted operation=%s model=%s attempts=%d last_error=%r",
         params.operation,
@@ -556,8 +625,3 @@ async def _retry(params: CallParams, callable_: Any) -> Any:
         attempts=attempts,
         last_error=last_error or "unknown",
     )
-
-
-# Use `json` import so ruff F401 doesn't flag it; structured output may need
-# json.dumps in future for prompt-side serialization.
-_ = json

@@ -18,6 +18,7 @@
 |---|---|---|---|---|---|
 | [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | Initiative | P0 | mvp | in-progress |
 | [E-2.9](./epics/E-2.9-cross-project-profile-mvp.md) | Cross-project user profile (N-010 minimum-viable) + polish + D-014 validation | Epic | P0 | mvp | in-progress |
+| [S-2.10.9](./stories/S-2.10.9-model-lineup-bump-current-ga-ids.md) | Model-lineup bump to current GA IDs — pinned model_version, rate cards, data-driven temperature guard, model-not-found mapping, real key ping (plan-phase-1) | Story | P0 | mvp-hardening | in-progress |
 | [I-3](./initiatives/I-3-v1-local-first-live-job-multi-platform-style-polish.md) | v1 — Local-first + live job + multi-platform + style + polish | Initiative | P1 | v1 | in-progress |
 | [E-3.3](./epics/E-3.3-multi-platform-connectors-instagram-facebook-x.md) | Multi-platform connectors — Instagram + Facebook + X (plan-phase-1, plan-phase-4) | Epic | P1 | v1 | in-progress |
 
@@ -27,7 +28,6 @@
 |---|---|---|---|---|---|
 | [E-3.10](./epics/E-3.10-quality-eval-harness-and-golden-set.md) | Quality eval harness + golden set (plan-phase-2) | Epic | P0 | mvp-hardening | todo |
 | [E-3.11](./epics/E-3.11-restart-hardening-and-release-engineering.md) | Restart Phases 1–2 hardening + release engineering (plan-phase-1, plan-phase-2) | Epic | P0 | mvp-hardening | todo |
-| [S-2.10.9](./stories/S-2.10.9-model-lineup-bump-current-ga-ids.md) | Model-lineup bump to current GA IDs — pinned model_version, rate cards, data-driven temperature guard, model-not-found mapping, real key ping (plan-phase-1) | Story | P0 | mvp-hardening | todo |
 | [S-3.3.5](./stories/S-3.3.5-connect-youtube-in-settings.md) | Connect YouTube in Settings (loopback OAuth → connector_credentials) (plan-phase-1) | Story | P0 | v1 | todo |
 | [S-3.10.1](./stories/S-3.10.1-eval-plan-script-and-thresholds.md) | scripts/eval_plan.py + D-058 thresholds on frozen SW-US and Zion fixtures (pytest -m eval) (plan-phase-2) | Story | P0 | mvp-hardening | todo |
 | [S-3.11.2](./stories/S-3.11.2-test-ci.md) | Test CI — ruff / mypy / pytest / vitest / build / mkdocs on ubuntu and windows; branch protection; ADR-0004 --admin → --auto (plan-phase-1) | Story | P0 | mvp-hardening | todo |
@@ -188,6 +188,6 @@ Regenerate with `python scripts/tracker_board.py`; `--check` fails when this fil
 |---|---|---|---|---|---|---|---|
 | Initiative | 2 | 0 | 0 | 1 | 2 | 0 | 5 |
 | Epic | 0 | 0 | 0 | 17 | 2 | 19 | 38 |
-| Story | 0 | 1 | 1 | 78 | 0 | 65 | 145 |
+| Story | 0 | 1 | 1 | 78 | 1 | 64 | 145 |
 | Task | 0 | 0 | 0 | 30 | 0 | 0 | 30 |
-| **All** | 2 | 1 | 1 | 126 | 4 | 84 | 218 |
+| **All** | 2 | 1 | 1 | 126 | 5 | 83 | 218 |

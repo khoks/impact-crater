@@ -56,6 +56,40 @@ def _classify_failure(exc: Exception) -> str:
             "job: the analysis already done is cached, so it resumes cheaply from "
             "where it stopped."
         )
+    if "model_context_window_exceeded" in low:
+        return (
+            "Request too large — an AI model's context window was exceeded (usually the "
+            "narrative judge on a very large candidate set). Re-run with a shorter target "
+            "duration or fewer media; the analysis already done is cached."
+        )
+    if "stop_reason=max_tokens" in low:
+        return (
+            "An AI response was cut off at its token cap (thinking counts toward it). Raise "
+            "`max_tokens` for that operation in config/llm-routing.yaml and re-run; the "
+            "analysis already done is cached."
+        )
+    if "stop_reason=refusal" in low:
+        return (
+            "An AI provider declined a request (safety refusal). Re-run; if it repeats on "
+            "the same asset, remove that photo or video from the project."
+        )
+    if (
+        "not_found_error" in low
+        or "is not found for api version" in low
+        or "not available to this" in low
+    ):
+        return (
+            "Model not available — an AI provider no longer serves one of the model IDs in "
+            "config/llm-routing.yaml for your key. Update the pin and re-run. Details: "
+            f"{raw[:200]}"
+        )
+    if "resource_exhausted" in low and "free tier" in low:
+        return (
+            "Google API quota exhausted — the key's project is on the Gemini Free Tier, which "
+            "has no or very little quota for this model. Enable billing on the Google Cloud "
+            "project behind the key (or wait for the daily reset), then re-run; it resumes "
+            "from cache."
+        )
     if "rate limit" in low or "rate_limit" in low or "429" in low:
         return (
             "Rate limited — an AI provider is throttling requests right now. Wait a "

@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from impact_crater import rate_cards
 
 
@@ -117,7 +116,8 @@ def test_estimate_cost_uses_embedding_rate_when_flagged(card_dir: Path) -> None:
 
 
 def test_shipped_rate_cards_load(project_root: Path) -> None:
-    """The four MVP rate cards we ship under config/rate-cards/ load cleanly.
+    """The shipped rate cards under config/rate-cards/ load cleanly (D-061 lineup +
+    the previous pins kept for comparison runs).
 
     Resets the env override so we hit the shipped path, not the per-test fixture.
     """
@@ -126,10 +126,23 @@ def test_shipped_rate_cards_load(project_root: Path) -> None:
     os.environ.pop("IMPACT_CRATER_RATE_CARDS_DIR", None)
     rate_cards.clear_cache()
     for provider, model, version in [
-        ("anthropic", "claude-sonnet-4-5", "latest"),
-        ("anthropic", "claude-opus-4-5", "latest"),
+        ("anthropic", "claude-haiku-5-5", "2026-10-07"),
+        ("anthropic", "claude-sonnet-5-5", "2026-09-28"),
+        ("anthropic", "claude-opus-5-5", "2026-09-21"),
+        ("anthropic", "claude-sonnet-4-6", "latest"),
+        ("anthropic", "claude-opus-4-8", "latest"),
+        ("google", "gemini-3.5-flash-lite", "2026-07-21"),
+        ("google", "gemini-3.1-flash-lite-image", "2026-06-30"),
+        ("google", "gemini-embedding-2", "2026-04-22"),
         ("google", "gemini-2.5-flash", "v1"),
         ("google", "gemini-embedding-001", "v1"),
     ]:
         c = rate_cards.load(provider, model, version)
         assert c.input_token_rate_usd_per_1k > 0
+    # D-061: Opus 4.8 is $5 / $25 per 1M, not the $15 / $75 the card shipped with.
+    opus = rate_cards.load("anthropic", "claude-opus-4-8", "latest")
+    assert opus.input_token_rate_usd_per_1k == pytest.approx(0.005)
+    assert opus.output_token_rate_usd_per_1k == pytest.approx(0.025)
+    embed = rate_cards.load("google", "gemini-embedding-2", "2026-04-22")
+    assert embed.per_call_rate_usd == pytest.approx(0.00012)
+    rate_cards.clear_cache()

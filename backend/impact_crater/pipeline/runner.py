@@ -23,6 +23,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 from impact_crater import quota, telemetry
 from impact_crater.llm_clients.anthropic_client import AnthropicLLMClient
 from impact_crater.llm_clients.base import ArcJudgment, MusicSpec
+from impact_crater.llm_clients.exceptions import LLMOperationFailed
 from impact_crater.llm_clients.google_client import GoogleLLMClient
 from impact_crater.llm_clients.router import LLMRouter
 from impact_crater.media import ffmpeg as ff
@@ -798,9 +799,14 @@ async def build_router_from_settings() -> LLMRouter:
             "first-time-setup wizard or set ANTHROPIC_API_KEY / "
             "GOOGLE_API_KEY in the environment)"
         )
-    return LLMRouter(
+    router = LLMRouter(
         clients={
             "anthropic": AnthropicLLMClient(api_key=anthropic_key),
             "google": GoogleLLMClient(api_key=google_key),
         },
     )
+    try:
+        await router.verify_routes()
+    except LLMOperationFailed as exc:
+        raise RuntimeError(f"AI model pre-flight failed: {exc.last_error}") from exc
+    return router

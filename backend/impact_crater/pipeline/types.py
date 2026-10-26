@@ -204,6 +204,13 @@ class MainSubject(BaseModel):
     prominence: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
+def _unquote(value: Any) -> Any:
+    """5.x tool inputs occasionally wrap a scalar in literal quotes ('"midday"')."""
+    if isinstance(value, str) and len(value) >= 2 and value[0] == value[-1] == '"':
+        return value[1:-1]
+    return value
+
+
 class RichMetadataPhoto(BaseModel):
     """The D-009 per-photo rich-metadata schema."""
 
@@ -270,6 +277,7 @@ class RichMetadataPhoto(BaseModel):
     _coerce_people = field_validator("people", mode="before")(_coerce_people_obs)
     _coerce_location = field_validator("location", mode="before")(_coerce_location_obs)
     _coerce_main_subjects = field_validator("main_subjects", mode="before")(_coerce_main_subjects)
+    _unquote_scalars = field_validator("*", mode="before")(_unquote)
 
 
 class RichMetadataVideoScene(RichMetadataPhoto):

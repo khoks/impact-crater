@@ -1,7 +1,7 @@
 """LLMRouter — central dispatch per ADR-0007 + ADR-0009.
 
 Reads `config/llm-routing.yaml` at construction time. For each operation,
-resolves provider+model+model_version+max_tokens+temperature, loads the
+resolves provider+model+model_version+max_tokens+temperature+effort, loads the
 matching prompt template, checks the read-through cache, dispatches to
 the appropriate LLMClient on miss, and writes the result back.
 
@@ -23,7 +23,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 import yaml
 
@@ -47,8 +47,13 @@ log = logging.getLogger(__name__)
 # is the production sink; tests pass their own.
 ProgressSink = Callable[[dict[str, Any]], Awaitable[None]]
 
+_T = TypeVar("_T")
+
 # Repo-root-relative `config/llm-routing.yaml`.
 _CONFIG_PATH_DEFAULT = Path(__file__).resolve().parents[3] / "config" / "llm-routing.yaml"
+
+# Opt-in, fail-soft stages: a pin only these ops use is pinged but never blocks a job.
+_OPTIONAL_OPERATIONS = frozenset({"generate_title_background"})
 
 
 @dataclass(frozen=True)
@@ -62,6 +67,7 @@ class OperationRoute:
     tier: str
     max_tokens: int
     temperature: float
+    effort: str | None = None
 
 
 class LLMRouter:
@@ -121,6 +127,49 @@ class LLMRouter:
             raise KeyError(f"operation {operation!r} has no routing entry")
         return self._routes[operation]
 
+    async def verify_routes(self) -> dict[str, str]:
+        """Resolve every routed model with its provider key before any paid call
+        (A-028). Unbilled. Returns {model: served identifier}; raises
+        LLMOperationFailed on the first model the key cannot use, so a retired
+        pin fails at submit instead of after the Stage 2 spend. Also checks that
+        every routed op with a prompt directory has a template for its model, so
+        a configured-fallback flip is a yaml-only change."""
+        for route in self._routes.values():
+            if not prompts.has_templates(route.operation):
+                continue
+            try:
+                prompts.load(route.operation, route.provider, route.model)
+            except FileNotFoundError as exc:
+                raise LLMOperationFailed(
+                    operation=route.operation,
+                    provider=route.provider,
+                    model=route.model,
+                    attempts=0,
+                    last_error=(
+                        f"no prompt template for {route.operation}: expected "
+                        f"prompts/{route.operation}/{route.provider}_{route.model}.jinja2"
+                    ),
+                ) from exc
+        required: dict[str, OperationRoute] = {}
+        optional: dict[str, OperationRoute] = {}
+        for route in self._routes.values():
+            bucket = optional if route.operation in _OPTIONAL_OPERATIONS else required
+            bucket.setdefault(route.model, route)
+        served: dict[str, str] = {}
+        for model, route in required.items():
+            served[model] = await self._client_for(route).verify_model(model)
+        for model, route in optional.items():
+            if model in served:
+                continue
+            try:
+                served[model] = await self._client_for(route).verify_model(model)
+            except LLMOperationFailed as exc:
+                log.warning(
+                    "llm_preflight_optional_unavailable model=%s reason=%s", model, exc.last_error
+                )
+        log.info("llm_preflight_ok served=%s", served)
+        return served
+
     # -- Operation dispatch ----------------------------------------------
 
     async def caption_image(
@@ -151,7 +200,11 @@ class LLMRouter:
             await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return str(cached)
 
-        result = await client.caption_image(image_bytes, prompt_template=rendered, params=params)
+        result = await self._dispatch(
+            route,
+            params,
+            client.caption_image(image_bytes, prompt_template=rendered, params=params),
+        )
         await cache.put(
             result,
             content_hash=content_hash,
@@ -162,12 +215,12 @@ class LLMRouter:
             prompt_version=prompt.prompt_version,
             params_canonical=params_canonical,
         )
-        await self._record_call(route, cache_hit=False, params=params, result_bytes_hash=content_hash)
+        await self._record_call(
+            route, cache_hit=False, params=params, result_bytes_hash=content_hash
+        )
         return result
 
-    async def generate_title_background(
-        self, *, spirit_prompt: str, aspect: str = "16:9"
-    ) -> bytes:
+    async def generate_title_background(self, *, spirit_prompt: str, aspect: str = "16:9") -> bytes:
         """Generate a title-card background image from a spirit prompt (S-2.11.5).
         Not cached (image bytes; one call per job)."""
         op = "generate_title_background"
@@ -176,7 +229,8 @@ class LLMRouter:
         prompt = prompts.load(op, route.provider, route.model)
         rendered = prompts.render(prompt, spirit=spirit_prompt, aspect=aspect)
         params = self._params(route)
-        result = await client.generate_image(rendered, params=params)
+        params.extra["aspect_ratio"] = aspect
+        result = await self._dispatch(route, params, client.generate_image(rendered, params=params))
         await self._record_call(
             route,
             cache_hit=False,
@@ -224,11 +278,15 @@ class LLMRouter:
             await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return float(cached)
 
-        result = await client.score_image(
-            image_bytes,
-            prompt_template=rendered,
-            dimension=dimension,
-            params=params,
+        result = await self._dispatch(
+            route,
+            params,
+            client.score_image(
+                image_bytes,
+                prompt_template=rendered,
+                dimension=dimension,
+                params=params,
+            ),
         )
         await cache.put(
             result,
@@ -240,7 +298,9 @@ class LLMRouter:
             prompt_version=prompt.prompt_version,
             params_canonical=params_canonical,
         )
-        await self._record_call(route, cache_hit=False, params=params, result_bytes_hash=content_hash)
+        await self._record_call(
+            route, cache_hit=False, params=params, result_bytes_hash=content_hash
+        )
         return result
 
     async def extract_metadata_image(
@@ -273,11 +333,15 @@ class LLMRouter:
             await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return cached
 
-        result = await client.extract_metadata_image(
-            image_bytes,
-            prompt_template=rendered,
-            schema=schema,
-            params=params,
+        result = await self._dispatch(
+            route,
+            params,
+            client.extract_metadata_image(
+                image_bytes,
+                prompt_template=rendered,
+                schema=schema,
+                params=params,
+            ),
         )
         await cache.put(
             result,
@@ -289,7 +353,9 @@ class LLMRouter:
             prompt_version=prompt.prompt_version,
             params_canonical=params_canonical,
         )
-        await self._record_call(route, cache_hit=False, params=params, result_bytes_hash=content_hash)
+        await self._record_call(
+            route, cache_hit=False, params=params, result_bytes_hash=content_hash
+        )
         return result
 
     async def embed_image(self, image_bytes: bytes, *, content_hash: str) -> Embedding:
@@ -313,7 +379,7 @@ class LLMRouter:
             await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return cached  # numpy ndarray
 
-        result = await client.embed_image(image_bytes, params=params)
+        result = await self._dispatch(route, params, client.embed_image(image_bytes, params=params))
         await cache.put(
             result,
             content_hash=content_hash,
@@ -324,7 +390,9 @@ class LLMRouter:
             prompt_version=prompt_version,
             params_canonical=params_canonical,
         )
-        await self._record_call(route, cache_hit=False, params=params, result_bytes_hash=content_hash)
+        await self._record_call(
+            route, cache_hit=False, params=params, result_bytes_hash=content_hash
+        )
         return result
 
     async def embed_text(self, text: str, *, cache_key_text: str | None = None) -> Embedding:
@@ -354,7 +422,7 @@ class LLMRouter:
             await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return cached
 
-        result = await client.embed_text(text, params=params)
+        result = await self._dispatch(route, params, client.embed_text(text, params=params))
         await cache.put(
             result,
             content_hash=content_hash,
@@ -365,7 +433,9 @@ class LLMRouter:
             prompt_version=prompt_version,
             params_canonical=params_canonical,
         )
-        await self._record_call(route, cache_hit=False, params=params, result_bytes_hash=content_hash)
+        await self._record_call(
+            route, cache_hit=False, params=params, result_bytes_hash=content_hash
+        )
         return result
 
     async def judge_narrative_arc(
@@ -438,14 +508,18 @@ class LLMRouter:
             await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return cached
 
-        result = await client.judge_narrative_arc(
-            candidates,
-            prompt_template=rendered,
-            brief=brief,
-            target_duration=target_duration,
-            mode=mode,
-            music_spec=music_spec,
-            params=params,
+        result = await self._dispatch(
+            route,
+            params,
+            client.judge_narrative_arc(
+                candidates,
+                prompt_template=rendered,
+                brief=brief,
+                target_duration=target_duration,
+                mode=mode,
+                music_spec=music_spec,
+                params=params,
+            ),
         )
         await cache.put(
             result,
@@ -457,7 +531,9 @@ class LLMRouter:
             prompt_version=prompt.prompt_version,
             params_canonical=params_canonical,
         )
-        await self._record_call(route, cache_hit=False, params=params, result_bytes_hash=content_hash)
+        await self._record_call(
+            route, cache_hit=False, params=params, result_bytes_hash=content_hash
+        )
         return result
 
     async def parse_user_brief(
@@ -492,11 +568,15 @@ class LLMRouter:
             await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return cached
 
-        result = await client.parse_user_brief(
-            text,
-            prompt_template=rendered,
-            schema=schema,
-            params=params,
+        result = await self._dispatch(
+            route,
+            params,
+            client.parse_user_brief(
+                text,
+                prompt_template=rendered,
+                schema=schema,
+                params=params,
+            ),
         )
         await cache.put(
             result,
@@ -508,7 +588,9 @@ class LLMRouter:
             prompt_version=prompt.prompt_version,
             params_canonical=params_canonical,
         )
-        await self._record_call(route, cache_hit=False, params=params, result_bytes_hash=content_hash)
+        await self._record_call(
+            route, cache_hit=False, params=params, result_bytes_hash=content_hash
+        )
         return result
 
     async def generate_title_text(self, *, brief: str, year: str = "") -> str:
@@ -545,8 +627,10 @@ class LLMRouter:
             await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return str(cached)
 
-        result = await client.parse_user_brief(
-            brief, prompt_template=rendered, schema=schema, params=params
+        result = await self._dispatch(
+            route,
+            params,
+            client.parse_user_brief(brief, prompt_template=rendered, schema=schema, params=params),
         )
         title = str(result.get("title", "")).strip()
         # Only cache a usable title — an empty result should re-try next run
@@ -562,7 +646,9 @@ class LLMRouter:
                 prompt_version=prompt.prompt_version,
                 params_canonical=params_canonical,
             )
-        await self._record_call(route, cache_hit=False, params=params, result_bytes_hash=content_hash)
+        await self._record_call(
+            route, cache_hit=False, params=params, result_bytes_hash=content_hash
+        )
         return title
 
     # -- Internal helpers -----------------------------------------------
@@ -603,8 +689,9 @@ class LLMRouter:
                         is_embedding=route.operation in ("embed_image", "embed_text"),
                     )
                 except Exception as exc:  # pragma: no cover — best-effort
-                    log.debug("rate-card cost calc failed for %s/%s: %s",
-                              route.provider, route.model, exc)
+                    log.debug(
+                        "rate-card cost calc failed for %s/%s: %s", route.provider, route.model, exc
+                    )
                     cost = _ballpark_cost(route)
             else:
                 # No usage reported (embeddings don't surface tokens here, and
@@ -613,8 +700,9 @@ class LLMRouter:
                 try:
                     cost = _ballpark_cost(route)
                 except Exception as exc:  # pragma: no cover — best-effort
-                    log.debug("rate-card lookup failed for %s/%s: %s",
-                              route.provider, route.model, exc)
+                    log.debug(
+                        "rate-card lookup failed for %s/%s: %s", route.provider, route.model, exc
+                    )
                     cost = 0.0
 
         ctx = self._telemetry_context
@@ -689,6 +777,18 @@ class LLMRouter:
             except Exception as exc:  # pragma: no cover
                 log.debug("progress sink failed: %s", exc)
 
+    async def _dispatch(self, route: OperationRoute, params: CallParams, call: Awaitable[_T]) -> _T:
+        """Await a client call; when it fails after the provider billed it (usage is
+        on `params`), meter that spend before re-raising so quota and telemetry see it.
+        Any exception counts — a judge reply that fails `SelectedItem(**...)` raises a
+        TypeError after the tokens were billed."""
+        try:
+            return await call
+        except Exception:
+            if params.usage_input_tokens or params.usage_output_tokens or params.usage_image_tokens:
+                await self._record_call(route, cache_hit=False, params=params)
+            raise
+
     def _client_for(self, route: OperationRoute) -> LLMClient:
         if route.provider not in self._clients:
             raise LLMOperationFailed(
@@ -708,6 +808,7 @@ class LLMRouter:
             model_version=route.model_version,
             max_tokens=route.max_tokens,
             temperature=route.temperature,
+            effort=route.effort,
         )
 
 
@@ -740,20 +841,32 @@ def _load_routes(
             tier=str(merged.get("tier", "")),
             max_tokens=int(merged.get("max_tokens", default_max_tokens)),
             temperature=float(merged.get("temperature", default_temperature)),
+            effort=str(merged["effort"]) if merged.get("effort") is not None else None,
         )
     return out
 
 
+def routed_models(
+    provider: str, config_path: Path | None = None, *, include_optional: bool = True
+) -> list[str]:
+    """The distinct model IDs the shipped config sends to `provider` (wizard key test)."""
+    routes = _load_routes(config_path or _CONFIG_PATH_DEFAULT, {})
+    return sorted(
+        {
+            r.model
+            for r in routes.values()
+            if r.provider == provider
+            and (include_optional or r.operation not in _OPTIONAL_OPERATIONS)
+        }
+    )
+
+
 def _hash_dict(d: dict[str, Any]) -> str:
-    return hashlib.sha256(
-        cache.canonicalize_params(d).encode("utf-8")
-    ).hexdigest()[:16]
+    return hashlib.sha256(cache.canonicalize_params(d).encode("utf-8")).hexdigest()[:16]
 
 
-# Per-tier ballpark cost in USD per call. Pulled from ADR-0009's per-job
-# envelope (~$7-22 for 1000 photos = ~3500 Tier-S + ~1500 Tier-M + 1 Tier-L).
-# These are placeholders until per-provider clients pass back actual token
-# counts from their usage objects (v1 enhancement).
+# Per-tier ballpark cost in USD per call when neither the provider's usage nor
+# the rate card's `per_call_rate_usd` is available (test fakes, unknown cards).
 _TIER_COST_FALLBACK = {
     "S": 0.001,
     "M": 0.005,
@@ -763,17 +876,15 @@ _TIER_COST_FALLBACK = {
 
 
 def _ballpark_cost(route: OperationRoute) -> float:
-    """Best-effort per-call cost without real token counts.
-
-    Tries to read the rate card to validate it exists; falls back to the
-    per-tier envelope from ADR-0009 if the rate card has no per-call
-    figure. Real token-aware costing arrives when each provider client
-    surfaces `usage` from its responses (v1).
-    """
+    """Per-call cost when the provider reported no token usage: the rate card's
+    `per_call_rate_usd` (per-image embeddings, image generation), else the
+    per-tier envelope."""
     try:
-        rate_cards.load(route.provider, route.model, route.model_version)
+        card = rate_cards.load(route.provider, route.model, route.model_version)
     except FileNotFoundError:
-        pass
+        return _TIER_COST_FALLBACK.get(route.tier, 0.001)
+    if card.per_call_rate_usd is not None:
+        return card.per_call_rate_usd
     return _TIER_COST_FALLBACK.get(route.tier, 0.001)
 
 

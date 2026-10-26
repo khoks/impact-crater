@@ -1,0 +1,12 @@
+# ai.google.dev/gemini-api/docs/pricing, read 2026-10-25: input $0.25 / 1M,
+# image output $30 / 1M tokens = $0.0336 per 1K image (1120 output tokens).
+# The op's output is the image, so the output rate is the image-output rate;
+# `per_call_rate_usd` prices a call whose usage went unreported.
+provider: google
+model: gemini-3.1-flash-lite-image
+model_version: "2026-06-30"
+effective_date: 2026-06-30
+input_token_rate_usd_per_1k: 0.00025
+output_token_rate_usd_per_1k: 0.03
+image_input_rate_usd_per_1k_tokens_equivalent: 0.00025
+per_call_rate_usd: 0.0336

@@ -11,12 +11,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from PIL import Image
-
 from impact_crater.llm_clients.anthropic_client import AnthropicLLMClient
 from impact_crater.llm_clients.base import CallParams, LLMClient
 from impact_crater.llm_clients.exceptions import LLMOperationFailed
 from impact_crater.llm_clients.google_client import GoogleLLMClient
+from PIL import Image
 
 
 def _real_jpeg_bytes() -> bytes:
@@ -87,9 +86,7 @@ async def test_anthropic_extract_metadata_uses_tool_use() -> None:
 
 async def test_anthropic_extract_metadata_raises_when_tool_not_called() -> None:
     client = AnthropicLLMClient(api_key="sk-ant-test")
-    fake_response = SimpleNamespace(
-        content=[SimpleNamespace(type="text", text="I'd rather not")]
-    )
+    fake_response = SimpleNamespace(content=[SimpleNamespace(type="text", text="I'd rather not")])
     client._client.messages.create = AsyncMock(return_value=fake_response)  # type: ignore[method-assign]
 
     with pytest.raises(LLMOperationFailed) as excinfo:
@@ -179,13 +176,17 @@ async def test_google_embed_text_returns_numpy_array() -> None:
         params=CallParams(
             operation="embed_text",
             provider="google",
-            model="gemini-embedding-001",
-            model_version="v1",
+            model="gemini-embedding-2",
+            model_version="2026-04-22",
         ),
     )
     assert emb.ndim == 1
     assert emb.dtype.name == "float32"
     assert emb.shape[0] > 0
+    kwargs = client._client.models.embed_content.call_args.kwargs
+    assert kwargs["model"] == "gemini-embedding-2"
+    assert kwargs["contents"] == ["hello world"]
+    assert kwargs["config"].output_dimensionality == 768
 
 
 async def test_google_embed_text_substitutes_fallback_for_empty_input() -> None:
@@ -199,8 +200,8 @@ async def test_google_embed_text_substitutes_fallback_for_empty_input() -> None:
     fake_response = SimpleNamespace(embeddings=[fake_embedding])
     captured: dict[str, str] = {}
 
-    def _capture(*, model: str, contents: str) -> SimpleNamespace:
-        captured["contents"] = contents
+    def _capture(*, model: str, contents: list[str], config: object) -> SimpleNamespace:
+        captured["contents"] = contents[0]
         return fake_response
 
     client._client.models.embed_content = MagicMock(side_effect=_capture)  # type: ignore[method-assign]
@@ -243,38 +244,94 @@ def test_google_sniff_mime_type_recognizes_real_formats() -> None:
     assert _sniff_mime_type(b"\x00\x00\x00\x00") == "image/jpeg"
 
 
-async def test_google_embed_image_falls_back_when_caption_is_empty() -> None:
-    """End-to-end: an image whose caption comes back empty (safety filter,
-    blank candidate, etc.) still produces a valid embedding via the
-    placeholder caption path, instead of raising."""
+async def test_google_embed_image_sends_the_image_part_not_a_caption() -> None:
+    """D-061: gemini-embedding-2 embeds the image bytes directly; the old
+    caption-then-embed round trip (and its generate_content call) is gone."""
     client = GoogleLLMClient(api_key="AIza-test")
-
-    # Caption call returns empty text + no candidates.
-    empty_caption_response = SimpleNamespace(text=None, candidates=[])
-    client._client.models.generate_content = MagicMock(return_value=empty_caption_response)  # type: ignore[method-assign]
-
+    client._client.models.generate_content = MagicMock(  # type: ignore[method-assign]
+        side_effect=AssertionError("embed_image must not caption")
+    )
     fake_embedding = SimpleNamespace(values=[0.2] * 768)
-    fake_embed_response = SimpleNamespace(embeddings=[fake_embedding])
-    captured: dict[str, str] = {}
-
-    def _capture(*, model: str, contents: str) -> SimpleNamespace:
-        captured["contents"] = contents
-        return fake_embed_response
-
-    client._client.models.embed_content = MagicMock(side_effect=_capture)  # type: ignore[method-assign]
+    client._client.models.embed_content = MagicMock(  # type: ignore[method-assign]
+        return_value=SimpleNamespace(embeddings=[fake_embedding])
+    )
 
     emb = await client.embed_image(
         _FAKE_JPEG,
         params=CallParams(
             operation="embed_image",
             provider="google",
-            model="gemini-embedding-001",
-            model_version="v1",
+            model="gemini-embedding-2",
+            model_version="2026-04-22",
         ),
     )
     assert emb.shape == (768,)
-    # The fallback caption was sent to embed_content, not an empty string.
-    assert captured["contents"], "empty caption reached embed_content"
+    kwargs = client._client.models.embed_content.call_args.kwargs
+    assert kwargs["model"] == "gemini-embedding-2"
+    (part,) = kwargs["contents"]
+    assert part.inline_data.mime_type == "image/jpeg"
+    assert part.inline_data.data == _FAKE_JPEG
+    assert kwargs["config"].output_dimensionality == 768
+
+
+def test_google_fit_image_for_embedding_reencodes_webp_and_large_inputs() -> None:
+    from impact_crater.llm_clients.google_client import _fit_image_for_embedding
+
+    big = Image.new("RGB", (3000, 2000), (10, 20, 30))
+    buf = io.BytesIO()
+    big.save(buf, format="WEBP")
+    out = _fit_image_for_embedding(buf.getvalue())
+    assert out.startswith(b"\xff\xd8\xff")
+    with Image.open(io.BytesIO(out)) as img:
+        assert max(img.size) == 1024
+    assert _fit_image_for_embedding(_FAKE_JPEG) == _FAKE_JPEG
+
+
+def test_google_usage_splits_image_tokens_and_counts_thoughts() -> None:
+    from impact_crater.llm_clients.google_client import _apply_usage
+
+    params = CallParams(
+        operation="caption_image",
+        provider="google",
+        model="gemini-3.5-flash-lite",
+        model_version="2026-07-21",
+    )
+    usage = SimpleNamespace(
+        prompt_token_count=1300,
+        candidates_token_count=40,
+        thoughts_token_count=25,
+        prompt_tokens_details=[
+            SimpleNamespace(modality="TEXT", token_count=270),
+            SimpleNamespace(modality="IMAGE", token_count=1030),
+        ],
+    )
+    _apply_usage(params, SimpleNamespace(usage_metadata=usage))
+    assert (params.usage_input_tokens, params.usage_image_tokens, params.usage_output_tokens) == (
+        270,
+        1030,
+        65,
+    )
+
+
+async def test_google_effort_becomes_thinking_level() -> None:
+    client = GoogleLLMClient(api_key="AIza-test")
+    client._client.models.generate_content = MagicMock(  # type: ignore[method-assign]
+        return_value=SimpleNamespace(text="A lake.", candidates=[])
+    )
+    await client.caption_image(
+        _FAKE_JPEG,
+        prompt_template="caption",
+        params=CallParams(
+            operation="caption_image",
+            provider="google",
+            model="gemini-3.5-flash-lite",
+            model_version="2026-07-21",
+            effort="minimal",
+        ),
+    )
+    config = client._client.models.generate_content.call_args.kwargs["config"]
+    level = config.thinking_config.thinking_level
+    assert getattr(level, "value", level) == "MINIMAL"
 
 
 async def test_google_caption_image_extracts_text() -> None:
@@ -333,3 +390,49 @@ async def test_google_extract_metadata_raises_on_non_json() -> None:
             ),
         )
     assert "non-JSON" in str(excinfo.value)
+
+
+async def test_google_verify_model_returns_the_served_version() -> None:
+    client = GoogleLLMClient(api_key="AIza-test")
+    client._client.models.get = MagicMock(  # type: ignore[method-assign]
+        return_value=SimpleNamespace(name="models/gemini-embedding-2", version="002")
+    )
+    assert await client.verify_model("gemini-embedding-2") == "gemini-embedding-2 (002)"
+    assert client._client.models.get.call_args.kwargs == {"model": "gemini-embedding-2"}
+
+
+async def test_google_verify_model_maps_not_found_and_bad_key() -> None:
+    client = GoogleLLMClient(api_key="AIza-test")
+    missing = Exception("404 NOT_FOUND. models/gemini-old is not found for API version v1beta")
+    missing.code = 404  # type: ignore[attr-defined]
+    client._client.models.get = MagicMock(side_effect=missing)  # type: ignore[method-assign]
+    with pytest.raises(LLMOperationFailed) as excinfo:
+        await client.verify_model("gemini-old")
+    assert "not available to this Google key" in str(excinfo.value)
+
+    bad_key = Exception("400 INVALID_ARGUMENT. API key not valid. Please pass a valid API key.")
+    bad_key.code = 400  # type: ignore[attr-defined]
+    client._client.models.get = MagicMock(side_effect=bad_key)  # type: ignore[method-assign]
+    with pytest.raises(LLMOperationFailed) as excinfo:
+        await client.verify_model("gemini-embedding-2")
+    assert "rejected the API key" in str(excinfo.value)
+
+
+async def test_google_retry_exhaustion_is_an_operation_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """tenacity must not leak LLMTransientError: callers (verify_routes, the 412
+    mapping, the wizard) only handle LLMOperationFailed."""
+    from impact_crater.llm_clients import google_client
+    from tenacity import wait_none
+
+    monkeypatch.setattr(google_client, "_RETRY_WAIT", wait_none())
+    client = GoogleLLMClient(api_key="AIza-test")
+    overloaded = Exception("503 UNAVAILABLE. The model is overloaded. Please try again later.")
+    overloaded.code = 503  # type: ignore[attr-defined]
+    client._client.models.get = MagicMock(side_effect=overloaded)  # type: ignore[method-assign]
+    with pytest.raises(LLMOperationFailed) as excinfo:
+        await client.verify_model("gemini-3.1-flash-lite-image")
+    assert client._client.models.get.call_count == 4
+    assert excinfo.value.attempts == 4
+    assert "Google models.get failed: 503" in str(excinfo.value)
