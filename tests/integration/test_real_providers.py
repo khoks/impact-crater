@@ -17,6 +17,7 @@ import pytest
 from impact_crater.llm_clients import prompts
 from impact_crater.llm_clients.anthropic_client import AnthropicLLMClient
 from impact_crater.llm_clients.base import CallParams, CandidateRef
+from impact_crater.llm_clients.exceptions import LLMOperationFailed
 from impact_crater.llm_clients.google_client import GoogleLLMClient
 from impact_crater.llm_clients.router import routed_models
 from impact_crater.pipeline.brief_intent import BRIEF_SCHEMA
@@ -207,11 +208,17 @@ async def test_google_title_background_is_a_16_9_1k_image(google_key: str) -> No
     params = _params("generate_title_background", "google", TITLE_IMAGE)
     params.temperature = 0.6
     params.extra["aspect_ratio"] = "16:9"
-    data = await client.generate_image(
-        "A cinematic, painterly title-card background, widescreen, no text anywhere: "
-        "red sandstone canyon at golden hour.",
-        params=params,
-    )
+    try:
+        data = await client.generate_image(
+            "A cinematic, painterly title-card background, widescreen, no text anywhere: "
+            "red sandstone canyon at golden hour.",
+            params=params,
+        )
+    except LLMOperationFailed as exc:
+        text = str(exc)
+        if "RESOURCE_EXHAUSTED" in text and "Free Tier" in text and "limit: 0" in text:
+            pytest.skip("this Google key is on the Free Tier, which has no image-generation quota")
+        raise
     with Image.open(io.BytesIO(data)) as img:
         w, h = img.size
     assert w > h, (w, h)

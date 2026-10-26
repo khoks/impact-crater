@@ -83,6 +83,13 @@ def _classify_failure(exc: Exception) -> str:
             "config/llm-routing.yaml for your key. Update the pin and re-run. Details: "
             f"{raw[:200]}"
         )
+    if "resource_exhausted" in low and "free tier" in low:
+        return (
+            "Google API quota exhausted — the key's project is on the Gemini Free Tier, which "
+            "has no or very little quota for this model. Enable billing on the Google Cloud "
+            "project behind the key (or wait for the daily reset), then re-run; it resumes "
+            "from cache."
+        )
     if "rate limit" in low or "rate_limit" in low or "429" in low:
         return (
             "Rate limited — an AI provider is throttling requests right now. Wait a "

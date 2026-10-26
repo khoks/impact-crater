@@ -63,3 +63,16 @@ def test_max_tokens_truncation_is_readable() -> None:
 def test_unrelated_404_is_not_reported_as_a_missing_model() -> None:
     raw = "HTTP 404 while fetching the model release notes page"
     assert _classify_failure(ValueError(raw)) == raw
+
+
+def test_free_tier_quota_is_named_not_called_a_rate_limit() -> None:
+    raw = (
+        "429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current "
+        "quota ... Quota exceeded for metric: generativelanguage.googleapis.com/"
+        "generate_content_free_tier_requests, limit: 0, model: gemini-3.1-flash-lite-image, "
+        "description: Generate content requests per day limit exceeded on Free Tier.'}}"
+    )
+    reason = _classify_failure(_failed(raw, model="gemini-3.1-flash-lite-image"))
+    assert reason.startswith("Google API quota exhausted")
+    assert "Free Tier" in reason
+    assert _classify_failure(_failed("429 rate_limit_error")).startswith("Rate limited")
