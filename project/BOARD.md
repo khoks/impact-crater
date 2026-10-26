@@ -18,7 +18,6 @@
 |---|---|---|---|---|---|
 | [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | Initiative | P0 | mvp | in-progress |
 | [E-2.9](./epics/E-2.9-cross-project-profile-mvp.md) | Cross-project user profile (N-010 minimum-viable) + polish + D-014 validation | Epic | P0 | mvp | in-progress |
-| [S-2.10.9](./stories/S-2.10.9-model-lineup-bump-current-ga-ids.md) | Model-lineup bump to current GA IDs — pinned model_version, rate cards, data-driven temperature guard, model-not-found mapping, real key ping (plan-phase-1) | Story | P0 | mvp-hardening | in-progress |
 | [I-3](./initiatives/I-3-v1-local-first-live-job-multi-platform-style-polish.md) | v1 — Local-first + live job + multi-platform + style + polish | Initiative | P1 | v1 | in-progress |
 | [E-3.3](./epics/E-3.3-multi-platform-connectors-instagram-facebook-x.md) | Multi-platform connectors — Instagram + Facebook + X (plan-phase-1, plan-phase-4) | Epic | P1 | v1 | in-progress |
 
@@ -44,6 +43,7 @@
 | [S-3.11.4](./stories/S-3.11.4-wheel-packaging-prompts-and-config.md) | Wheel packaging of prompts/ and config/; requires-python 3.12; single version source; CHANGELOG (plan-phase-2) | Story | P2 | mvp-hardening | todo |
 | [S-3.11.5](./stories/S-3.11.5-frontend-dependency-bump.md) | Frontend dependency bump — vite / vitest / jsdom / @types/node / tailwind / react-router majors; clear npm audit; engines check (plan-phase-1) | Story | P2 | mvp-hardening | todo |
 | [S-2.9.17](./stories/S-2.9.17-faststart-render-instant-preview.md) | Inline preview shows the first frame promptly — verify HTTP Range support for render.mp4 on starlette 1.0 (plan-phase-2) | Story | P3 | mvp-hardening | todo |
+| [S-3.11.7](./stories/S-3.11.7-cache-savings-estimate-prices-hits-at-average-miss.md) | Cache-savings figure prices every hit at this job's average miss (plan-phase-2) | Story | P3 | mvp-hardening | todo |
 
 ## Backlog (queued)
 
@@ -100,6 +100,7 @@ Placeholder stories backfilled on 2026-06-14 plus later filings whose restart-pl
 | [S-2.13.4](./stories/S-2.13.4-public-trust-docs-pass.md) | Public-trust docs pass — OVERVIEW, README, CLAUDE.md, ROADMAP, GROOMED, ARCHITECTURE, PIPELINE_DATAFLOW, headers, RAW_VISION addenda | Story | 2026-10-25 |
 | [S-2.13.3](./stories/S-2.13.3-feedback-inbox-triage.md) | Feedback inbox triage — close the A-023 loop for the 11 rows still status=new | Story | 2026-10-25 |
 | [S-2.13.2](./stories/S-2.13.2-d057-mvp-closure-and-honest-preflight.md) | D-057 MVP-closure decision + honest MVP.md pre-flight | Story | 2026-10-25 |
+| [S-2.10.9](./stories/S-2.10.9-model-lineup-bump-current-ga-ids.md) | Model-lineup bump to current GA IDs — pinned model_version, rate cards, data-driven temperature guard, model-not-found mapping, real key ping | Story | 2026-10-25 |
 | [S-3.3.2](./stories/S-3.3.2-facebookconnector-xconnector.md) | FacebookConnector (Page video) | Story | 2026-10-24 |
 | [S-3.3.1](./stories/S-3.3.1-instagramconnector-graph-api-facebook-login.md) | InstagramConnector — env-var credentials, dry-run only, never live-tested | Story | 2026-10-24 |
 | [S-2.13.6](./stories/S-2.13.6-repo-and-session-hygiene.md) | Repo + session hygiene — worktree, .scratch, launch.json, hook allow entry, lock file, metadata, stale assets | Story | 2026-10-24 |
@@ -188,6 +189,6 @@ Regenerate with `python scripts/tracker_board.py`; `--check` fails when this fil
 |---|---|---|---|---|---|---|---|
 | Initiative | 2 | 0 | 0 | 1 | 2 | 0 | 5 |
 | Epic | 0 | 0 | 0 | 17 | 2 | 19 | 38 |
-| Story | 0 | 1 | 1 | 78 | 1 | 64 | 145 |
+| Story | 0 | 1 | 1 | 79 | 0 | 65 | 146 |
 | Task | 0 | 0 | 0 | 30 | 0 | 0 | 30 |
-| **All** | 2 | 1 | 1 | 126 | 5 | 83 | 218 |
+| **All** | 2 | 1 | 1 | 127 | 4 | 84 | 219 |

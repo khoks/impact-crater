@@ -13,9 +13,10 @@ the N-008 collage input was never wired (ADR-0010 amendment 2026-10-25).
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 TimeOfDay = Literal["morning", "midday", "golden_hour", "dusk", "night", "indoor", "ambiguous"]
 
@@ -211,6 +212,34 @@ def _unquote(value: Any) -> Any:
     return value
 
 
+_LEAKED_PARAMETER = re.compile(r'\s*<parameter name="(\w+)">')
+_TRAILING_TAG = re.compile(r"\s*</\w+>\s*$")
+
+
+def _recover_leaked_parameters(data: Any) -> Any:
+    """Split the old XML tool-call format back into keys.
+
+    Haiku 5.5 (13 % of a 75-shot smoke job, 2026-10-25) sometimes writes one
+    value as `0.25</obstruction_level>\n<parameter name="obstruction_notes">text`:
+    the value, its own closing tag, then the next parameters inline. Only values
+    that carry their own `</key>` are split, so the `people` / `location` leaks
+    their field validators already parse are left alone; a recovered key never
+    overrides one the model sent properly.
+    """
+    if not isinstance(data, dict):
+        return data
+    out = dict(data)
+    for key, value in data.items():
+        if not isinstance(value, str) or f"</{key}>" not in value:
+            continue
+        head, _, rest = value.partition(f"</{key}>")
+        out[key] = head.strip()
+        parts = _LEAKED_PARAMETER.split(rest)
+        for name, leaked in zip(parts[1::2], parts[2::2], strict=False):
+            out.setdefault(name, _TRAILING_TAG.sub("", leaked).strip())
+    return out
+
+
 class RichMetadataPhoto(BaseModel):
     """The D-009 per-photo rich-metadata schema."""
 
@@ -278,6 +307,7 @@ class RichMetadataPhoto(BaseModel):
     _coerce_location = field_validator("location", mode="before")(_coerce_location_obs)
     _coerce_main_subjects = field_validator("main_subjects", mode="before")(_coerce_main_subjects)
     _unquote_scalars = field_validator("*", mode="before")(_unquote)
+    _recover_leaks = model_validator(mode="before")(_recover_leaked_parameters)
 
 
 class RichMetadataVideoScene(RichMetadataPhoto):
