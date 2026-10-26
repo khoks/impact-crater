@@ -6,7 +6,9 @@ from collections.abc import AsyncIterator
 
 import httpx
 import pytest
+from impact_crater.api import setup as setup_mod
 from impact_crater.app import create_app
+from impact_crater.llm_clients.exceptions import LLMOperationFailed
 from impact_crater.storage import settings as settings_store
 from impact_crater.storage.db import connection
 from impact_crater.storage.migrations import run_pending_migrations
@@ -36,16 +38,46 @@ async def test_status_returns_false_before_completion(client: httpx.AsyncClient)
     assert r.json() == {"setup_complete": False}
 
 
-async def test_test_key_accepts_non_empty_key(client: httpx.AsyncClient) -> None:
-    await run_pending_migrations()
+async def test_test_key_pings_the_provider_and_lists_routed_models(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    async def fake_verify(provider: str, key: str) -> list[str]:
+        calls.append((provider, key))
+        return ["claude-haiku-5-5", "claude-opus-5-5"]
+
+    monkeypatch.setattr(setup_mod, "_verify_provider", fake_verify)
     r = await client.post(
         "/api/setup/test-key",
-        json={"provider": "anthropic", "key": "sk-ant-anything"},
+        json={"provider": "anthropic", "key": " sk-ant-anything "},
     )
     assert r.status_code == 200
     body = r.json()
     assert body["success"] is True
     assert "Anthropic" in body["message"]
+    assert "claude-haiku-5-5" in body["message"]
+    assert calls == [("anthropic", "sk-ant-anything")]
+
+
+async def test_test_key_reports_a_rejected_key_or_missing_model(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reason = "model 'gemini-embedding-2' is not available to this Google key (404 NOT_FOUND)"
+
+    async def fake_verify(provider: str, key: str) -> list[str]:
+        raise LLMOperationFailed(
+            operation="verify_model",
+            provider=provider,
+            model="gemini-embedding-2",
+            attempts=1,
+            last_error=reason,
+        )
+
+    monkeypatch.setattr(setup_mod, "_verify_provider", fake_verify)
+    r = await client.post("/api/setup/test-key", json={"provider": "google", "key": "AIza-x"})
+    assert r.status_code == 200
+    assert r.json() == {"success": False, "message": reason}
 
 
 async def test_test_key_rejects_empty_key(client: httpx.AsyncClient) -> None:

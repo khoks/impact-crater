@@ -34,6 +34,9 @@ class RateCard:
     output_token_rate_usd_per_1k: float
     image_input_rate_usd_per_1k_tokens_equivalent: float | None = None
     embedding_rate_usd_per_1k_tokens: float | None = None
+    # Flat price per call for ops whose provider reports no token usage
+    # (per-image embeddings, image generation).
+    per_call_rate_usd: float | None = None
 
 
 def _rate_cards_dir() -> Path:
@@ -70,9 +73,8 @@ def load(provider: str, model: str, model_version: str) -> RateCard:
         image_input_rate_usd_per_1k_tokens_equivalent=_opt_float(
             raw.get("image_input_rate_usd_per_1k_tokens_equivalent")
         ),
-        embedding_rate_usd_per_1k_tokens=_opt_float(
-            raw.get("embedding_rate_usd_per_1k_tokens")
-        ),
+        embedding_rate_usd_per_1k_tokens=_opt_float(raw.get("embedding_rate_usd_per_1k_tokens")),
+        per_call_rate_usd=_opt_float(raw.get("per_call_rate_usd")),
     )
 
 

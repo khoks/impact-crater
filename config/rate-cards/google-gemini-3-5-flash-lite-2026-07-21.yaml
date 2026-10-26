@@ -1,0 +1,9 @@
+# ai.google.dev/gemini-api/docs/pricing, read 2026-10-25. Configured Tier-S
+# fallback (D-061). Output rate includes thinking tokens.
+provider: google
+model: gemini-3.5-flash-lite
+model_version: "2026-07-21"
+effective_date: 2026-07-21
+input_token_rate_usd_per_1k: 0.0003
+output_token_rate_usd_per_1k: 0.0025
+image_input_rate_usd_per_1k_tokens_equivalent: 0.0003

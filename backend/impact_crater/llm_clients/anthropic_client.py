@@ -1,23 +1,26 @@
 """AnthropicLLMClient — implementation against the official `anthropic` SDK.
 
-Uses the Messages API throughout; structured-output operations use Anthropic's
-tool-use mode (the model is forced to invoke a single tool whose input_schema
-is the desired JSON Schema, then we parse `tool_input` as the structured result).
+Uses the Messages API throughout. Structured-output operations use tool use with
+`tool_choice: auto` (the 5.x models reject forced tool choice) and `strict: true`
+on the tool definition, so a returned `tool_use` block always matches the schema;
+the prompt tells the model to call the tool exactly once.
 
-Per ADR-0009, this client serves Tier-M Sonnet (`extract_metadata_image`,
-`parse_user_brief`) and Tier-L Opus (`judge_narrative_arc`).
+Per D-061 this client serves Tier-S and Tier-M Haiku 5.5 (`caption_image`,
+`score_image`, `extract_metadata_image`, `parse_user_brief`, `generate_title_text`)
+and Tier-L Opus 5.5 (`judge_narrative_arc`). Thinking is on by default on these
+models and controlled through `output_config.effort`; `temperature` is never sent
+(non-default values are rejected, and the parameter is gone in API version
+2026-10-21).
 """
 
 from __future__ import annotations
 
 import base64
 import io
-import json
 import logging
 from typing import Any, Literal
 
 import anthropic
-import numpy as np
 from PIL import Image, ImageOps
 from tenacity import (
     AsyncRetrying,
@@ -25,17 +28,6 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
-
-log = logging.getLogger(__name__)
-
-# Models that deprecated the `temperature` sampling parameter and reject any
-# request that includes it (400 invalid_request_error). Extend as new models land.
-_TEMPERATURE_UNSUPPORTED_MODELS = frozenset({"claude-opus-4-8"})
-
-
-def _supports_temperature(model: str) -> bool:
-    return model not in _TEMPERATURE_UNSUPPORTED_MODELS
-
 
 from impact_crater.llm_clients.base import (
     ArcJudgment,
@@ -46,6 +38,8 @@ from impact_crater.llm_clients.base import (
     SelectedItem,
 )
 from impact_crater.llm_clients.exceptions import LLMOperationFailed, LLMTransientError
+
+log = logging.getLogger(__name__)
 
 
 class AnthropicLLMClient:
@@ -89,6 +83,23 @@ class AnthropicLLMClient:
             last_error="anthropic provider does not support generate_image; route to google",
         )
 
+    async def verify_model(self, model: str) -> str:
+        try:
+            info = await self._client.models.retrieve(model)
+        except anthropic.NotFoundError as e:
+            raise _verify_failed(
+                model,
+                f"model {model!r} is not available to this Anthropic key (404 not_found_error)",
+            ) from e
+        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as e:
+            raise _verify_failed(
+                model,
+                f"Anthropic rejected the API key (HTTP {e.status_code}, authentication_error)",
+            ) from e
+        except anthropic.APIError as e:
+            raise _verify_failed(model, f"Anthropic models.retrieve failed: {str(e)[:200]}") from e
+        return str(info.id)
+
     # -- Vision-language captioning + scoring ------------------------------
 
     async def caption_image(
@@ -116,17 +127,15 @@ class AnthropicLLMClient:
         dimension: str,
         params: CallParams,
     ) -> float:
-        # Forced-tool-use to get a single float in [0, 1].
         tool = {
             "name": "submit_score",
             "description": f"Submit a {dimension} score in [0.0, 1.0]",
+            "strict": True,
             "input_schema": {
                 "type": "object",
                 "required": ["score"],
-                "properties": {
-                    "score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-                    "reasoning": {"type": "string"},
-                },
+                "properties": {"score": {"type": "number"}},
+                "additionalProperties": False,
             },
         }
         result = await self._call_tool_use(
@@ -143,7 +152,7 @@ class AnthropicLLMClient:
             ],
             tool_name="submit_score",
         )
-        return float(result["score"])
+        return max(0.0, min(1.0, float(result["score"])))
 
     # -- Structured-output extraction --------------------------------------
 
@@ -179,7 +188,7 @@ class AnthropicLLMClient:
     ) -> ArcJudgment:
         # The prompt_template is rendered upstream (by the router/prompts loader)
         # with brief + target_duration + music_spec + candidates already
-        # interpolated. Here we just send it + force a tool that returns the
+        # interpolated. Here we just send it; the prompt asks for the tool that returns the
         # structured ArcJudgment.
         tool = {
             "name": "submit_arc_judgment",
@@ -265,16 +274,15 @@ class AnthropicLLMClient:
             "max_tokens": params.max_tokens,
             "messages": messages,
         }
-        # Some newer models (e.g. Opus 4.8) deprecated `temperature` and reject
-        # the request outright when it is present. Only send it where supported.
-        if _supports_temperature(params.model):
-            kwargs["temperature"] = params.temperature
+        if params.effort:
+            kwargs["output_config"] = {"effort": params.effort}
         if system:
             kwargs["system"] = system
         if tools:
             kwargs["tools"] = tools
         msg = await _retry(params, lambda: self._client.messages.create(**kwargs))
         _apply_usage(params, msg)
+        _check_stop_reason(params, msg)
         return msg
 
     async def _call_tool_use(
@@ -293,12 +301,16 @@ class AnthropicLLMClient:
         for block in msg.content:
             if block.type == "tool_use" and block.name == tool_name:
                 return dict(block.input)
+        text = next((b.text for b in msg.content if b.type == "text"), "")
         raise LLMOperationFailed(
             operation=params.operation,
             provider=self.provider,
             model=params.model,
             attempts=1,
-            last_error=f"model did not call expected tool {tool_name!r}",
+            last_error=(
+                f"model did not call expected tool {tool_name!r} "
+                f"(stop_reason={getattr(msg, 'stop_reason', None)}, text={text[:160]!r})"
+            ),
         )
 
     async def _extract_via_tool(
@@ -311,7 +323,8 @@ class AnthropicLLMClient:
         tool = {
             "name": "submit_metadata",
             "description": "Submit the structured metadata extraction.",
-            "input_schema": schema,
+            "strict": True,
+            "input_schema": _strict_schema(schema),
         }
         return await self._call_tool_use(
             params,
@@ -452,7 +465,9 @@ def _resize_to_max_edge(img: Image.Image, max_edge: int) -> Image.Image:
     if longest <= max_edge:
         return img
     scale = max_edge / longest
-    return img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
+    return img.resize(
+        (max(1, round(w * scale)), max(1, round(h * scale))), Image.Resampling.LANCZOS
+    )
 
 
 def _apply_usage(params: CallParams, msg: Any) -> None:
@@ -475,6 +490,83 @@ def _apply_usage(params: CallParams, msg: Any) -> None:
     params.usage_image_tokens = 0
 
 
+# Keywords strict tool use does not accept: numeric / string / array constraints
+# and presentation-only fields. The API still guarantees the returned input
+# matches the remaining schema; Stage 3's pydantic parse re-checks the bounds.
+_STRICT_UNSUPPORTED = frozenset(
+    {
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "multipleOf",
+        "minLength",
+        "maxLength",
+        "pattern",
+        "minItems",
+        "maxItems",
+        "default",
+        "title",
+    }
+)
+
+
+def _strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Copy `schema` into the shape strict tool use accepts: every object closed
+    with `additionalProperties: false`, unsupported keywords dropped. Property and
+    `$defs` names are never touched (a field may be called `title`)."""
+
+    def walk(node: Any) -> Any:
+        if isinstance(node, list):
+            return [walk(v) for v in node]
+        if not isinstance(node, dict):
+            return node
+        out: dict[str, Any] = {}
+        for k, v in node.items():
+            if k in _STRICT_UNSUPPORTED:
+                continue
+            if k in ("properties", "$defs") and isinstance(v, dict):
+                out[k] = {name: walk(sub) for name, sub in v.items()}
+            else:
+                out[k] = walk(v)
+        if "properties" in out:
+            out["additionalProperties"] = False
+        return out
+
+    result: dict[str, Any] = walk(schema)
+    return result
+
+
+def _check_stop_reason(params: CallParams, msg: Any) -> None:
+    reason = getattr(msg, "stop_reason", None)
+    if reason == "refusal":
+        details = getattr(msg, "stop_details", None)
+        raise LLMOperationFailed(
+            operation=params.operation,
+            provider=params.provider,
+            model=params.model,
+            attempts=1,
+            last_error=(
+                f"stop_reason=refusal category={getattr(details, 'category', None)} "
+                f"explanation={str(getattr(details, 'explanation', '') or '')[:200]!r}"
+            ),
+        )
+    if reason == "model_context_window_exceeded":
+        raise LLMOperationFailed(
+            operation=params.operation,
+            provider=params.provider,
+            model=params.model,
+            attempts=1,
+            last_error="stop_reason=model_context_window_exceeded",
+        )
+
+
+def _verify_failed(model: str, reason: str) -> LLMOperationFailed:
+    return LLMOperationFailed(
+        operation="verify_model", provider="anthropic", model=model, attempts=1, last_error=reason
+    )
+
+
 def _first_text(msg: anthropic.types.Message) -> str:
     for block in msg.content:
         if block.type == "text":
@@ -491,9 +583,7 @@ def _first_text(msg: anthropic.types.Message) -> str:
 def _is_transient(e: BaseException) -> bool:
     if isinstance(e, anthropic.APIStatusError):
         return e.status_code in (408, 425, 429, 500, 502, 503, 504)
-    if isinstance(e, anthropic.APIConnectionError | anthropic.APITimeoutError):
-        return True
-    return False
+    return isinstance(e, anthropic.APIConnectionError | anthropic.APITimeoutError)
 
 
 async def _retry(params: CallParams, callable_: Any) -> Any:
@@ -556,8 +646,3 @@ async def _retry(params: CallParams, callable_: Any) -> Any:
         attempts=attempts,
         last_error=last_error or "unknown",
     )
-
-
-# Use `json` import so ruff F401 doesn't flag it; structured output may need
-# json.dumps in future for prompt-side serialization.
-_ = json

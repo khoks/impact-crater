@@ -1,0 +1,12 @@
+# ai.google.dev/gemini-api/docs/pricing, read 2026-10-25: text $0.20 / 1M tokens,
+# image $0.45 / 1M tokens or $0.00012 per image. embed_content reports no token
+# usage, so the router prices each call at `per_call_rate_usd`.
+provider: google
+model: gemini-embedding-2
+model_version: "2026-04-22"
+effective_date: 2026-04-22
+input_token_rate_usd_per_1k: 0.0002
+output_token_rate_usd_per_1k: 0.0
+image_input_rate_usd_per_1k_tokens_equivalent: 0.00045
+embedding_rate_usd_per_1k_tokens: 0.0002
+per_call_rate_usd: 0.00012

@@ -18,6 +18,11 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
+from impact_crater.llm_clients.anthropic_client import AnthropicLLMClient
+from impact_crater.llm_clients.base import LLMClient
+from impact_crater.llm_clients.exceptions import LLMOperationFailed
+from impact_crater.llm_clients.google_client import GoogleLLMClient
+from impact_crater.llm_clients.router import routed_models
 from impact_crater.storage import settings as settings_store
 
 router = APIRouter()
@@ -52,16 +57,12 @@ class CompleteRequest(BaseModel):
 
     @field_validator("spend_cap_anthropic_usd", "spend_cap_google_usd")
     @classmethod
-    def _per_provider_cap_within_total(
-        cls, v: float | None, info: ValidationInfo
-    ) -> float | None:
+    def _per_provider_cap_within_total(cls, v: float | None, info: ValidationInfo) -> float | None:
         # Pydantic 2 calls validators in declaration order; total is required
         # and lands in `info.data` before per-provider caps.
         total = info.data.get("spend_cap_total_usd")
         if v is not None and total is not None and v > total:
-            raise ValueError(
-                f"per-provider cap (${v}) cannot exceed total cap (${total})"
-            )
+            raise ValueError(f"per-provider cap (${v}) cannot exceed total cap (${total})")
         return v
 
 
@@ -79,23 +80,26 @@ async def status_endpoint() -> StatusResponse:
 
 @router.post("/test-key", response_model=TestKeyResponse)
 async def test_key(req: TestKeyRequest) -> TestKeyResponse:
-    """Stub key-test at M0.
-
-    A real provider ping (small models.list call against the Anthropic /
-    Google APIs) lands in M1 (E-2.2 headless curation through Stage 5)
-    when the LLM client implementations land. M0 only validates that the
-    key string is non-empty + provider is recognised so the wizard can
-    show a green checkmark.
-    """
-    if not req.key.strip():
+    """Ping the provider with the submitted key and resolve every model the routing
+    config sends to it (unbilled `models.retrieve` / `models.get`, A-028)."""
+    key = req.key.strip()
+    if not key:
         return TestKeyResponse(success=False, message="API key is empty.")
+    try:
+        models = await _verify_provider(req.provider, key)
+    except LLMOperationFailed as exc:
+        return TestKeyResponse(success=False, message=str(exc.last_error))
     return TestKeyResponse(
         success=True,
-        message=(
-            f"{req.provider.title()} key accepted. Real provider ping lands "
-            "in M1 (E-2.2)."
-        ),
+        message=f"{req.provider.title()} key accepted — {', '.join(models)} available.",
     )
+
+
+async def _verify_provider(provider: Provider, key: str) -> list[str]:
+    client: LLMClient = (
+        AnthropicLLMClient(api_key=key) if provider == "anthropic" else GoogleLLMClient(api_key=key)
+    )
+    return [await client.verify_model(m) for m in routed_models(provider)]
 
 
 @router.post("/complete", response_model=CompleteResponse)

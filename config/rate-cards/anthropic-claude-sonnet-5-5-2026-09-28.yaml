@@ -1,0 +1,8 @@
+# platform.claude.com/docs/en/about-claude/pricing, read 2026-10-25. Tier-M hedge (D-061).
+provider: anthropic
+model: claude-sonnet-5-5
+model_version: "2026-09-28"
+effective_date: 2026-09-28
+input_token_rate_usd_per_1k: 0.002
+output_token_rate_usd_per_1k: 0.010
+image_input_rate_usd_per_1k_tokens_equivalent: 0.002

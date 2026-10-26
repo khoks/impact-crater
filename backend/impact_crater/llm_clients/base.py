@@ -86,6 +86,9 @@ class CallParams:
     model_version: str
     max_tokens: int = 1024
     temperature: float = 0.0
+    # Provider reasoning-depth knob: Anthropic `output_config.effort`, Gemini
+    # `thinking_config.thinking_level`. None = the provider's default.
+    effort: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
     # Real token usage written back by the provider client after the API
     # responds, read by the LLMRouter to compute accurate per-token cost
@@ -115,6 +118,10 @@ class LLMClient(Protocol):
     """
 
     provider: str  # "anthropic" / "google" / "local" / etc.
+
+    # Unbilled pre-spend ping (A-028): resolve `model` with this key and
+    # return the provider's served identifier; raises LLMOperationFailed.
+    async def verify_model(self, model: str) -> str: ...
 
     # Image generation (S-2.11.5) — returns raw PNG/JPEG bytes. Not every
     # provider supports it (Anthropic raises LLMOperationFailed).

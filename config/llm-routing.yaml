@@ -7,19 +7,36 @@
 #
 # This file is the source of truth for which model serves which operation
 # (ADR-0009 amendment 2026-10-25). Every operation here has an `LLMRouter`
-# method and `pipeline/runner.py::_TIER_BY_OPERATION` mirrors it
-# (tests/test_routing_config_integrity.py). S-2.10.9 bumps the IDs and pins
-# real `model_version` tokens.
+# method, `pipeline/runner.py::_TIER_BY_OPERATION` mirrors it, every routed
+# (provider, model, model_version) has a rate card under config/rate-cards/,
+# and every op with a prompts/<op>/ directory has a `<provider>_<model>.jinja2`
+# template (tests/test_routing_config_integrity.py).
 #
-# Tiers (ADR-0009):
-#   S — Tier-S Gemini Flash (cheap, bulk, vision-language)
-#   M — Tier-M Claude Sonnet (structured output)
-#   L — Tier-L Claude Opus (one-call-per-job heavy reasoning)
-#   embedding — Google embedding model (not on the S/M/L axis)
+# Lineup: D-061 (2026-10-25). Tiers (ADR-0009):
+#   S — bulk vision calls (captions, 0–1 scores)
+#   M — structured output (rich metadata, brief parsing, title text, title image)
+#   L — one-call-per-job heavy reasoning (the narrative-arc judge)
+#   embedding — image / text vectors (not on the S/M/L axis)
 #
-# `model_version` is a free-form opaque token that participates in the cache key
-# (ADR-0006 cache_index, A-011 / N-007). Bump it to invalidate cache entries
-# when the upstream provider rolls a model in place.
+# `model_version` participates in the cache key (ADR-0006 cache_index, A-011 /
+# N-007) and selects the rate card. It is the model's release date: Anthropic's
+# dateless IDs are pinned snapshots; Google's IDs are aliases Google may roll in
+# place, so bump the token when the pre-spend ping (`LLMRouter.verify_routes`)
+# reports a new served version — that invalidates the affected cache entries
+# deliberately.
+#
+# `effort` is passed through as the provider's reasoning-depth knob:
+# `output_config.effort` (low | medium | high | xhigh | max) on Anthropic,
+# `thinking_config.thinking_level` (minimal | low | medium | high) on Google.
+# Thinking is on by default on every routed Claude model; its tokens are billed
+# as output and count toward `max_tokens`, so the caps below leave headroom
+# above the visible answer. `temperature` is never sent to Anthropic (4.7+
+# models reject non-default values); it still applies to Google ops.
+#
+# Configured fallbacks (flip the yaml; prompts and rate cards are shipped):
+#   Tier-S / title text  → google / gemini-3.5-flash-lite / "2026-07-21", effort: minimal
+#   Tier-M quality hedge → anthropic / claude-sonnet-5-5 / "2026-09-28", effort: low
+#   Title background 2K  → google / gemini-nano-banana-2.1 / "2026-10-06" (needs a rate card)
 
 defaults:
   max_tokens: 1024
@@ -28,78 +45,88 @@ defaults:
 operations:
 
   # ---- Embedding -------------------------------------------------------
+  # gemini-embedding-2 embeds the image bytes directly (shared text/image
+  # space, 768-d MRL output set in google_client). Replaces caption-then-embed;
+  # vectors are incompatible with gemini-embedding-001, so the Stage 4 cosine
+  # dedup threshold is re-tuned on the Zion fixture (S-3.10.1).
   embed_image:
     provider: google
-    model: gemini-embedding-001
-    model_version: v1
+    model: gemini-embedding-2
+    model_version: "2026-04-22"
     tier: embedding
   embed_text:
     provider: google
-    model: gemini-embedding-001
-    model_version: v1
+    model: gemini-embedding-2
+    model_version: "2026-04-22"
     tier: embedding
 
   # ---- Tier-S (bulk, cheap) -------------------------------------------
   caption_image:
-    provider: google
-    model: gemini-2.5-flash
-    model_version: v1
+    provider: anthropic
+    model: claude-haiku-5-5
+    model_version: "2026-10-07"
     tier: S
-    max_tokens: 256
+    effort: low
+    max_tokens: 1024
   score_image:
-    provider: google
-    model: gemini-2.5-flash
-    model_version: v1
+    provider: anthropic
+    model: claude-haiku-5-5
+    model_version: "2026-10-07"
     tier: S
-    # Gemini emits a "Here is..." preamble before the JSON; the schema-hint
-    # suffix is supposed to suppress it but doesn't reliably. Give the model
-    # enough headroom to recover with the JSON even after a short preamble.
-    max_tokens: 256
+    effort: low
+    max_tokens: 1024
   # S-2.11.7 — clean 2–5 word splash-card title from the brief + year. One
   # cheap call per title-card job; the stage falls back to a heuristic on any
-  # failure (missing key, quota-denied, empty output). Slight temperature for
-  # a touch of flair without drifting off the brief.
+  # failure (missing key, quota-denied, empty output).
   generate_title_text:
-    provider: google
-    model: gemini-2.5-flash
-    model_version: v1
+    provider: anthropic
+    model: claude-haiku-5-5
+    model_version: "2026-10-07"
     tier: S
-    max_tokens: 64
-    temperature: 0.5
+    effort: low
+    max_tokens: 1024
 
   # ---- Tier-M (structured output) --------------------------------------
   # extract_metadata_image also serves video-scene frames: Stage 3 passes the
   # RichMetadataVideoScene schema for scenes (there is no separate op).
+  # A/B-gated per D-061 (50 SW-US shots against the cached Sonnet 4.6
+  # metadata); claude-sonnet-5-5 is the hedge if field agreement drops.
   extract_metadata_image:
     provider: anthropic
-    model: claude-sonnet-4-6
-    model_version: latest
+    model: claude-haiku-5-5
+    model_version: "2026-10-07"
     tier: M
-    max_tokens: 2048
+    effort: low
+    max_tokens: 4096
   # parse_user_brief also carries Stage 0.5 brief intent, the Stage 6.5
   # second-guess and the Stage 9 refinement planner (ADR-0021).
   parse_user_brief:
     provider: anthropic
-    model: claude-sonnet-4-6
-    model_version: latest
+    model: claude-haiku-5-5
+    model_version: "2026-10-07"
     tier: M
-    max_tokens: 1024
+    effort: low
+    max_tokens: 4096
   # S-2.11.5 opt-in AI title/splash card background (remote image-gen per D-054).
   # One call per job, only when the user opts in; fail-soft to a typographic card.
+  # 1K is the only resolution gemini-3.1-flash-lite-image renders.
   generate_title_background:
     provider: google
-    model: gemini-2.5-flash-image
-    model_version: v1
+    model: gemini-3.1-flash-lite-image
+    model_version: "2026-06-30"
     tier: M
     max_tokens: 1024
     temperature: 0.6
 
   # ---- Tier-L (heavy reasoning, one-call-per-job) ---------------------
+  # Opus 5.5 thinks on every call (cannot be disabled) and defaults to effort
+  # medium, so `high` is set explicitly. 20000 stays under the SDK's
+  # non-streaming ceiling (~21k tokens) while leaving thinking headroom above
+  # the ~4k-token judgment for 40–60 selected clips (S-2.11.1).
   judge_narrative_arc:
     provider: anthropic
-    model: claude-opus-4-8
-    model_version: latest
+    model: claude-opus-5-5
+    model_version: "2026-09-21"
     tier: L
-    # 8192: snappy 2-3s clips mean ~40-60 selected_items for a 120s video
-    # (S-2.11.1) — 4096 truncated the tool call at that clip count.
-    max_tokens: 8192
+    effort: high
+    max_tokens: 20000

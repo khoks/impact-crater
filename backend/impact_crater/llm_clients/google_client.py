@@ -1,21 +1,19 @@
 """GoogleLLMClient — implementation against the official `google-genai` SDK.
 
-Per ADR-0009, this client serves Tier-S Gemini Flash (`caption_image`,
-`score_image`, `generate_title_text`), the title-card image model and the
-embeddings (`gemini-embedding-001`; `embed_image` captions first, then embeds
-the caption text — ADR-0018 replaces this). The Anthropic client raises for
-embed_* operations so the router pattern stays clean.
+Per D-061 this client serves the embeddings (`gemini-embedding-2`, which embeds
+the image bytes directly into a space shared with text) and the title-card image
+model (`gemini-3.1-flash-lite-image`). The text ops are implemented too, so the
+configured Tier-S fallback (`gemini-3.5-flash-lite`) is a yaml flip. The Anthropic
+client raises for embed_* / generate_image so the router pattern stays clean.
 
 Structured outputs are prompted JSON with a schema-keyword scrub
 (`_call_with_schema`) rather than `response_schema`, for cross-version
 robustness of the SDK.
-
-Note: the older `google-generativeai` package was deprecated in favor of
-`google-genai`. This client targets the new SDK from the start.
 """
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 from typing import Any, Literal
@@ -23,14 +21,13 @@ from typing import Any, Literal
 import numpy as np
 from google import genai
 from google.genai import types as gtypes
+from PIL import Image, ImageOps
 from tenacity import (
     AsyncRetrying,
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
 )
-
-log = logging.getLogger(__name__)
 
 from impact_crater.llm_clients.base import (
     ArcJudgment,
@@ -42,20 +39,20 @@ from impact_crater.llm_clients.base import (
 )
 from impact_crater.llm_clients.exceptions import LLMOperationFailed, LLMTransientError
 
+log = logging.getLogger(__name__)
 
-_EMBED_MODEL = "gemini-embedding-001"
+# gemini-embedding-2 MRL output size (API-normalized at non-default sizes).
+# Changing it changes the vector space: bump the op's model_version so cached
+# vectors are never mixed in the Stage 4 cosine dedup.
+_EMBED_DIM = 768
 
-# Used when Gemini Flash returns an empty caption for an image (safety
-# filter / refusal / blank candidate). embed_text would otherwise call
-# Google's embed_content with an empty string and trip a 400. The
-# fallback is intentionally generic so one problem image produces a
-# benign embedding rather than killing the whole job; downstream
-# Stage 4 prefilter will likely drop the asset anyway because its
-# quality / narrative-relevance scores were computed on the same image.
+# embed_content rejects an empty text Part with a 400 (real failure 2026-05-06);
+# embed_text substitutes this placeholder so one blank input cannot kill a job.
 _EMPTY_TEXT_FALLBACK = "an image"
-# Embedding dimensionality is provider/model-specific; we don't assert a
-# specific value here. The router stores the actual emb.shape on the cache
-# key for the v1 reuse-class semantics.
+
+# embed_content accepts PNG / JPEG only, and a 768-d vector needs no more than
+# ~1 MP, so other formats and oversized inputs are re-encoded first.
+_EMBED_MAX_EDGE_PX = 1024
 
 
 class GoogleLLMClient:
@@ -69,58 +66,48 @@ class GoogleLLMClient:
     # -- Embeddings ---------------------------------------------------------
 
     async def embed_image(self, image_bytes: bytes, *, params: CallParams) -> Embedding:
-        # Google's embed_content API does not accept image bytes directly.
-        # Round-trip through Gemini Flash to caption first, then embed the
-        # caption. v1's local-tier may use a true image-embedding model.
-        caption = await self._caption_for_embedding(image_bytes, params)
-        return await self.embed_text(caption, params=params)
+        fitted = _fit_image_for_embedding(image_bytes)
+        part = gtypes.Part.from_bytes(data=fitted, mime_type=_sniff_mime_type(fitted))
+        return await self._embed(params, [part])
 
     async def embed_text(self, text: str, *, params: CallParams) -> Embedding:
-        # Google's embed_content rejects empty content with a 400
-        # `EmbedContentRequest.content contains an empty Part`. Real failure
-        # caught by user run on 2026-05-06 at item 1066/2316 of Stage 2 —
-        # Gemini Flash had returned an empty caption (safety filter /
-        # refusal / blank candidate) for one image, that empty string
-        # flowed through embed_image, and the API rejected it. Fall back
-        # to a benign placeholder so a single problem image can't kill a
-        # whole 545-asset job.
         if not text or not text.strip():
             text = _EMPTY_TEXT_FALLBACK
+        return await self._embed(params, [text])
+
+    async def _embed(self, params: CallParams, contents: list[Any]) -> Embedding:
         result = await _retry(
             params,
             lambda: _to_async(
                 self._client.models.embed_content,
-                model=_EMBED_MODEL,
-                contents=text,
+                model=params.model,
+                contents=contents,
+                config=gtypes.EmbedContentConfig(output_dimensionality=_EMBED_DIM),
             ),
         )
-        # google-genai returns ContentEmbedding objects with `values: list[float]`.
-        emb_obj = result.embeddings[0]
-        emb = np.asarray(emb_obj.values, dtype=np.float32)
-        return emb
+        return np.asarray(result.embeddings[0].values, dtype=np.float32)
 
-    async def _caption_for_embedding(self, image_bytes: bytes, params: CallParams) -> str:
-        flash_params = CallParams(
-            operation="_internal_caption_for_embedding",
-            provider="google",
-            model="gemini-2.5-flash",
-            model_version=params.model_version,
-            max_tokens=128,
-            temperature=0.0,
-        )
-        caption = await self.caption_image(
-            image_bytes,
-            prompt_template="Describe this image in one short, concrete sentence.",
-            params=flash_params,
-        )
-        if not caption or not caption.strip():
-            log.warning(
-                "google_caption_empty_for_embedding model=%s falling_back_to=%r",
-                flash_params.model,
-                _EMPTY_TEXT_FALLBACK,
-            )
-            return _EMPTY_TEXT_FALLBACK
-        return caption
+    async def verify_model(self, model: str) -> str:
+        try:
+            info = await _to_async(self._client.models.get, model=model)
+        except Exception as e:
+            code = getattr(e, "code", None)
+            text = str(e)
+            if code == 404 or "NOT_FOUND" in text:
+                reason = f"model {model!r} is not available to this Google key (404 NOT_FOUND)"
+            elif code in (401, 403) or (code == 400 and "api key" in text.lower()):
+                reason = f"Google rejected the API key (HTTP {code}, permission denied)"
+            else:
+                reason = f"Google models.get failed: {text[:200]}"
+            raise LLMOperationFailed(
+                operation="verify_model",
+                provider=self.provider,
+                model=model,
+                attempts=1,
+                last_error=reason,
+            ) from e
+        version = getattr(info, "version", None)
+        return f"{model} ({version})" if version else model
 
     # -- Vision-language captioning + scoring ------------------------------
 
@@ -131,11 +118,15 @@ class GoogleLLMClient:
             params,
             lambda: _to_async(
                 self._client.models.generate_content,
-                model=params.model,  # e.g. "gemini-2.5-flash-image"
+                model=params.model,
                 contents=[prompt],
                 config=gtypes.GenerateContentConfig(
                     response_modalities=["IMAGE"],
                     temperature=params.temperature,
+                    image_config=gtypes.ImageConfig(
+                        aspect_ratio=str(params.extra.get("aspect_ratio", "16:9")),
+                        image_size="1K",
+                    ),
                 ),
             ),
         )
@@ -168,10 +159,7 @@ class GoogleLLMClient:
                 self._client.models.generate_content,
                 model=params.model,
                 contents=contents,
-                config=gtypes.GenerateContentConfig(
-                    temperature=params.temperature,
-                    max_output_tokens=params.max_tokens,
-                ),
+                config=_gen_config(params),
             ),
         )
         _apply_usage(params, result)
@@ -200,10 +188,7 @@ class GoogleLLMClient:
                 self._client.models.generate_content,
                 model=params.model,
                 contents=contents,
-                config=gtypes.GenerateContentConfig(
-                    temperature=params.temperature,
-                    max_output_tokens=params.max_tokens,
-                ),
+                config=_gen_config(params),
             ),
         )
         _apply_usage(params, result)
@@ -330,11 +315,7 @@ class GoogleLLMClient:
         else:
             contents_with_hint.append(schema_hint)
 
-        config = gtypes.GenerateContentConfig(
-            temperature=params.temperature,
-            max_output_tokens=params.max_tokens,
-            response_mime_type="application/json",
-        )
+        config = _gen_config(params, response_mime_type="application/json")
         result = await _retry(
             params,
             lambda: _to_async(
@@ -424,20 +405,61 @@ def _extract_first_json_object(text: str) -> str | None:
     return None
 
 
+def _gen_config(params: CallParams, **kwargs: Any) -> gtypes.GenerateContentConfig:
+    if params.effort:
+        kwargs["thinking_config"] = gtypes.ThinkingConfig(
+            thinking_level=gtypes.ThinkingLevel(params.effort.upper())
+        )
+    return gtypes.GenerateContentConfig(
+        temperature=params.temperature,
+        max_output_tokens=params.max_tokens,
+        **kwargs,
+    )
+
+
+def _fit_image_for_embedding(image_bytes: bytes) -> bytes:
+    if image_bytes.startswith((b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n")):
+        with Image.open(io.BytesIO(image_bytes)) as probe:
+            w, h = probe.size
+        if max(w, h) <= _EMBED_MAX_EDGE_PX:
+            return image_bytes
+    src = Image.open(io.BytesIO(image_bytes))
+    img = ImageOps.exif_transpose(src) or src
+    img.load()
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    scale = _EMBED_MAX_EDGE_PX / max(img.size)
+    if scale < 1:
+        img = img.resize(
+            (max(1, round(img.width * scale)), max(1, round(img.height * scale))),
+            Image.Resampling.LANCZOS,
+        )
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=85)
+    return out.getvalue()
+
+
 def _apply_usage(params: CallParams, result: Any) -> None:
     """Write the Gemini response's real token usage back onto `params`.
 
-    `usage_metadata.prompt_token_count` already includes image-input tokens,
-    so we fold it into input and leave image_tokens at 0. Read by
-    LLMRouter._record_call to price via the rate card instead of the flat
-    ballpark fallback.
+    `prompt_token_count` includes the image tokens; `prompt_tokens_details` splits
+    them out per modality, so the router can price image input separately.
+    Thinking tokens are billed as output and arrive in `thoughts_token_count`.
     """
     um = getattr(result, "usage_metadata", None)
     if um is None:
         return
-    params.usage_input_tokens = int(getattr(um, "prompt_token_count", 0) or 0)
-    params.usage_output_tokens = int(getattr(um, "candidates_token_count", 0) or 0)
-    params.usage_image_tokens = 0
+    prompt = int(getattr(um, "prompt_token_count", 0) or 0)
+    image = sum(
+        int(getattr(d, "token_count", 0) or 0)
+        for d in (getattr(um, "prompt_tokens_details", None) or [])
+        if str(getattr(d, "modality", "")).upper().endswith("IMAGE")
+    )
+    params.usage_input_tokens = max(prompt - image, 0)
+    params.usage_image_tokens = image
+    params.usage_output_tokens = int(getattr(um, "candidates_token_count", 0) or 0) + int(
+        getattr(um, "thoughts_token_count", 0) or 0
+    )
 
 
 def _extract_text(result: Any) -> str:
@@ -480,7 +502,7 @@ def _sniff_mime_type(image_bytes: bytes) -> str:
     for prefix, mime in _IMAGE_MAGIC_PREFIXES:
         if image_bytes.startswith(prefix):
             # Tighten WEBP detection by also checking the WEBP signature at offset 8
-            if mime == "image/webp" and not image_bytes[8:12] == b"WEBP":
+            if mime == "image/webp" and image_bytes[8:12] != b"WEBP":
                 continue
             return mime
     return "image/jpeg"
@@ -567,4 +589,3 @@ async def _retry(params: CallParams, callable_: Any) -> Any:
 
 
 __all__ = ["GoogleLLMClient"]
-_ = (CandidateRef, MusicSpec)
