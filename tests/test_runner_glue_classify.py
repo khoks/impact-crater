@@ -58,3 +58,16 @@ def test_credits_rate_limit_and_unknown_errors_keep_their_branches() -> None:
     )
     assert _classify_failure(_failed("429 rate_limit_error")).startswith("Rate limited")
     assert _classify_failure(ValueError("something odd")) == "something odd"
+
+
+def test_max_tokens_truncation_is_readable() -> None:
+    reason = _classify_failure(
+        _failed("stop_reason=max_tokens (thinking + answer exceeded max_tokens=4096; raise it ...)")
+    )
+    assert reason.startswith("An AI response was cut off")
+    assert "config/llm-routing.yaml" in reason
+
+
+def test_unrelated_404_is_not_reported_as_a_missing_model() -> None:
+    raw = "HTTP 404 while fetching the model release notes page"
+    assert _classify_failure(ValueError(raw)) == raw

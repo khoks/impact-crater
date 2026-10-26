@@ -55,6 +55,13 @@ class CompleteRequest(BaseModel):
     spend_cap_google_usd: float | None = Field(default=None, ge=0.0, le=100_000.0)
     impact_crater_home_override: str | None = None
 
+    @field_validator("anthropic_api_key", "google_api_key")
+    @classmethod
+    def _strip_key(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("API key is empty")
+        return v.strip()
+
     @field_validator("spend_cap_anthropic_usd", "spend_cap_google_usd")
     @classmethod
     def _per_provider_cap_within_total(cls, v: float | None, info: ValidationInfo) -> float | None:
@@ -91,7 +98,7 @@ async def test_key(req: TestKeyRequest) -> TestKeyResponse:
         return TestKeyResponse(success=False, message=str(exc.last_error))
     return TestKeyResponse(
         success=True,
-        message=f"{req.provider.title()} key accepted — {', '.join(models)} available.",
+        message=f"{req.provider.title()} key accepted — {', '.join(models)}.",
     )
 
 
@@ -99,7 +106,16 @@ async def _verify_provider(provider: Provider, key: str) -> list[str]:
     client: LLMClient = (
         AnthropicLLMClient(api_key=key) if provider == "anthropic" else GoogleLLMClient(api_key=key)
     )
-    return [await client.verify_model(m) for m in routed_models(provider)]
+    required = routed_models(provider, include_optional=False)
+    served = [await client.verify_model(m) for m in required]
+    for model in routed_models(provider):
+        if model in required:
+            continue
+        try:
+            served.append(await client.verify_model(model))
+        except LLMOperationFailed as exc:
+            served.append(f"{model} unavailable ({exc.last_error})")
+    return served
 
 
 @router.post("/complete", response_model=CompleteResponse)

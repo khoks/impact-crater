@@ -1,9 +1,11 @@
 """AnthropicLLMClient — implementation against the official `anthropic` SDK.
 
 Uses the Messages API throughout. Structured-output operations use tool use with
-`tool_choice: auto` (the 5.x models reject forced tool choice) and `strict: true`
-on the tool definition, so a returned `tool_use` block always matches the schema;
-the prompt tells the model to call the tool exactly once.
+`tool_choice: auto` (the 5.x models reject forced tool choice): the prompt tells the
+model to call the tool exactly once, a text-only reply is retried once, and the
+caller's pydantic parse validates the result. Only `submit_score` is `strict: true` —
+the D-009 metadata schema exceeds the strict limits (a map-typed field, more than
+24 optional parameters, tuple fields).
 
 Per D-061 this client serves Tier-S and Tier-M Haiku 5.5 (`caption_image`,
 `score_image`, `extract_metadata_image`, `parse_user_brief`, `generate_title_text`)
@@ -293,23 +295,31 @@ class AnthropicLLMClient:
         messages: list[dict[str, Any]],
         tool_name: str,
     ) -> dict[str, Any]:
-        msg = await self._call_messages(
-            params,
-            messages=messages,
-            tools=tools,
-        )
-        for block in msg.content:
-            if block.type == "tool_use" and block.name == tool_name:
-                return dict(block.input)
-        text = next((b.text for b in msg.content if b.type == "text"), "")
+        text = ""
+        stop_reason: Any = None
+        for attempt in (1, 2):
+            msg = await self._call_messages(params, messages=messages, tools=tools)
+            for block in msg.content:
+                if block.type == "tool_use" and block.name == tool_name:
+                    return dict(block.input)
+            text = next((b.text for b in msg.content if b.type == "text"), "")
+            stop_reason = getattr(msg, "stop_reason", None)
+            log.warning(
+                "anthropic_tool_not_called operation=%s model=%s attempt=%d/2 stop_reason=%s text=%r",
+                params.operation,
+                params.model,
+                attempt,
+                stop_reason,
+                text[:160],
+            )
         raise LLMOperationFailed(
             operation=params.operation,
             provider=self.provider,
             model=params.model,
-            attempts=1,
+            attempts=2,
             last_error=(
                 f"model did not call expected tool {tool_name!r} "
-                f"(stop_reason={getattr(msg, 'stop_reason', None)}, text={text[:160]!r})"
+                f"(stop_reason={stop_reason}, text={text[:160]!r})"
             ),
         )
 
@@ -323,8 +333,7 @@ class AnthropicLLMClient:
         tool = {
             "name": "submit_metadata",
             "description": "Submit the structured metadata extraction.",
-            "strict": True,
-            "input_schema": _strict_schema(schema),
+            "input_schema": schema,
         }
         return await self._call_tool_use(
             params,
@@ -490,53 +499,6 @@ def _apply_usage(params: CallParams, msg: Any) -> None:
     params.usage_image_tokens = 0
 
 
-# Keywords strict tool use does not accept: numeric / string / array constraints
-# and presentation-only fields. The API still guarantees the returned input
-# matches the remaining schema; Stage 3's pydantic parse re-checks the bounds.
-_STRICT_UNSUPPORTED = frozenset(
-    {
-        "minimum",
-        "maximum",
-        "exclusiveMinimum",
-        "exclusiveMaximum",
-        "multipleOf",
-        "minLength",
-        "maxLength",
-        "pattern",
-        "minItems",
-        "maxItems",
-        "default",
-        "title",
-    }
-)
-
-
-def _strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Copy `schema` into the shape strict tool use accepts: every object closed
-    with `additionalProperties: false`, unsupported keywords dropped. Property and
-    `$defs` names are never touched (a field may be called `title`)."""
-
-    def walk(node: Any) -> Any:
-        if isinstance(node, list):
-            return [walk(v) for v in node]
-        if not isinstance(node, dict):
-            return node
-        out: dict[str, Any] = {}
-        for k, v in node.items():
-            if k in _STRICT_UNSUPPORTED:
-                continue
-            if k in ("properties", "$defs") and isinstance(v, dict):
-                out[k] = {name: walk(sub) for name, sub in v.items()}
-            else:
-                out[k] = walk(v)
-        if "properties" in out:
-            out["additionalProperties"] = False
-        return out
-
-    result: dict[str, Any] = walk(schema)
-    return result
-
-
 def _check_stop_reason(params: CallParams, msg: Any) -> None:
     reason = getattr(msg, "stop_reason", None)
     if reason == "refusal":
@@ -558,6 +520,17 @@ def _check_stop_reason(params: CallParams, msg: Any) -> None:
             model=params.model,
             attempts=1,
             last_error="stop_reason=model_context_window_exceeded",
+        )
+    if reason == "max_tokens":
+        raise LLMOperationFailed(
+            operation=params.operation,
+            provider=params.provider,
+            model=params.model,
+            attempts=1,
+            last_error=(
+                f"stop_reason=max_tokens (thinking + answer exceeded max_tokens={params.max_tokens}; "
+                "raise it for this operation in config/llm-routing.yaml)"
+            ),
         )
 
 

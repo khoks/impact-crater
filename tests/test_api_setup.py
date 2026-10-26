@@ -168,3 +168,22 @@ async def test_complete_is_409_if_already_setup(client: httpx.AsyncClient) -> No
     assert r1.status_code == 200
     r2 = await client.post("/api/setup/complete", json=VALID_PAYLOAD)
     assert r2.status_code == 409
+
+
+async def test_complete_strips_whitespace_around_keys(client: httpx.AsyncClient) -> None:
+    await run_pending_migrations()
+    padded = {
+        **VALID_PAYLOAD,
+        "anthropic_api_key": " sk-ant-test-001\n",
+        "google_api_key": "\tAIza-test-002 ",
+    }
+    r = await client.post("/api/setup/complete", json=padded)
+    assert r.status_code == 200
+    assert await settings_store.get_value(settings_store.KEY_ANTHROPIC_API_KEY) == "sk-ant-test-001"
+    assert await settings_store.get_value(settings_store.KEY_GOOGLE_API_KEY) == "AIza-test-002"
+
+
+async def test_complete_rejects_whitespace_only_key(client: httpx.AsyncClient) -> None:
+    await run_pending_migrations()
+    r = await client.post("/api/setup/complete", json={**VALID_PAYLOAD, "google_api_key": "   "})
+    assert r.status_code == 422

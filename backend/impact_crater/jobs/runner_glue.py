@@ -62,6 +62,12 @@ def _classify_failure(exc: Exception) -> str:
             "narrative judge on a very large candidate set). Re-run with a shorter target "
             "duration or fewer media; the analysis already done is cached."
         )
+    if "stop_reason=max_tokens" in low:
+        return (
+            "An AI response was cut off at its token cap (thinking counts toward it). Raise "
+            "`max_tokens` for that operation in config/llm-routing.yaml and re-run; the "
+            "analysis already done is cached."
+        )
     if "stop_reason=refusal" in low:
         return (
             "An AI provider declined a request (safety refusal). Re-run; if it repeats on "
@@ -70,7 +76,7 @@ def _classify_failure(exc: Exception) -> str:
     if (
         "not_found_error" in low
         or "is not found for api version" in low
-        or ("404" in low and "model" in low)
+        or "not available to this" in low
     ):
         return (
             "Model not available — an AI provider no longer serves one of the model IDs in "

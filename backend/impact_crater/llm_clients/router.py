@@ -50,6 +50,9 @@ ProgressSink = Callable[[dict[str, Any]], Awaitable[None]]
 # Repo-root-relative `config/llm-routing.yaml`.
 _CONFIG_PATH_DEFAULT = Path(__file__).resolve().parents[3] / "config" / "llm-routing.yaml"
 
+# Opt-in, fail-soft stages: a pin only these ops use is pinged but never blocks a job.
+_OPTIONAL_OPERATIONS = frozenset({"generate_title_background"})
+
 
 @dataclass(frozen=True)
 class OperationRoute:
@@ -127,11 +130,23 @@ class LLMRouter:
         (A-028). Unbilled. Returns {model: served identifier}; raises
         LLMOperationFailed on the first model the key cannot use, so a retired
         pin fails at submit instead of after the Stage 2 spend."""
-        served: dict[str, str] = {}
+        required: dict[str, OperationRoute] = {}
+        optional: dict[str, OperationRoute] = {}
         for route in self._routes.values():
-            if route.model in served:
+            bucket = optional if route.operation in _OPTIONAL_OPERATIONS else required
+            bucket.setdefault(route.model, route)
+        served: dict[str, str] = {}
+        for model, route in required.items():
+            served[model] = await self._client_for(route).verify_model(model)
+        for model, route in optional.items():
+            if model in served:
                 continue
-            served[route.model] = await self._client_for(route).verify_model(route.model)
+            try:
+                served[model] = await self._client_for(route).verify_model(model)
+            except LLMOperationFailed as exc:
+                log.warning(
+                    "llm_preflight_optional_unavailable model=%s reason=%s", model, exc.last_error
+                )
         log.info("llm_preflight_ok served=%s", served)
         return served
 
@@ -777,10 +792,19 @@ def _load_routes(
     return out
 
 
-def routed_models(provider: str, config_path: Path | None = None) -> list[str]:
+def routed_models(
+    provider: str, config_path: Path | None = None, *, include_optional: bool = True
+) -> list[str]:
     """The distinct model IDs the shipped config sends to `provider` (wizard key test)."""
     routes = _load_routes(config_path or _CONFIG_PATH_DEFAULT, {})
-    return sorted({r.model for r in routes.values() if r.provider == provider})
+    return sorted(
+        {
+            r.model
+            for r in routes.values()
+            if r.provider == provider
+            and (include_optional or r.operation not in _OPTIONAL_OPERATIONS)
+        }
+    )
 
 
 def _hash_dict(d: dict[str, Any]) -> str:

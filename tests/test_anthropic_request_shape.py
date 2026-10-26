@@ -2,8 +2,9 @@
 
 Haiku 5.5 / Sonnet 5.5 / Opus 5.5 reject non-default sampling parameters and
 forced tool choice, think by default (controlled through `output_config.effort`)
-and can stop with `refusal` / `model_context_window_exceeded`. The S-2.10.7 bump
-broke the judge live on exactly this class of change (`temperature` on Opus 4.8).
+and can stop with `refusal`, `model_context_window_exceeded` or `max_tokens`
+before the tool call lands. The S-2.10.7 bump broke the judge live on exactly
+this class of change (`temperature` on Opus 4.8).
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from unittest.mock import AsyncMock
 import anthropic
 import httpx
 import pytest
-from impact_crater.llm_clients.anthropic_client import AnthropicLLMClient, _strict_schema
+from impact_crater.llm_clients.anthropic_client import AnthropicLLMClient
 from impact_crater.llm_clients.base import CallParams
 from impact_crater.llm_clients.exceptions import LLMOperationFailed
 from PIL import Image
@@ -43,9 +44,9 @@ def _params(
     )
 
 
-def _client(response: Any) -> tuple[AnthropicLLMClient, AsyncMock]:
+def _client(*responses: Any) -> tuple[AnthropicLLMClient, AsyncMock]:
     client = AnthropicLLMClient(api_key="sk-ant-test")
-    create = AsyncMock(return_value=response)
+    create = AsyncMock(side_effect=list(responses))
     client._client.messages.create = create  # type: ignore[method-assign]
     return client, create
 
@@ -57,6 +58,13 @@ def _text_response(text: str) -> SimpleNamespace:
             SimpleNamespace(type="text", text=text),
         ],
         stop_reason="end_turn",
+    )
+
+
+def _tool_response(name: str, payload: dict[str, Any]) -> SimpleNamespace:
+    return SimpleNamespace(
+        content=[SimpleNamespace(type="tool_use", name=name, input=payload)],
+        stop_reason="tool_use",
     )
 
 
@@ -80,33 +88,14 @@ async def test_no_output_config_without_an_effort() -> None:
     assert "temperature" not in create.call_args.kwargs
 
 
-async def test_metadata_tool_is_strict_with_closed_objects() -> None:
-    schema = {
-        "type": "object",
-        "title": "RichMetadataPhoto",
-        "required": ["quality"],
-        "properties": {
-            "quality": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.5},
-            "title": {"type": "string", "maxLength": 80},
-            "people": {"$ref": "#/$defs/People"},
-        },
-        "$defs": {
-            "People": {
-                "type": "object",
-                "title": "People",
-                "properties": {"count": {"type": "integer", "minimum": 0}},
-            }
-        },
-    }
-    original = repr(schema)
-    client, create = _client(
-        SimpleNamespace(
-            content=[
-                SimpleNamespace(type="tool_use", name="submit_metadata", input={"quality": 0.7})
-            ],
-            stop_reason="tool_use",
-        )
-    )
+async def test_metadata_tool_sends_the_callers_schema_unstrict() -> None:
+    """The D-009 schema exceeds Anthropic's strict-tool limits (map-typed field, > 24
+    optional parameters, tuple fields), so submit_metadata must go out as-is and
+    without `strict` — strict mode would 400 every Stage 3 call."""
+    from impact_crater.pipeline.types import RichMetadataPhoto
+
+    schema = RichMetadataPhoto.model_json_schema()
+    client, create = _client(_tool_response("submit_metadata", {"quality": 0.7}))
     out = await client.extract_metadata_image(
         _jpeg(),
         prompt_template="extract",
@@ -114,37 +103,13 @@ async def test_metadata_tool_is_strict_with_closed_objects() -> None:
         params=_params("extract_metadata_image", "low"),
     )
     assert out == {"quality": 0.7}
-    assert repr(schema) == original, "the caller's schema must not be mutated"
     (tool,) = create.call_args.kwargs["tools"]
-    assert tool["strict"] is True
-    sent = tool["input_schema"]
-    assert sent["additionalProperties"] is False
-    assert sent["$defs"]["People"]["additionalProperties"] is False
-    assert "title" in sent["properties"], "a property named `title` is a field, not a keyword"
-    assert sent["properties"]["quality"] == {"type": "number"}
-    assert sent["properties"]["title"] == {"type": "string"}
-    assert sent["$defs"]["People"]["properties"]["count"] == {"type": "integer"}
-    assert "title" not in sent and "title" not in sent["$defs"]["People"]
-
-
-def test_strict_schema_accepts_the_real_stage3_schema() -> None:
-    from impact_crater.pipeline.types import RichMetadataPhoto
-
-    sent = _strict_schema(RichMetadataPhoto.model_json_schema())
-    flat = repr(sent)
-    for keyword in ("'minimum'", "'maximum'", "'minItems'", "'maxItems'", "'default'"):
-        assert keyword not in flat, keyword
-    for defn in sent["$defs"].values():
-        assert defn["additionalProperties"] is False
+    assert "strict" not in tool
+    assert tool["input_schema"] is schema
 
 
 async def test_score_tool_is_strict_and_result_is_clamped() -> None:
-    client, create = _client(
-        SimpleNamespace(
-            content=[SimpleNamespace(type="tool_use", name="submit_score", input={"score": 1.4})],
-            stop_reason="tool_use",
-        )
-    )
+    client, create = _client(_tool_response("submit_score", {"score": 1.4}))
     score = await client.score_image(
         _jpeg(), prompt_template="rate", dimension="quality", params=_params("score_image", "low")
     )
@@ -152,7 +117,35 @@ async def test_score_tool_is_strict_and_result_is_clamped() -> None:
     (tool,) = create.call_args.kwargs["tools"]
     assert tool["strict"] is True
     assert tool["input_schema"]["additionalProperties"] is False
+    assert tool["input_schema"]["required"] == ["score"]
     assert "minimum" not in tool["input_schema"]["properties"]["score"]
+
+
+async def test_text_only_reply_is_retried_once_then_fails() -> None:
+    client, create = _client(
+        _text_response("Sure, here is the metadata: ..."),
+        _tool_response("submit_metadata", {"mood": "calm"}),
+    )
+    out = await client.parse_user_brief(
+        "brief",
+        prompt_template="parse",
+        schema={"type": "object"},
+        params=_params("parse_user_brief", "low"),
+    )
+    assert out == {"mood": "calm"}
+    assert create.await_count == 2
+
+    client, create = _client(_text_response("no tool"), _text_response("still no tool"))
+    with pytest.raises(LLMOperationFailed) as excinfo:
+        await client.extract_metadata_image(
+            _jpeg(),
+            prompt_template="extract",
+            schema={"type": "object"},
+            params=_params("extract_metadata_image"),
+        )
+    msg = str(excinfo.value)
+    assert create.await_count == 2
+    assert "submit_metadata" in msg and "end_turn" in msg and "still no tool" in msg
 
 
 async def test_refusal_stop_reason_raises_a_readable_failure() -> None:
@@ -171,8 +164,10 @@ async def test_refusal_stop_reason_raises_a_readable_failure() -> None:
     assert "cyber" in str(excinfo.value)
 
 
-async def test_context_window_stop_reason_raises() -> None:
-    client, _ = _client(SimpleNamespace(content=[], stop_reason="model_context_window_exceeded"))
+async def test_context_window_and_max_tokens_stops_raise_without_retry() -> None:
+    client, create = _client(
+        SimpleNamespace(content=[], stop_reason="model_context_window_exceeded")
+    )
     with pytest.raises(LLMOperationFailed) as excinfo:
         await client.parse_user_brief(
             "brief",
@@ -181,14 +176,13 @@ async def test_context_window_stop_reason_raises() -> None:
             params=_params("parse_user_brief"),
         )
     assert "model_context_window_exceeded" in str(excinfo.value)
+    assert create.await_count == 1
 
-
-async def test_missing_tool_call_error_names_the_stop_reason() -> None:
-    client, _ = _client(
-        SimpleNamespace(
-            content=[SimpleNamespace(type="text", text="I ran out")], stop_reason="max_tokens"
-        )
+    truncated = SimpleNamespace(
+        content=[SimpleNamespace(type="tool_use", name="submit_metadata", input={"quality": 0.2})],
+        stop_reason="max_tokens",
     )
+    client, create = _client(truncated)
     with pytest.raises(LLMOperationFailed) as excinfo:
         await client.extract_metadata_image(
             _jpeg(),
@@ -196,8 +190,9 @@ async def test_missing_tool_call_error_names_the_stop_reason() -> None:
             schema={"type": "object"},
             params=_params("extract_metadata_image"),
         )
-    msg = str(excinfo.value)
-    assert "submit_metadata" in msg and "max_tokens" in msg and "I ran out" in msg
+    assert "stop_reason=max_tokens" in str(excinfo.value)
+    assert "max_tokens=1024" in str(excinfo.value)
+    assert create.await_count == 1
 
 
 def _status_error(cls: type[anthropic.APIStatusError], status: int) -> anthropic.APIStatusError:

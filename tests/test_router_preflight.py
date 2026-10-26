@@ -45,6 +45,12 @@ _OPS = {
         "model_version": "2026-04-22",
         "tier": "embedding",
     },
+    "generate_title_background": {
+        "provider": "google",
+        "model": "gemini-3.1-flash-lite-image",
+        "model_version": "2026-06-30",
+        "tier": "M",
+    },
 }
 
 
@@ -55,9 +61,24 @@ def config_path(tmp_path: Path) -> Path:
     return path
 
 
-def _client(served: dict[str, str] | None = None) -> AsyncMock:
+def _unavailable(model: str) -> LLMOperationFailed:
+    return LLMOperationFailed(
+        operation="verify_model",
+        provider="x",
+        model=model,
+        attempts=1,
+        last_error=f"model {model!r} is not available to this key",
+    )
+
+
+def _client(served: dict[str, str] | None = None, failing: set[str] | None = None) -> AsyncMock:
+    def verify(model: str) -> str:
+        if model in (failing or set()):
+            raise _unavailable(model)
+        return (served or {}).get(model, model)
+
     client = AsyncMock()
-    client.verify_model = AsyncMock(side_effect=lambda m: (served or {}).get(m, m))
+    client.verify_model = AsyncMock(side_effect=verify)
     return client
 
 
@@ -81,41 +102,54 @@ async def test_verify_routes_pings_each_distinct_model_once(config_path: Path) -
         "claude-haiku-5-5": "claude-haiku-5-5",
         "claude-opus-5-5": "claude-opus-5-5",
         "gemini-embedding-2": "gemini-embedding-2 (002)",
+        "gemini-3.1-flash-lite-image": "gemini-3.1-flash-lite-image",
     }
     assert anthropic_client.verify_model.await_count == 2
-    assert google_client.verify_model.await_count == 1
+    assert google_client.verify_model.await_count == 2
 
 
-async def test_verify_routes_raises_on_the_first_unavailable_model(config_path: Path) -> None:
-    def _fail(model: str) -> str:
-        if model == "claude-opus-5-5":
-            raise LLMOperationFailed(
-                operation="verify_model",
-                provider="anthropic",
-                model=model,
-                attempts=1,
-                last_error="model 'claude-opus-5-5' is not available to this Anthropic key",
-            )
-        return model
-
-    anthropic_client = AsyncMock()
-    anthropic_client.verify_model = AsyncMock(side_effect=_fail)
+async def test_verify_routes_raises_on_an_unavailable_required_model(config_path: Path) -> None:
     router = LLMRouter(
-        clients={"anthropic": anthropic_client, "google": _client()}, config_path=config_path
+        clients={"anthropic": _client(failing={"claude-opus-5-5"}), "google": _client()},
+        config_path=config_path,
     )
     with pytest.raises(LLMOperationFailed) as excinfo:
         await router.verify_routes()
     assert "claude-opus-5-5" in str(excinfo.value)
 
 
+async def test_verify_routes_only_warns_for_the_opt_in_title_image_model(
+    config_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The title-card background is opt-in and fail-soft, so its model must never
+    block a job submit or fail the wizard's Google key test."""
+    router = LLMRouter(
+        clients={
+            "anthropic": _client(),
+            "google": _client(failing={"gemini-3.1-flash-lite-image"}),
+        },
+        config_path=config_path,
+    )
+    with caplog.at_level("WARNING"):
+        served = await router.verify_routes()
+    assert "gemini-3.1-flash-lite-image" not in served
+    assert served["gemini-embedding-2"] == "gemini-embedding-2"
+    assert "llm_preflight_optional_unavailable" in caplog.text
+
+
 def test_routed_models_lists_the_distinct_models_per_provider(config_path: Path) -> None:
     assert routed_models("anthropic", config_path) == ["claude-haiku-5-5", "claude-opus-5-5"]
-    assert routed_models("google", config_path) == ["gemini-embedding-2"]
+    assert routed_models("google", config_path) == [
+        "gemini-3.1-flash-lite-image",
+        "gemini-embedding-2",
+    ]
+    assert routed_models("google", config_path, include_optional=False) == ["gemini-embedding-2"]
 
 
 def test_shipped_config_routes_both_providers() -> None:
     assert routed_models("anthropic") == ["claude-haiku-5-5", "claude-opus-5-5"]
     assert routed_models("google") == ["gemini-3.1-flash-lite-image", "gemini-embedding-2"]
+    assert routed_models("google", include_optional=False) == ["gemini-embedding-2"]
 
 
 def test_ballpark_cost_prefers_the_cards_per_call_rate(

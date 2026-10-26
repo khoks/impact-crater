@@ -88,24 +88,19 @@ class GoogleLLMClient:
         return np.asarray(result.embeddings[0].values, dtype=np.float32)
 
     async def verify_model(self, model: str) -> str:
+        params = CallParams(
+            operation="verify_model", provider=self.provider, model=model, model_version=""
+        )
         try:
-            info = await _to_async(self._client.models.get, model=model)
-        except Exception as e:
-            code = getattr(e, "code", None)
-            text = str(e)
-            if code == 404 or "NOT_FOUND" in text:
-                reason = f"model {model!r} is not available to this Google key (404 NOT_FOUND)"
-            elif code in (401, 403) or (code == 400 and "api key" in text.lower()):
-                reason = f"Google rejected the API key (HTTP {code}, permission denied)"
-            else:
-                reason = f"Google models.get failed: {text[:200]}"
+            info = await _retry(params, lambda: _to_async(self._client.models.get, model=model))
+        except LLMOperationFailed as exc:
             raise LLMOperationFailed(
                 operation="verify_model",
                 provider=self.provider,
                 model=model,
-                attempts=1,
-                last_error=reason,
-            ) from e
+                attempts=exc.attempts,
+                last_error=_verify_reason(model, exc.last_error),
+            ) from exc
         version = getattr(info, "version", None)
         return f"{model} ({version})" if version else model
 
@@ -403,6 +398,16 @@ def _extract_first_json_object(text: str) -> str | None:
             if depth == 0:
                 return text[start : i + 1]
     return None
+
+
+def _verify_reason(model: str, error: Exception | str) -> str:
+    code = getattr(error, "code", None)
+    text = str(error)
+    if code == 404 or "NOT_FOUND" in text:
+        return f"model {model!r} is not available to this Google key (404 NOT_FOUND)"
+    if code in (401, 403) or (code == 400 and "api key" in text.lower()):
+        return f"Google rejected the API key (HTTP {code}, permission denied)"
+    return f"Google models.get failed: {text[:200]}"
 
 
 def _gen_config(params: CallParams, **kwargs: Any) -> gtypes.GenerateContentConfig:

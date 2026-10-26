@@ -390,3 +390,29 @@ async def test_google_extract_metadata_raises_on_non_json() -> None:
             ),
         )
     assert "non-JSON" in str(excinfo.value)
+
+
+async def test_google_verify_model_returns_the_served_version() -> None:
+    client = GoogleLLMClient(api_key="AIza-test")
+    client._client.models.get = MagicMock(  # type: ignore[method-assign]
+        return_value=SimpleNamespace(name="models/gemini-embedding-2", version="002")
+    )
+    assert await client.verify_model("gemini-embedding-2") == "gemini-embedding-2 (002)"
+    assert client._client.models.get.call_args.kwargs == {"model": "gemini-embedding-2"}
+
+
+async def test_google_verify_model_maps_not_found_and_bad_key() -> None:
+    client = GoogleLLMClient(api_key="AIza-test")
+    missing = Exception("404 NOT_FOUND. models/gemini-old is not found for API version v1beta")
+    missing.code = 404  # type: ignore[attr-defined]
+    client._client.models.get = MagicMock(side_effect=missing)  # type: ignore[method-assign]
+    with pytest.raises(LLMOperationFailed) as excinfo:
+        await client.verify_model("gemini-old")
+    assert "not available to this Google key" in str(excinfo.value)
+
+    bad_key = Exception("400 INVALID_ARGUMENT. API key not valid. Please pass a valid API key.")
+    bad_key.code = 400  # type: ignore[attr-defined]
+    client._client.models.get = MagicMock(side_effect=bad_key)  # type: ignore[method-assign]
+    with pytest.raises(LLMOperationFailed) as excinfo:
+        await client.verify_model("gemini-embedding-2")
+    assert "rejected the API key" in str(excinfo.value)

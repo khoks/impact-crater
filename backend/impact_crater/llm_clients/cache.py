@@ -62,8 +62,9 @@ def canonicalize_params(extra: dict[str, Any]) -> str:
     """Produce a deterministic JSON encoding of per-call params for the key.
 
     Sorted keys + compact separators ensure identical inputs hash identically.
-    Only `extra` participates in the key — model + temperature + max_tokens
-    are already in the routing key.
+    Only `extra` participates here; provider, model and model_version are separate
+    key parts. temperature, max_tokens and effort are NOT in the key — a change to
+    them that must invalidate cached results needs a model_version bump.
     """
     return json.dumps(extra, sort_keys=True, separators=(",", ":"))
 
@@ -117,9 +118,7 @@ async def get(
         params_canonical=params_canonical,
     )
     async with connection() as db:
-        cursor = await db.execute(
-            "SELECT cache_path FROM cache_index WHERE cache_key = ?", (key,)
-        )
+        cursor = await db.execute("SELECT cache_path FROM cache_index WHERE cache_key = ?", (key,))
         row = await cursor.fetchone()
     if not row:
         return None
