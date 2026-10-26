@@ -558,7 +558,8 @@ def _first_text(msg: anthropic.types.Message) -> str:
 
 def _is_transient(e: BaseException) -> bool:
     if isinstance(e, anthropic.APIStatusError):
-        return e.status_code in (408, 425, 429, 500, 502, 503, 504)
+        # 529 = overloaded_error, Anthropic's capacity signal.
+        return e.status_code in (408, 425, 429, 500, 502, 503, 504, 529)
     return isinstance(e, anthropic.APIConnectionError | anthropic.APITimeoutError)
 
 

@@ -269,3 +269,37 @@ async def test_failed_dispatch_still_meters_the_billed_usage(
     assert events[0]["cache_hit"] is False
     # 40k input at $0.10/M + 20k output at $0.50/M on claude-haiku-5-5
     assert events[0]["cost_usd"] == pytest.approx(0.004 + 0.010)
+
+
+async def test_a_parse_error_after_billing_is_metered_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    """judge_narrative_arc builds SelectedItem(**item) after the usage is on params; a
+    malformed reply raises TypeError, which must still reach quota and telemetry."""
+    monkeypatch.delenv("IMPACT_CRATER_RATE_CARDS_DIR", raising=False)
+    rate_cards.clear_cache()
+    await run_pending_migrations()
+
+    class MalformedClient:
+        provider = "anthropic"
+
+        async def caption_image(
+            self, image_bytes: bytes, *, prompt_template: str, params: CallParams
+        ) -> str:
+            params.usage_input_tokens = 10000
+            params.usage_output_tokens = 2000
+            raise TypeError("SelectedItem.__init__() got an unexpected keyword argument 'reason'")
+
+    events: list[dict[str, object]] = []
+
+    async def sink(event: dict[str, object]) -> None:
+        events.append(event)
+
+    router = LLMRouter(clients={"anthropic": MalformedClient()})
+    router.set_progress_sink(sink)
+    try:
+        with pytest.raises(TypeError):
+            await router.caption_image(b"\xff\xd8\xff", content_hash="feedfacefeedfac2")
+    finally:
+        rate_cards.clear_cache()
+    assert len(events) == 1
+    # 10k input at $0.10/M + 2k output at $0.50/M on claude-haiku-5-5
+    assert events[0]["cost_usd"] == pytest.approx(0.001 + 0.001)

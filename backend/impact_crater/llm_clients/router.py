@@ -779,10 +779,12 @@ class LLMRouter:
 
     async def _dispatch(self, route: OperationRoute, params: CallParams, call: Awaitable[_T]) -> _T:
         """Await a client call; when it fails after the provider billed it (usage is
-        on `params`), meter that spend before re-raising so quota and telemetry see it."""
+        on `params`), meter that spend before re-raising so quota and telemetry see it.
+        Any exception counts — a judge reply that fails `SelectedItem(**...)` raises a
+        TypeError after the tokens were billed."""
         try:
             return await call
-        except LLMOperationFailed:
+        except Exception:
             if params.usage_input_tokens or params.usage_output_tokens or params.usage_image_tokens:
                 await self._record_call(route, cache_hit=False, params=params)
             raise

@@ -272,3 +272,20 @@ async def test_anthropic_retry_exhaustion_is_an_operation_failure(
         )
     assert excinfo.value.attempts == 4
     assert client._client.messages.create.await_count == 4
+
+
+async def test_overloaded_529_is_retried_as_transient(monkeypatch: pytest.MonkeyPatch) -> None:
+    from impact_crater.llm_clients import anthropic_client
+    from tenacity import wait_none
+
+    monkeypatch.setattr(anthropic_client, "_RETRY_WAIT", wait_none())
+    client = AnthropicLLMClient(api_key="sk-ant-test")
+    overloaded = _status_error(anthropic.APIStatusError, 529)
+    client._client.messages.create = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[overloaded, _text_response("A lake.")]
+    )
+    out = await client.caption_image(
+        _jpeg(), prompt_template="caption", params=_params("caption_image")
+    )
+    assert out == "A lake."
+    assert client._client.messages.create.await_count == 2

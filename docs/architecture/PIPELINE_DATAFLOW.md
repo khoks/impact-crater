@@ -33,12 +33,12 @@ The pipeline runs through **7 numbered stages** plus three side/extension steps.
 |---|---|---|---|
 | **1** | Ingest / Prep | deterministic + external-tool | Hash, capture-time, GPS, scene-detect, thumbnails, sidecars |
 | **2** | Bulk Ops | AI (Tier-S Gemini) | Caption + quality score + narrative score + embedding per asset |
-| **3** | Rich Metadata | AI (Tier-M Claude Sonnet) | Structured per-asset metadata (D-009 schema) via tool-use |
+| **3** | Rich Metadata | AI (Tier-M Claude Haiku 5.5) | Structured per-asset metadata (D-009 schema) via tool-use |
 | **3.5** | Trip Cast | external-tool + AI-embedding | Face detect → embed → cluster → CastInventory (fail-soft) |
 | **4** | Pre-Filter | deterministic | 6-step funnel → bounded CandidateSet (no LLM) |
 | **5** | Narrative-Arc Judge | AI (Tier-L Claude Opus) | The selection + ordering decision → ArcJudgment |
 | **6** | Compile Plan | deterministic | ArcJudgment → RenderPlan (durations, aspect, beat-snap) |
-| **6.5** | Second-Guess | AI (Tier-M Claude Sonnet) | Sanity-check overrides, fail-soft |
+| **6.5** | Second-Guess | AI (Tier-M Claude Haiku 5.5) | Sanity-check overrides, fail-soft |
 | **7** | Render | external-tool (ffmpeg) | Pre-render → concat → loudnorm → mux → MP4 |
 | **9** | Refine | AI (Tier-M/L Claude) | Free-text request → RefinementOutcome → the right lever (pacing directive / destination reservation / re-judge / title-card edit) → child snapshot (E-2.12) |
 
@@ -69,7 +69,7 @@ flowchart TD
     TELE --> ING
     MEDIA --> ING
 
-    subgraph S2["Stage 2 — Bulk Ops (AI: Tier-S Gemini Flash)"]
+    subgraph S2["Stage 2 — Bulk Ops (AI: Tier-S Claude Haiku 5.5 + gemini-embedding-2)"]
         CAP["caption_image"]
         QS["score_image[quality]"]
         NR["score_image[narrative]"]
@@ -78,7 +78,7 @@ flowchart TD
     ING -->|MediaRecord| CAP & QS & NR & EMB
     BRIEF --> NR
 
-    subgraph S3["Stage 3 — Metadata (AI: Tier-M Claude Sonnet)"]
+    subgraph S3["Stage 3 — Metadata (AI: Tier-M Claude Haiku 5.5)"]
         META["extract_metadata_image\n(tool-use, D-009)"]
     end
     ING -->|MediaRecord| META
@@ -116,7 +116,7 @@ flowchart TD
     CG -->|CutGrid| PLAN
     ING -->|MediaRecord| PLAN
 
-    subgraph S65["Stage 6.5 — Second-Guess (AI: Tier-M Sonnet, fail-soft)"]
+    subgraph S65["Stage 6.5 — Second-Guess (AI: Tier-M Haiku 5.5, fail-soft)"]
         SG["second_guess\n+ apply_overrides"]
     end
     PLAN -->|RenderPlan| SG
@@ -190,8 +190,8 @@ flowchart TD
 | Brief hash | `_short_hash` (stage2_bulk_ops.py:227) | deterministic | sha256[:16] | brief → brief_hash | invalidates narrative score only |
 | Per-asset fan-out | `_run_for_asset` (stage2_bulk_ops.py:110) | orchestration | asyncio.gather ×4 | _Asset → Stage2AssetOutputs | each op cached independently |
 | Caption | `caption_image` (router.py) → anthropic_client.py | AI-prompt | Claude Haiku 5.5 (`claude-haiku-5-5`, effort low) / `caption_image/anthropic_claude-haiku-5-5.jinja2` | bytes → caption ≤18 words | cache key: hash+op+prompt_ver |
-| Quality score | `score_image` (router.py:168) | AI-prompt | Gemini Flash / `score_image/...jinja2` (dimension=quality) | bytes → float | stable key (no brief) |
-| Narrative score | `score_image` (router.py:168) | AI-prompt | Gemini Flash (dimension=narrative, brief) | bytes+brief → float | key includes brief_hash |
+| Quality score | `score_image` (router.py) | AI-prompt | Claude Haiku 5.5 / `score_image/anthropic_claude-haiku-5-5.jinja2`, strict tool `submit_score` (dimension=quality) | bytes → float | stable key (no brief) |
+| Narrative score | `score_image` (router.py) | AI-prompt | Claude Haiku 5.5, strict tool `submit_score` (dimension=narrative, brief) | bytes+brief → float | key includes brief_hash |
 | Embed | `embed_image` (router.py) → google_client.py | AI-embedding | gemini-embedding-2 on the image bytes (768-d; JPEG/PNG ≤ 1024 px re-encode first) | bytes → ndarray float32 | `.npy`, in-memory for Stage 4 |
 | Cache get | `cache.get` (cache.py:96) | io | SQLite cache_index | key → payload\|None | hit ⇒ cost=0 |
 | Token + rate card | `_record_call` (router.py:496) | deterministic | rate_cards.estimate_cost_usd | tokens → cost_usd | Tier-S ballpark ~$0.001 |
@@ -306,9 +306,9 @@ source is declared on the type but no A-023 feedback code builds one yet (as of
 | Music spec assembly | `run_full_pipeline` (runner.py) | orchestration | ffmpeg probe | analysis+nl → StandardMusicSpec | — |
 | Candidate refs list | `run_full_pipeline` (runner.py) | orchestration | — | CandidateSet → list[str] | Opus ref recovery |
 
-### Stage 6.5 — Second-Guess (Tier-M Sonnet, fail-soft, M6)
+### Stage 6.5 — Second-Guess (Tier-M Haiku 5.5, fail-soft, M6)
 
-**Flow.** A conservative auto-validation before the user reconfirm UI. The `ArcJudgment` + `RenderPlan` + brief are sent to **Claude Sonnet (Tier-M)** (reusing the `parse_user_brief` route) to spot 3+ identical shots, chronology breaks, and pacing mismatches. It returns a schema-validated `SecondGuessResult` with typed `Override`s (`drop_item`/`reorder`/`shorten`/`lengthen`/`swap`) and `overall_confidence`. The user sees overrides when confidence > 0.6; the pipeline **auto-applies** them when > 0.85 (M6 baseline implements `drop_item`+`reorder`; others log+skip). Any exception logs a warning and proceeds with the plan unchanged. Full result persisted to `second_guess.json`.
+**Flow.** A conservative auto-validation before the user reconfirm UI. The `ArcJudgment` + `RenderPlan` + brief are sent to **Claude Haiku 5.5 (Tier-M)** (reusing the `parse_user_brief` route) to spot 3+ identical shots, chronology breaks, and pacing mismatches. It returns a schema-validated `SecondGuessResult` with typed `Override`s (`drop_item`/`reorder`/`shorten`/`lengthen`/`swap`) and `overall_confidence`. The user sees overrides when confidence > 0.6; the pipeline **auto-applies** them when > 0.85 (M6 baseline implements `drop_item`+`reorder`; others log+skip). Any exception logs a warning and proceeds with the plan unchanged. Full result persisted to `second_guess.json`.
 
 | Step | Module / function (file) | Kind | Model / Prompt | In → Out | Cache / Cost |
 |---|---|---|---|---|---|
@@ -319,12 +319,12 @@ source is declared on the type but no A-023 feedback code builds one yet (as of
 
 ### Stage 6.x — Title/Splash Card (opt-in, AI-image, fail-soft, S-2.11.5)
 
-**Flow.** Only when the job opted in (`add_title_card`). Runs after second-guess so timeline positions are stable. `build_title_clip` derives the year (modal capture year); the **title** (user `title_text` if given, else `_title_from_brief` — a cheap Tier-S **`generate_title_text`** call reading brief + year → clean 2–5 word title with place-name typo-fixing, S-2.11.7, fail-soft to the `_derive_title` first-clause heuristic then "Our Trip"); and a "spirit" prompt, then calls the router's **`generate_title_background`** op (remote image-gen, **Gemini 2.5 Flash Image**, D-054) for a painterly background — *only the text prompt is sent, never the photos*. It composites, locally with PIL: a cover-fit background + scrim, circular face thumbnails of the top group members (A-018 cast, faces re-cropped transiently via `detect_and_crop_faces`), and a shrink-to-fit title + year. The resulting `title_card` RenderClip (3s) is **prepended** as clip 0 and `plan.json` rewritten. Fail-soft at every step: title-gen failure → heuristic title; image-gen failure → typographic card over a representative photo; no background at all → no card; any exception → render proceeds unchanged.
+**Flow.** Only when the job opted in (`add_title_card`). Runs after second-guess so timeline positions are stable. `build_title_clip` derives the year (modal capture year); the **title** (user `title_text` if given, else `_title_from_brief` — a cheap Tier-S **`generate_title_text`** call reading brief + year → clean 2–5 word title with place-name typo-fixing, S-2.11.7, fail-soft to the `_derive_title` first-clause heuristic then "Our Trip"); and a "spirit" prompt, then calls the router's **`generate_title_background`** op (remote image-gen, **`gemini-3.1-flash-lite-image`**, 16:9 at 1K, D-054) for a painterly background — *only the text prompt is sent, never the photos*. It composites, locally with PIL: a cover-fit background + scrim, circular face thumbnails of the top group members (A-018 cast, faces re-cropped transiently via `detect_and_crop_faces`), and a shrink-to-fit title + year. The resulting `title_card` RenderClip (3s) is **prepended** as clip 0 and `plan.json` rewritten. Fail-soft at every step: title-gen failure → heuristic title; image-gen failure → typographic card over a representative photo; no background at all → no card; any exception → render proceeds unchanged.
 
 | Step | Module / function (file) | Kind | Model / Prompt | In → Out | Cache / Cost |
 |---|---|---|---|---|---|
-| Title text | `_title_from_brief` (stage6_title_card.py) → `generate_title_text` | AI-prompt (text) | `generate_title_text` (Gemini 2.5 Flash), temp 0.5, ≤64 tok | brief+year → clean 2–5 word title (JSON `{title}`) | cached on sha256(brief,year); skipped if `title_text` given; heuristic fallback |
-| Build title clip | `build_title_clip` (stage6_title_card.py) | AI-image + deterministic | `generate_title_background` (Gemini 2.5 Flash Image), temp 0.6 | plan+media+cast+brief → title_card RenderClip | uncached (fresh image each run) |
+| Title text | `_title_from_brief` (stage6_title_card.py) → `generate_title_text` | AI-prompt (text) | `generate_title_text` (Claude Haiku 5.5, `effort: low`, `max_tokens` 1024, no temperature) | brief+year → clean 2–5 word title (`{title}` via the `submit_metadata` tool) | cached on sha256(brief,year); skipped if `title_text` given; heuristic fallback |
+| Build title clip | `build_title_clip` (stage6_title_card.py) | AI-image + deterministic | `generate_title_background` (`gemini-3.1-flash-lite-image`, 16:9 at 1K), temp 0.6 — fail-soft to the typographic card, e.g. on a Free-Tier Google key with no image quota | plan+media+cast+brief → title_card RenderClip | uncached (fresh image each run) |
 | Composite | PIL (`_cover`/`_add_scrim`/`_paste_faces`/`_draw_title`) | deterministic | — | bg+faces+text → title_card.png | local only |
 
 ### Stage 7 — Render MP4 (external-tool: ffmpeg)
@@ -367,10 +367,10 @@ source is declared on the type but no A-023 feedback code builds one yet (as of
 | Light: arc from plan | `_arc_from_plan` (stage9_refine.py:481) | deterministic | — | parent clips (minus title card) → ArcJudgment | — |
 | Light: merge directive | `merge_directive` (plan_directive.py:122) | deterministic | — | parent.directive + directive_patch → PlanDirective | compounds across refinements |
 | Light: Stage 6 only | `stage6_plan.compile_plan` (stage9_refine.py:326) | deterministic | — | arc+media+merged directive+montage groups → child RenderPlan | no re-judge |
-| Content: Stage 2 + 3 | `run_stage2` / `run_stage3` (stage9_refine.py:340) | AI-prompt (cached) | Gemini Flash / Sonnet routes | media+brief → Stage2/3 outputs | normally all cache hits |
+| Content: Stage 2 + 3 | `run_stage2` / `run_stage3` (stage9_refine.py:340) | AI-prompt (cached) | Haiku 5.5 + gemini-embedding-2 routes | media+brief → Stage2/3 outputs | normally all cache hits |
 | Content: intent + reservations | `_reserve_intent` / `_reservations_from_outcome` (stage9_refine.py:467/458) | deterministic (+ cached `parse_brief`) | — | outcome → BriefIntent (+ reserved destinations), ReservationSet(source="refinement") | — |
 | Content: Stage 4 | `stage4_prefilter.prefilter` (stage9_refine.py:344) | deterministic | — | media+S2+S3+intent+reservations → CandidateSet | must-keeps seated first |
-| Content: re-judge | `stage5_judge.judge_narrative_arc` (stage9_refine.py:351) | AI-prompt | Claude Opus 4.8 (Tier-L) / judge prompt + "Refinement addendum" | CandidateSet+brief+addendum+coverage_plan+chronological → ArcJudgment | new signature ⇒ **~$0.40–1.00** |
+| Content: re-judge | `stage5_judge.judge_narrative_arc` (stage9_refine.py:351) | AI-prompt | Claude Opus 5.5 (Tier-L, `effort: high`) / judge prompt + "Refinement addendum" | CandidateSet+brief+addendum+coverage_plan+chronological → ArcJudgment | new signature ⇒ **~$0.40–1.00** |
 | Content: Stage 6 | `stage6_plan.compile_plan` (stage9_refine.py:362) | deterministic | — | arc+merged directive → child RenderPlan | — |
 | Title-card re-inject | `_reinject_title_card` (stage9_refine.py:378) → `build_title_clip` when patched | deterministic; AI-image only when `style` changes | gemini-3.1-flash-lite-image (image change only) | parent card or patch → clip 0 + plan.json rewrite | fail-soft |
 | Render child | `stage7_render.render_plan` (stage9_refine.py:374) | external-tool (ffmpeg) | — | child RenderPlan → render.mp4 | correlation_id=`refine-{snapshot_id}` |
@@ -417,7 +417,7 @@ Pre-flight `check_quota` runs a **pessimistic dual-cap** model: `_estimate_cost_
 | **CaptureTime / GpsCoord** | `timeline.extract_capture_time/extract_gps` | MediaRecord fields | timestamp/source/confidence; lat/lon |
 | **Stage2AssetOutputs** | Stage 2 `_run_for_asset` | Stage 4 `_join_assets` | content_hash, scene_index, caption, quality_score, narrative_relevance_score, embedding (in-mem), embedding_dim |
 | **Stage3AssetOutputs** | Stage 3 `_extract` | Stage 4 `_join_assets`, cast builder | content_hash, scene_index, metadata (RichMetadataPhoto\|VideoScene) |
-| **RichMetadataPhoto (D-009)** | Stage 3 Claude Sonnet tool-use | Stage 4 `_summarize_metadata`, Stage 5 prompt | shot_type, main_subjects[descriptor/expression/prominence], time_of_day, mood, lighting, scenery, location, specialness_score, safety_level, obstruction_level, tags |
+| **RichMetadataPhoto (D-009)** | Stage 3 Claude Haiku 5.5 tool-use | Stage 4 `_summarize_metadata`, Stage 5 prompt | shot_type, main_subjects[descriptor/expression/prominence], time_of_day, mood, lighting, scenery, location, specialness_score, safety_level, obstruction_level, tags |
 | **RichMetadataVideoScene** | Stage 3 `extract_metadata_image` (video-scene schema) | Stage 4 | all photo fields + scene_summary |
 | **CastInventory / Person** | Stage 3.5 `build_cast` / `build_cast_inventory` | Stage 4 `_annotate_cast`, Stage 6 coverage, diagnostics | persons, group_persons_by_hash; person_id, appearance_count, distinct_days/locations, recurrence_breadth, is_group, content_hashes |
 | **FaceObservation / FaceVector** | Stage 3.5 accumulate / embedder | `_cluster_faces` | content_hash, embedding (unit float32), capture_timestamp, location_key, bbox |
@@ -430,9 +430,9 @@ Pre-flight `check_quota` runs a **pessimistic dual-cap** model: `_estimate_cost_
 | **PlanDirective** (ADR-0019) | `DEFAULT_DIRECTIVE` / `build_directive_from_music` (runner, when music is present) / Stage 9 `directive_patch` via `merge_directive` | Stage 6 `compile_plan` (bands, per-location cap, positional, tempo, soft-align); persisted as `RenderPlan.directive` in plan.json | schema_version, bands{photo/video/montage min/max ms}, max_clips_per_location, positional_rules[region, multiplier, delta_ms, neighbor_*, raises_band, label], tempo{bands[start/end_frac, duration/density_multiplier], apply_density=False}, soft_align{enabled, section_starts_ms, window_ms}, provenance ∈ {default, music, refine, second_guess} |
 | **ReservationSet / CoveragePlan / DestMatch** (S-2.10.5) | `destinations.map_destinations` (Stage 0.5 → Stage 4), Stage 9 `_reservations_from_outcome` | Stage 4 `prefilter` (must-keep seats; floor/dedup/cap exemptions), Stage 5 prompt (`coverage_plan.to_prompt_vars`), diagnostics | keys (frozenset of asset keys), reason_by_key, source ∈ {destination, refinement, feedback — declared, no feedback producer yet}; named_destinations[name, aliases, asset_keys, best_keys, basis, chronological_hint] |
 | **StandardMusicSpec** | `run_full_pipeline` + `compile_plan` | Stage 6 beat-snap, Stage 7 audio | audio_path, audio_duration_ms, fade_in/out_ms, target_lufs, true_peak_db, music_analysis, cut_grid, section_to_media_nl |
-| **SecondGuessResult / Override** | Stage 6.5 `second_guess` (Sonnet) | `apply_overrides`, second_guess.json | overrides[type/target_position/proposed_change/why], overall_confidence, rationale |
+| **SecondGuessResult / Override** | Stage 6.5 `second_guess` (Haiku 5.5) | `apply_overrides`, second_guess.json | overrides[type/target_position/proposed_change/why], overall_confidence, rationale |
 | **RenderResult / RenderEvent** | Stage 7 `render_plan` | orchestrator, JobCostSummary | snapshot_id, render_path, duration_ms, output_bytes, ffmpeg_exit_code, status |
-| **RefinementOutcome / RefinementResult** | Stage 9 `plan_refinement` (Sonnet, `_REFINE_SCHEMA`) / `execute_refinement` | `execute_refinement` dispatch (light vs content path); `post_refine` → RefineResponse + parent `refinement_plan.json` | interpretation, directive_patch (partial PlanDirective), reserve_destinations, reserve_refs, brief_addendum, title_card_patch, explanation (+ derived `needs_rejudge` / `is_light` / `is_actionable`); outcome, new_snapshot_id, rendered |
+| **RefinementOutcome / RefinementResult** | Stage 9 `plan_refinement` (Haiku 5.5, `_REFINE_SCHEMA`) / `execute_refinement` | `execute_refinement` dispatch (light vs content path); `post_refine` → RefineResponse + parent `refinement_plan.json` | interpretation, directive_patch (partial PlanDirective), reserve_destinations, reserve_refs, brief_addendum, title_card_patch, explanation (+ derived `needs_rejudge` / `is_light` / `is_actionable`); outcome, new_snapshot_id, rendered |
 | **LLMCallEvent / JobLifecycleEvent** | LLMRouter `_record_call` / runner telemetry | telemetry.jsonl, JobCostSummary | operation, provider, model, tokens, cost_estimate_usd, cache_hit, correlation_id, project_id, snapshot_id |
 | **JobCostSummary** | `telemetry.aggregate_summary` | `run_full_pipeline` → cost_summary.json | tier_s/m/l_calls, cost by tier/provider/operation, cache_hits/misses, render_*, total_cost_usd |
 | **QuotaCheck** | `quota.check_quota` | runner (allow/deny) | allowed, reason, today/per-provider spend, caps |
