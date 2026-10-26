@@ -297,9 +297,10 @@ flowchart TD
   analytical quality, because the cache is keyed on the original file, not the
   bytes sent to the model.
 - **Model tiering.** Work is routed to the cheapest model that can do it well:
-  a small fast model for captions/scores/embeddings, a mid model for rich
-  metadata and internal coordination, and a large high-reasoning model used
-  *once per job* for the narrative decision.
+  a small fast model for captions, scores, the title text, rich metadata and
+  internal coordination (a mid model stays configured as the fallback for the
+  metadata work), a dedicated embedding model for the visual fingerprints, and a
+  large high-reasoning model used *once per job* for the narrative decision.
 - **Content-addressed caching.** Every analysis result is cached by a key
   combining the file's content hash, the model, the model version, and the
   exact operation — so the same photo is never analyzed twice across jobs, and a
@@ -395,9 +396,9 @@ flowchart TB
   described in §5.
 - **AI model router** — a single abstraction every AI call goes through. It
   maps each kind of operation to a provider and model by tier (today: Anthropic
-  for the narrative decision, rich metadata, brief parsing and internal
-  coordination; Google for captions, scores, embeddings, the title text and the
-  optional title-card image), validates structured output, retries transient
+  for captions, scores, the title text, rich metadata, brief parsing, internal
+  coordination and the narrative decision; Google for the visual fingerprints
+  and the optional title-card image), validates structured output, retries transient
   failures, records cost, and serves the cache. Hardware and privacy constraints
   are design slots in this layer, not enforced rules today.
 - **Render engine** — runs the actual video assembly as managed subprocesses
@@ -455,8 +456,8 @@ sequenceDiagram
 flowchart TD
     OP[An AI operation is needed] --> TIER{Which capability<br/>tier?}
     TIER -->|Visual fingerprint| EMB[Embedding model — Google]
-    TIER -->|Bulk: caption/score/title text| SMALL[Small fast model — Google]
-    TIER -->|Rich metadata / coordination / refinement| MED[Mid model — Anthropic]
+    TIER -->|Bulk: caption/score/title text| SMALL[Small fast model — Anthropic]
+    TIER -->|Rich metadata / coordination / refinement| MED[Small fast model — Anthropic, mid model on standby]
     TIER -->|Narrative decision| LARGE[Large reasoning model — Anthropic]
     EMB --> CACHE
     SMALL --> CACHE
@@ -484,16 +485,17 @@ flowchart LR
 ## 9. AI-model strategy
 
 - **Three capability tiers.** A small, fast model handles the high-volume work
-  (captions, quick scores, embeddings, the title text); a mid model handles rich
-  metadata, brief understanding, the self-check and refinement planning; a
-  large, high-reasoning model is reserved for the single most important
+  (captions, quick scores, the title text, rich metadata, brief understanding,
+  the self-check and refinement planning — a mid model stays configured as the
+  fallback for the metadata work); a dedicated embedding model turns every image
+  into its visual fingerprint; a large, high-reasoning model is reserved for the single most important
   decision — composing the narrative — used about once per job to keep cost
   down.
 - **One interface, cloud providers today.** Every model sits behind one common
   interface with a per-operation routing table. Today that table points every
-  operation at a cloud provider: Anthropic for the reasoning and metadata work,
-  Google for captions, scores, embeddings and the optional title-card image. No
-  on-device model runtime ships yet.
+  operation at a cloud provider: Anthropic for captions, scores, metadata,
+  coordination and the narrative decision; Google for the visual fingerprints
+  and the optional title-card image. No on-device model runtime ships yet.
 - **On-device models (planned).** The router has a slot for on-device models,
   intended to be capped at a size that runs on consumer GPUs so a capable
   workstation could keep more work local. The "hardware-adaptive routing" that
