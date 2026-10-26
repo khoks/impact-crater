@@ -36,7 +36,7 @@ Prerequisites:
 - **Python 3.12** (3.11 is the declared floor in `pyproject.toml`; the dev venv and lock file are 3.12)
 - **Node 20+** (24 is what development runs on)
 - **ffmpeg + ffprobe** — on `PATH`, or pointed to with `IMPACT_CRATER_FFMPEG` / `IMPACT_CRATER_FFPROBE`; the probe and render stages shell out to them. On Windows `winget install Gyan.FFmpeg` is found automatically; on macOS/Linux use your package manager.
-- **API keys** for Anthropic and Google — every AI call today goes to those two providers.
+- **API keys** for Anthropic and Google — every AI call today goes to those two providers. The Google key's project needs billing enabled in AI Studio: on the Gemini Free Tier the title-card image model has no quota (the card falls back to plain typography), and Free-Tier rate limits are far below the paid tiers' for a trip of thousands of shots.
 
 ```bash
 # 1. Install the Python package (editable install for dev)
