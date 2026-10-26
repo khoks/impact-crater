@@ -117,8 +117,9 @@ async def test_anthropic_score_image_calls_the_strict_tool(anthropic_key: str) -
 
 
 async def test_anthropic_extract_metadata_with_the_real_stage3_schema(anthropic_key: str) -> None:
-    """The strict-normalised RichMetadataPhoto schema (pydantic $defs, nullable anyOf,
-    enums) must be accepted by the API and the result must parse back into the model."""
+    """The RichMetadataPhoto schema (pydantic $defs, nullable anyOf, enums) goes out
+    as-is on a non-strict tool; the API must accept it and the result must parse back
+    into the model."""
     client = AnthropicLLMClient(api_key=anthropic_key)
     prompt = prompts.render(
         prompts.load("extract_metadata_image", "anthropic", HAIKU[0]),

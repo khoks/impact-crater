@@ -26,6 +26,7 @@ import anthropic
 from PIL import Image, ImageOps
 from tenacity import (
     AsyncRetrying,
+    RetryError,
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
@@ -42,6 +43,9 @@ from impact_crater.llm_clients.base import (
 from impact_crater.llm_clients.exceptions import LLMOperationFailed, LLMTransientError
 
 log = logging.getLogger(__name__)
+
+# Backoff between transient retries; tests swap in `wait_none()`.
+_RETRY_WAIT = wait_exponential(multiplier=1.0, min=1.0, max=8.0)
 
 
 class AnthropicLLMClient:
@@ -485,8 +489,8 @@ def _apply_usage(params: CallParams, msg: Any) -> None:
     Anthropic's `usage.input_tokens` already includes image-input tokens, so
     we fold everything into input/output and leave image_tokens at 0. Cache
     tokens are added defensively (they're 0 unless prompt caching is used,
-    which we don't). Read by LLMRouter._record_call to price the call via the
-    rate card instead of the flat ballpark fallback.
+    which we don't). Accumulates, so a retried tool call meters both attempts;
+    read by LLMRouter._record_call to price the call via the rate card.
     """
     u = getattr(msg, "usage", None)
     if u is None:
@@ -494,9 +498,8 @@ def _apply_usage(params: CallParams, msg: Any) -> None:
     in_tok = int(getattr(u, "input_tokens", 0) or 0)
     in_tok += int(getattr(u, "cache_creation_input_tokens", 0) or 0)
     in_tok += int(getattr(u, "cache_read_input_tokens", 0) or 0)
-    params.usage_input_tokens = in_tok
-    params.usage_output_tokens = int(getattr(u, "output_tokens", 0) or 0)
-    params.usage_image_tokens = 0
+    params.usage_input_tokens += in_tok
+    params.usage_output_tokens += int(getattr(u, "output_tokens", 0) or 0)
 
 
 def _check_stop_reason(params: CallParams, msg: Any) -> None:
@@ -565,46 +568,48 @@ async def _retry(params: CallParams, callable_: Any) -> Any:
     `callable_` is a zero-arg awaitable factory so we can re-invoke on retry.
     Every transient retry + every terminal failure is logged with the
     operation/model/attempts so a developer can see retry storms in the
-    server log without needing to dig through telemetry.
+    server log without needing to dig through telemetry. An exhausted retry
+    surfaces as LLMOperationFailed like any other terminal failure.
     """
     attempts = 0
-    last_error: BaseException | None = None
-    async for attempt in AsyncRetrying(
-        stop=stop_after_attempt(4),
-        wait=wait_exponential(multiplier=1.0, min=1.0, max=8.0),
-        retry=retry_if_exception_type(LLMTransientError),
-        reraise=True,
-    ):
-        with attempt:
-            attempts += 1
-            try:
-                return await callable_()
-            except Exception as e:
-                last_error = e
-                if _is_transient(e):
-                    log.warning(
-                        "anthropic_transient operation=%s model=%s attempt=%d/4 error=%r",
+    last_error: Exception | None = None
+    try:
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(4),
+            wait=_RETRY_WAIT,
+            retry=retry_if_exception_type(LLMTransientError),
+        ):
+            with attempt:
+                attempts += 1
+                try:
+                    return await callable_()
+                except Exception as e:
+                    last_error = e
+                    if _is_transient(e):
+                        log.warning(
+                            "anthropic_transient operation=%s model=%s attempt=%d/4 error=%r",
+                            params.operation,
+                            params.model,
+                            attempts,
+                            str(e)[:200],
+                        )
+                        raise LLMTransientError(str(e)) from e
+                    log.error(
+                        "anthropic_failed operation=%s model=%s attempts=%d error=%r",
                         params.operation,
                         params.model,
                         attempts,
-                        str(e)[:200],
+                        str(e)[:300],
                     )
-                    raise LLMTransientError(str(e)) from e
-                log.error(
-                    "anthropic_failed operation=%s model=%s attempts=%d error=%r",
-                    params.operation,
-                    params.model,
-                    attempts,
-                    str(e)[:300],
-                )
-                raise LLMOperationFailed(
-                    operation=params.operation,
-                    provider=params.provider,
-                    model=params.model,
-                    attempts=attempts,
-                    last_error=e,
-                ) from e
-    # Unreachable; tenacity reraise=True covers the loop exit.
+                    raise LLMOperationFailed(
+                        operation=params.operation,
+                        provider=params.provider,
+                        model=params.model,
+                        attempts=attempts,
+                        last_error=e,
+                    ) from e
+    except RetryError:
+        pass
     log.error(
         "anthropic_retries_exhausted operation=%s model=%s attempts=%d last_error=%r",
         params.operation,

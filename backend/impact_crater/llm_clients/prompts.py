@@ -71,7 +71,7 @@ def load(operation: str, provider: str, model: str) -> LoadedPrompt:
     )
 
 
-def render(prompt: LoadedPrompt, **vars: Any) -> str:
+def render(prompt: LoadedPrompt, **variables: Any) -> str:
     """Render a loaded template with the given variables.
 
     Uses ChainableUndefined so optional template variables (e.g. `context_brief`
@@ -79,7 +79,12 @@ def render(prompt: LoadedPrompt, **vars: Any) -> str:
     omitted and `{% if foo %}` evaluates them as falsy. Misspelled variable
     references in `{{ foo.bar }}` chains still raise loudly.
     """
-    return Template(prompt.template_text, undefined=ChainableUndefined).render(**vars)
+    return Template(prompt.template_text, undefined=ChainableUndefined).render(**variables)
+
+
+def has_templates(operation: str) -> bool:
+    """True when `operation` has a prompts/<operation>/ directory (inline-prompt ops have none)."""
+    return (_prompts_dir() / operation).is_dir()
 
 
 def clear_cache() -> None:

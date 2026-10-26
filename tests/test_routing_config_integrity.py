@@ -59,7 +59,8 @@ def test_every_prompt_file_belongs_to_a_priced_model() -> None:
     for path in _PROMPTS.glob("*/*.jinja2"):
         provider, model = path.stem.split("_", 1)
         prefix = f"{provider}-{model.replace('.', '-')}-"
-        if not any(c.startswith(prefix) for c in cards):
+        card = re.compile(re.escape(prefix) + r"(\d{4}-\d{2}-\d{2}|latest|v\d+)\.yaml")
+        if not any(card.fullmatch(c) for c in cards):
             orphans.append(str(path.relative_to(_ROOT)))
     assert not orphans, f"prompt files for models without a rate card: {orphans}"
 

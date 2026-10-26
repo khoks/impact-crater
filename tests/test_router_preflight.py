@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 import yaml
 from impact_crater import rate_cards
+from impact_crater.llm_clients.base import CallParams
 from impact_crater.llm_clients.exceptions import LLMOperationFailed
 from impact_crater.llm_clients.router import (
     LLMRouter,
@@ -15,6 +16,7 @@ from impact_crater.llm_clients.router import (
     _ballpark_cost,
     routed_models,
 )
+from impact_crater.storage.migrations import run_pending_migrations
 
 _OPS = {
     "caption_image": {
@@ -197,3 +199,73 @@ def test_ballpark_cost_prefers_the_cards_per_call_rate(
         assert _ballpark_cost(missing) == pytest.approx(0.50)
     finally:
         rate_cards.clear_cache()
+
+
+async def test_verify_routes_requires_a_prompt_template_for_each_routed_op(
+    tmp_path: Path,
+) -> None:
+    """A configured-fallback flip must be caught at submit, not in Stage 3 after the
+    Stage 2 spend: here caption_image is flipped to a model that has no template."""
+    ops = {**_OPS, "caption_image": {**_OPS["caption_image"], "model": "claude-sonnet-5-5"}}
+    path = tmp_path / "llm-routing.yaml"
+    path.write_text(yaml.safe_dump({"defaults": {"max_tokens": 1024}, "operations": ops}))
+    anthropic_client = _client()
+    router = LLMRouter(
+        clients={"anthropic": anthropic_client, "google": _client()}, config_path=path
+    )
+    with pytest.raises(LLMOperationFailed) as excinfo:
+        await router.verify_routes()
+    assert "prompts/caption_image/anthropic_claude-sonnet-5-5.jinja2" in str(excinfo.value)
+    assert anthropic_client.verify_model.await_count == 0
+
+
+async def test_shipped_fallback_prompts_exist_for_the_documented_flips() -> None:
+    from impact_crater.llm_clients import prompts
+
+    for op in ("extract_metadata_image", "parse_user_brief", "generate_title_text"):
+        prompts.load(op, "anthropic", "claude-sonnet-5-5")
+    for op in ("caption_image", "score_image", "generate_title_text"):
+        prompts.load(op, "google", "gemini-3.5-flash-lite")
+
+
+async def test_failed_dispatch_still_meters_the_billed_usage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A refusal / max_tokens / retried-then-failed call was billed by the provider;
+    the router must still record it against quota and telemetry."""
+    monkeypatch.delenv("IMPACT_CRATER_RATE_CARDS_DIR", raising=False)
+    rate_cards.clear_cache()
+    await run_pending_migrations()
+
+    class FailingClient:
+        provider = "anthropic"
+
+        async def caption_image(
+            self, image_bytes: bytes, *, prompt_template: str, params: CallParams
+        ) -> str:
+            params.usage_input_tokens = 40000
+            params.usage_output_tokens = 20000
+            raise LLMOperationFailed(
+                operation="caption_image",
+                provider="anthropic",
+                model=params.model,
+                attempts=1,
+                last_error="stop_reason=max_tokens",
+            )
+
+    events: list[dict[str, object]] = []
+
+    async def sink(event: dict[str, object]) -> None:
+        events.append(event)
+
+    router = LLMRouter(clients={"anthropic": FailingClient()})
+    router.set_progress_sink(sink)
+    try:
+        with pytest.raises(LLMOperationFailed):
+            await router.caption_image(b"\xff\xd8\xff", content_hash="feedfacefeedface")
+    finally:
+        rate_cards.clear_cache()
+    assert len(events) == 1
+    assert events[0]["cache_hit"] is False
+    # 40k input at $0.10/M + 20k output at $0.50/M on claude-haiku-5-5
+    assert events[0]["cost_usd"] == pytest.approx(0.004 + 0.010)

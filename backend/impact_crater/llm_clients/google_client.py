@@ -24,6 +24,7 @@ from google.genai import types as gtypes
 from PIL import Image, ImageOps
 from tenacity import (
     AsyncRetrying,
+    RetryError,
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
@@ -40,6 +41,9 @@ from impact_crater.llm_clients.base import (
 from impact_crater.llm_clients.exceptions import LLMOperationFailed, LLMTransientError
 
 log = logging.getLogger(__name__)
+
+# Backoff between transient retries; tests swap in `wait_none()`.
+_RETRY_WAIT = wait_exponential(multiplier=1.0, min=1.0, max=8.0)
 
 # gemini-embedding-2 MRL output size (API-normalized at non-default sizes).
 # Changing it changes the vector space: bump the op's model_version so cached
@@ -450,6 +454,7 @@ def _apply_usage(params: CallParams, result: Any) -> None:
     `prompt_token_count` includes the image tokens; `prompt_tokens_details` splits
     them out per modality, so the router can price image input separately.
     Thinking tokens are billed as output and arrive in `thoughts_token_count`.
+    Accumulates, so a retried call meters every attempt.
     """
     um = getattr(result, "usage_metadata", None)
     if um is None:
@@ -460,9 +465,9 @@ def _apply_usage(params: CallParams, result: Any) -> None:
         for d in (getattr(um, "prompt_tokens_details", None) or [])
         if str(getattr(d, "modality", "")).upper().endswith("IMAGE")
     )
-    params.usage_input_tokens = max(prompt - image, 0)
-    params.usage_image_tokens = image
-    params.usage_output_tokens = int(getattr(um, "candidates_token_count", 0) or 0) + int(
+    params.usage_input_tokens += max(prompt - image, 0)
+    params.usage_image_tokens += image
+    params.usage_output_tokens += int(getattr(um, "candidates_token_count", 0) or 0) + int(
         getattr(um, "thoughts_token_count", 0) or 0
     )
 
@@ -541,42 +546,44 @@ def _is_transient(e: BaseException) -> bool:
 
 async def _retry(params: CallParams, callable_: Any) -> Any:
     attempts = 0
-    last_error: BaseException | None = None
-    async for attempt in AsyncRetrying(
-        stop=stop_after_attempt(4),
-        wait=wait_exponential(multiplier=1.0, min=1.0, max=8.0),
-        retry=retry_if_exception_type(LLMTransientError),
-        reraise=True,
-    ):
-        with attempt:
-            attempts += 1
-            try:
-                return await callable_()
-            except Exception as e:
-                last_error = e
-                if _is_transient(e):
-                    log.warning(
-                        "google_transient operation=%s model=%s attempt=%d/4 error=%r",
+    last_error: Exception | None = None
+    try:
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(4),
+            wait=_RETRY_WAIT,
+            retry=retry_if_exception_type(LLMTransientError),
+        ):
+            with attempt:
+                attempts += 1
+                try:
+                    return await callable_()
+                except Exception as e:
+                    last_error = e
+                    if _is_transient(e):
+                        log.warning(
+                            "google_transient operation=%s model=%s attempt=%d/4 error=%r",
+                            params.operation,
+                            params.model,
+                            attempts,
+                            str(e)[:200],
+                        )
+                        raise LLMTransientError(str(e)) from e
+                    log.error(
+                        "google_failed operation=%s model=%s attempts=%d error=%r",
                         params.operation,
                         params.model,
                         attempts,
-                        str(e)[:200],
+                        str(e)[:300],
                     )
-                    raise LLMTransientError(str(e)) from e
-                log.error(
-                    "google_failed operation=%s model=%s attempts=%d error=%r",
-                    params.operation,
-                    params.model,
-                    attempts,
-                    str(e)[:300],
-                )
-                raise LLMOperationFailed(
-                    operation=params.operation,
-                    provider=params.provider,
-                    model=params.model,
-                    attempts=attempts,
-                    last_error=e,
-                ) from e
+                    raise LLMOperationFailed(
+                        operation=params.operation,
+                        provider=params.provider,
+                        model=params.model,
+                        attempts=attempts,
+                        last_error=e,
+                    ) from e
+    except RetryError:
+        pass
     log.error(
         "google_retries_exhausted operation=%s model=%s attempts=%d last_error=%r",
         params.operation,

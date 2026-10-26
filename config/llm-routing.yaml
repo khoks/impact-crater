@@ -36,7 +36,7 @@
 # Configured fallbacks (flip the yaml; prompts and rate cards are shipped):
 #   Tier-S / title text  → google / gemini-3.5-flash-lite / "2026-07-21", effort: minimal
 #   Tier-M quality hedge → anthropic / claude-sonnet-5-5 / "2026-09-28", effort: low
-#   Title background 2K  → google / gemini-nano-banana-2.1 / "2026-10-06" (needs a rate card)
+#   Title background 2K  → google / gemini-nano-banana-2.1 / "2026-10-06" (needs a rate card and a prompt copy)
 
 defaults:
   max_tokens: 1024

@@ -23,7 +23,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 import yaml
 
@@ -46,6 +46,8 @@ log = logging.getLogger(__name__)
 # `{operation, provider, tier, cost_usd, cache_hit}`. The M3 JobRegistry
 # is the production sink; tests pass their own.
 ProgressSink = Callable[[dict[str, Any]], Awaitable[None]]
+
+_T = TypeVar("_T")
 
 # Repo-root-relative `config/llm-routing.yaml`.
 _CONFIG_PATH_DEFAULT = Path(__file__).resolve().parents[3] / "config" / "llm-routing.yaml"
@@ -129,7 +131,25 @@ class LLMRouter:
         """Resolve every routed model with its provider key before any paid call
         (A-028). Unbilled. Returns {model: served identifier}; raises
         LLMOperationFailed on the first model the key cannot use, so a retired
-        pin fails at submit instead of after the Stage 2 spend."""
+        pin fails at submit instead of after the Stage 2 spend. Also checks that
+        every routed op with a prompt directory has a template for its model, so
+        a configured-fallback flip is a yaml-only change."""
+        for route in self._routes.values():
+            if not prompts.has_templates(route.operation):
+                continue
+            try:
+                prompts.load(route.operation, route.provider, route.model)
+            except FileNotFoundError as exc:
+                raise LLMOperationFailed(
+                    operation=route.operation,
+                    provider=route.provider,
+                    model=route.model,
+                    attempts=0,
+                    last_error=(
+                        f"no prompt template for {route.operation}: expected "
+                        f"prompts/{route.operation}/{route.provider}_{route.model}.jinja2"
+                    ),
+                ) from exc
         required: dict[str, OperationRoute] = {}
         optional: dict[str, OperationRoute] = {}
         for route in self._routes.values():
@@ -180,7 +200,11 @@ class LLMRouter:
             await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return str(cached)
 
-        result = await client.caption_image(image_bytes, prompt_template=rendered, params=params)
+        result = await self._dispatch(
+            route,
+            params,
+            client.caption_image(image_bytes, prompt_template=rendered, params=params),
+        )
         await cache.put(
             result,
             content_hash=content_hash,
@@ -206,7 +230,7 @@ class LLMRouter:
         rendered = prompts.render(prompt, spirit=spirit_prompt, aspect=aspect)
         params = self._params(route)
         params.extra["aspect_ratio"] = aspect
-        result = await client.generate_image(rendered, params=params)
+        result = await self._dispatch(route, params, client.generate_image(rendered, params=params))
         await self._record_call(
             route,
             cache_hit=False,
@@ -254,11 +278,15 @@ class LLMRouter:
             await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return float(cached)
 
-        result = await client.score_image(
-            image_bytes,
-            prompt_template=rendered,
-            dimension=dimension,
-            params=params,
+        result = await self._dispatch(
+            route,
+            params,
+            client.score_image(
+                image_bytes,
+                prompt_template=rendered,
+                dimension=dimension,
+                params=params,
+            ),
         )
         await cache.put(
             result,
@@ -305,11 +333,15 @@ class LLMRouter:
             await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return cached
 
-        result = await client.extract_metadata_image(
-            image_bytes,
-            prompt_template=rendered,
-            schema=schema,
-            params=params,
+        result = await self._dispatch(
+            route,
+            params,
+            client.extract_metadata_image(
+                image_bytes,
+                prompt_template=rendered,
+                schema=schema,
+                params=params,
+            ),
         )
         await cache.put(
             result,
@@ -347,7 +379,7 @@ class LLMRouter:
             await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return cached  # numpy ndarray
 
-        result = await client.embed_image(image_bytes, params=params)
+        result = await self._dispatch(route, params, client.embed_image(image_bytes, params=params))
         await cache.put(
             result,
             content_hash=content_hash,
@@ -390,7 +422,7 @@ class LLMRouter:
             await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return cached
 
-        result = await client.embed_text(text, params=params)
+        result = await self._dispatch(route, params, client.embed_text(text, params=params))
         await cache.put(
             result,
             content_hash=content_hash,
@@ -476,14 +508,18 @@ class LLMRouter:
             await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return cached
 
-        result = await client.judge_narrative_arc(
-            candidates,
-            prompt_template=rendered,
-            brief=brief,
-            target_duration=target_duration,
-            mode=mode,
-            music_spec=music_spec,
-            params=params,
+        result = await self._dispatch(
+            route,
+            params,
+            client.judge_narrative_arc(
+                candidates,
+                prompt_template=rendered,
+                brief=brief,
+                target_duration=target_duration,
+                mode=mode,
+                music_spec=music_spec,
+                params=params,
+            ),
         )
         await cache.put(
             result,
@@ -532,11 +568,15 @@ class LLMRouter:
             await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return cached
 
-        result = await client.parse_user_brief(
-            text,
-            prompt_template=rendered,
-            schema=schema,
-            params=params,
+        result = await self._dispatch(
+            route,
+            params,
+            client.parse_user_brief(
+                text,
+                prompt_template=rendered,
+                schema=schema,
+                params=params,
+            ),
         )
         await cache.put(
             result,
@@ -587,8 +627,10 @@ class LLMRouter:
             await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
             return str(cached)
 
-        result = await client.parse_user_brief(
-            brief, prompt_template=rendered, schema=schema, params=params
+        result = await self._dispatch(
+            route,
+            params,
+            client.parse_user_brief(brief, prompt_template=rendered, schema=schema, params=params),
         )
         title = str(result.get("title", "")).strip()
         # Only cache a usable title — an empty result should re-try next run
@@ -734,6 +776,16 @@ class LLMRouter:
                 )
             except Exception as exc:  # pragma: no cover
                 log.debug("progress sink failed: %s", exc)
+
+    async def _dispatch(self, route: OperationRoute, params: CallParams, call: Awaitable[_T]) -> _T:
+        """Await a client call; when it fails after the provider billed it (usage is
+        on `params`), meter that spend before re-raising so quota and telemetry see it."""
+        try:
+            return await call
+        except LLMOperationFailed:
+            if params.usage_input_tokens or params.usage_output_tokens or params.usage_image_tokens:
+                await self._record_call(route, cache_hit=False, params=params)
+            raise
 
     def _client_for(self, route: OperationRoute) -> LLMClient:
         if route.provider not in self._clients:

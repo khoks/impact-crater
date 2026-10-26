@@ -223,3 +223,52 @@ async def test_verify_model_maps_404_and_401_to_readable_failures() -> None:
     with pytest.raises(LLMOperationFailed) as excinfo:
         await client.verify_model("claude-haiku-5-5")
     assert "rejected the API key" in str(excinfo.value)
+
+
+def _usage(input_tokens: int, output_tokens: int) -> SimpleNamespace:
+    return SimpleNamespace(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cache_creation_input_tokens=0,
+        cache_read_input_tokens=0,
+    )
+
+
+async def test_usage_accumulates_across_the_tool_retry_and_survives_a_failure() -> None:
+    first = _text_response("prose instead of the tool")
+    first.usage = _usage(1000, 50)
+    second = _tool_response("submit_metadata", {"mood": "calm"})
+    second.usage = _usage(1000, 300)
+    client, _ = _client(first, second)
+    params = _params("parse_user_brief", "low")
+    await client.parse_user_brief(
+        "brief", prompt_template="parse", schema={"type": "object"}, params=params
+    )
+    assert (params.usage_input_tokens, params.usage_output_tokens) == (2000, 350)
+
+    truncated = SimpleNamespace(content=[], stop_reason="max_tokens", usage=_usage(40000, 20000))
+    client, _ = _client(truncated)
+    params = _params("judge_narrative_arc", "high", model="claude-opus-5-5")
+    with pytest.raises(LLMOperationFailed):
+        await client.parse_user_brief(
+            "brief", prompt_template="judge", schema={"type": "object"}, params=params
+        )
+    assert (params.usage_input_tokens, params.usage_output_tokens) == (40000, 20000)
+
+
+async def test_anthropic_retry_exhaustion_is_an_operation_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from impact_crater.llm_clients import anthropic_client
+    from tenacity import wait_none
+
+    monkeypatch.setattr(anthropic_client, "_RETRY_WAIT", wait_none())
+    client = AnthropicLLMClient(api_key="sk-ant-test")
+    overloaded = _status_error(anthropic.InternalServerError, 503)
+    client._client.messages.create = AsyncMock(side_effect=overloaded)  # type: ignore[method-assign]
+    with pytest.raises(LLMOperationFailed) as excinfo:
+        await client.caption_image(
+            _jpeg(), prompt_template="caption", params=_params("caption_image")
+        )
+    assert excinfo.value.attempts == 4
+    assert client._client.messages.create.await_count == 4

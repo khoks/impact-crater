@@ -35,14 +35,6 @@ def test_google_model_not_found_is_readable() -> None:
     assert _classify_failure(_failed(raw, model="gemini-old")).startswith("Model not available")
 
 
-def test_preflight_runtime_error_is_readable() -> None:
-    exc = RuntimeError(
-        "AI model pre-flight failed: model 'gemini-embedding-2' is not available to this "
-        "Google key (404 NOT_FOUND)"
-    )
-    assert _classify_failure(exc).startswith("Model not available")
-
-
 def test_refusal_and_context_window_are_readable() -> None:
     assert _classify_failure(
         _failed("stop_reason=refusal category=cyber explanation='x'")

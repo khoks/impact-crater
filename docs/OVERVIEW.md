@@ -185,8 +185,9 @@ flowchart TD
    background, the lighting, time of day and mood, the cinematographic shot
    type (wide, establishing, close-up, …), an "is this an intrinsically special
    shot" score, a content-safety rating, and whether anything is obstructing the
-   shot. Every answer is checked against a strict schema and retried once if it
-   doesn't fit.
+   shot. Every answer is checked against the schema; a reply that skips the
+   structured call is retried once, and an answer that still fails the check is
+   dropped for that photo rather than guessed.
 
 4. **Trip cast — who is in the media.** The system detects faces across the
    whole set (locally, with a bundled detector), turns each face into an

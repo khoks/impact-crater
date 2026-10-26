@@ -416,3 +416,23 @@ async def test_google_verify_model_maps_not_found_and_bad_key() -> None:
     with pytest.raises(LLMOperationFailed) as excinfo:
         await client.verify_model("gemini-embedding-2")
     assert "rejected the API key" in str(excinfo.value)
+
+
+async def test_google_retry_exhaustion_is_an_operation_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """tenacity must not leak LLMTransientError: callers (verify_routes, the 412
+    mapping, the wizard) only handle LLMOperationFailed."""
+    from impact_crater.llm_clients import google_client
+    from tenacity import wait_none
+
+    monkeypatch.setattr(google_client, "_RETRY_WAIT", wait_none())
+    client = GoogleLLMClient(api_key="AIza-test")
+    overloaded = Exception("503 UNAVAILABLE. The model is overloaded. Please try again later.")
+    overloaded.code = 503  # type: ignore[attr-defined]
+    client._client.models.get = MagicMock(side_effect=overloaded)  # type: ignore[method-assign]
+    with pytest.raises(LLMOperationFailed) as excinfo:
+        await client.verify_model("gemini-3.1-flash-lite-image")
+    assert client._client.models.get.call_count == 4
+    assert excinfo.value.attempts == 4
+    assert "Google models.get failed: 503" in str(excinfo.value)
