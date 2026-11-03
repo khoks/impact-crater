@@ -1271,3 +1271,14 @@ Reserved by D-057 for the measurable single-video quality gate (restart Phase 2 
 - **Alternatives considered:** catching `LLMTransientError` at each call site — rejected, every new caller would have to remember it; metering inside each client — rejected, the router already owns cost and quota.
 - **Consequences:** The daily quota and `cost_summary.json` now include billed-but-failed calls, so the quota gate cannot be under-run by refusals or truncations. The job-wide "saved by cache" figure is still an average-miss approximation (S-3.11.7).
 - **Linked ADRs / items:** ADR-0015, ADR-0007, D-061, S-2.10.9 (PR #107), S-3.11.1, S-3.11.7.
+
+### D-064 — At a fixed target duration, whole-video pace is a clip-count decision, not a timing multiplier
+
+- **Status:** accepted (fix scheduled as S-3.11.8)
+- **Date:** 2026-11-03
+- **Context:** The first live Stage 9 refine on the D-061 lineup (S-2.9.21, snapshot `9c16a02b8db94d15` → `07bcb4d4114d4943`) asked to "slow the pacing a little — hold each shot a bit longer". The Haiku 5.5 planner returned a timing-only directive patch (positional ×1.2 over the whole timeline, ×1.3 over the canyon section, `raises_band: false`) and replied that the clips were re-timed to run longer.
+- **Root cause:** Stage 6 applies positional rules, then `_scale_to_target` clamps each clip into its band (photos 1.5–3 s unless a rule raises the band) and shrinks the timeline back within 10 % of the target — the S-2.12.2 contract. A uniform lengthening therefore cancels itself: 12 of 13 photos got shorter (3.00 → 2.46 s), the canyon videos grew ×1.24, and the total moved 62.2 → 63.0 s. The planner's reply is written before the plan is compiled, so it cannot notice.
+- **Decision:** Keep the target-fit contract — the user's duration wins. Whole-timeline pace requests change the number of clips (fewer, longer shots for "slower"); positional rules stay the tool for region-scoped pacing ("slower opener"), with `raises_band` when a region must exceed the band; and the refine reply is derived from the compiled plan diff, not from the planner's intent.
+- **Alternatives considered:** let a "slower" refine overrun the target duration — rejected, the user set the length and the music is fitted to it; raise the photo band globally — rejected, it brings back the 5–7 s photo holds S-2.11.1 removed.
+- **Consequences:** S-3.11.8 changes the planner prompt and adds a clip-count lever plus a plan-diff reply; the S-3.10.1 harness gets a "slower raises the mean photo hold" assertion. MVP gate #8 stays ticked (the June refines changed content and pacing), but a pacing refine could report success while doing the opposite until S-3.11.8 lands.
+- **Linked ADRs / items:** ADR-0019, ADR-0021, S-2.12.2, S-2.11.1, S-2.9.21, S-3.11.8, S-3.10.1.
