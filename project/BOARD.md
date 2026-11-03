@@ -18,6 +18,7 @@
 |---|---|---|---|---|---|
 | [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | Initiative | P0 | mvp | in-progress |
 | [E-2.9](./epics/E-2.9-cross-project-profile-mvp.md) | Cross-project user profile (N-010 minimum-viable) + polish + D-014 validation | Epic | P0 | mvp | in-progress |
+| [S-2.9.21](./stories/S-2.9.21-first-publish-dry-runs-then-private-youtube.md) | First publish — one dry-run per platform through the UI, then the owner's private YouTube upload (MVP gate (plan-phase-1) | Story | P0 | mvp | in-progress |
 | [I-3](./initiatives/I-3-v1-local-first-live-job-multi-platform-style-polish.md) | v1 — Local-first + live job + multi-platform + style + polish | Initiative | P1 | v1 | in-progress |
 | [E-3.3](./epics/E-3.3-multi-platform-connectors-instagram-facebook-x.md) | Multi-platform connectors — Instagram + Facebook + X (plan-phase-1, plan-phase-4) | Epic | P1 | v1 | in-progress |
 
@@ -32,6 +33,7 @@
 | [S-3.11.2](./stories/S-3.11.2-test-ci.md) | Test CI — ruff / mypy / pytest / vitest / build / mkdocs on ubuntu and windows; branch protection; ADR-0004 --admin → --auto (plan-phase-1) | Story | P0 | mvp-hardening | todo |
 | [E-3.5](./epics/E-3.5-power-user-polish-bundle.md) | Power-user + polish bundle (plan-phase-1, plan-phase-2, plan-phase-3) | Epic | P1 | v1 | todo |
 | [S-2.9.19](./stories/S-2.9.19-persist-job-registry-survive-restart.md) | Persist the job registry so live/preview views survive a restart (plan-phase-2) | Story | P1 | mvp-hardening | todo |
+| [S-3.3.8](./stories/S-3.3.8-publish-ux-honesty.md) | Publish UX honesty — caption, visibility, defaults and dry-run wording match what the connector will actually do (plan-phase-1) | Story | P1 | v1 | todo |
 | [S-3.5.5](./stories/S-3.5.5-refine-as-job-and-publish-from-any-snapshot.md) | Refine as a job + publish from any snapshot (SnapshotInspect canonical preview) (plan-phase-1, plan-phase-2) | Story | P1 | v1 | todo |
 | [S-3.10.2](./stories/S-3.10.2-golden-set-from-feedback.md) | Golden set — export the owner's decision-level feedback verdicts; harness reports agreement (plan-phase-2) | Story | P1 | mvp-hardening | todo |
 | [S-3.11.1](./stories/S-3.11.1-mid-job-quota-guard.md) | Mid-job quota guard — check before every paid call (total + per-provider), refinement and title card included, UTC day boundary (plan-phase-2) | Story | P1 | mvp-hardening | todo |
@@ -42,6 +44,7 @@
 | [S-3.10.3](./stories/S-3.10.3-cap-violation-counters.md) | Cap-violation counters in diagnostics.json — instrument before the D-053 repair-loop decision (plan-phase-2) | Story | P2 | mvp-hardening | todo |
 | [S-3.11.4](./stories/S-3.11.4-wheel-packaging-prompts-and-config.md) | Wheel packaging of prompts/ and config/; requires-python 3.12; single version source; CHANGELOG (plan-phase-2) | Story | P2 | mvp-hardening | todo |
 | [S-3.11.5](./stories/S-3.11.5-frontend-dependency-bump.md) | Frontend dependency bump — vite / vitest / jsdom / @types/node / tailwind / react-router majors; clear npm audit; engines check (plan-phase-1) | Story | P2 | mvp-hardening | todo |
+| [S-3.11.8](./stories/S-3.11.8-pacing-refine-cancelled-by-target-fit.md) | A whole-video "slower pacing" refine is cancelled by the target fit — trade clip count for hold time, and report what actually changed (plan-phase-2) | Story | P2 | mvp-hardening | todo |
 | [S-2.9.17](./stories/S-2.9.17-faststart-render-instant-preview.md) | Inline preview shows the first frame promptly — verify HTTP Range support for render.mp4 on starlette 1.0 (plan-phase-2) | Story | P3 | mvp-hardening | todo |
 | [S-3.11.7](./stories/S-3.11.7-cache-savings-estimate-prices-hits-at-average-miss.md) | Cache-savings figure prices every hit at this job's average miss (plan-phase-2) | Story | P3 | mvp-hardening | todo |
 
@@ -189,6 +192,6 @@ Regenerate with `python scripts/tracker_board.py`; `--check` fails when this fil
 |---|---|---|---|---|---|---|---|
 | Initiative | 2 | 0 | 0 | 1 | 2 | 0 | 5 |
 | Epic | 0 | 0 | 0 | 17 | 2 | 19 | 38 |
-| Story | 0 | 1 | 1 | 79 | 0 | 65 | 146 |
+| Story | 0 | 1 | 1 | 79 | 1 | 67 | 149 |
 | Task | 0 | 0 | 0 | 30 | 0 | 0 | 30 |
-| **All** | 2 | 1 | 1 | 127 | 4 | 84 | 219 |
+| **All** | 2 | 1 | 1 | 127 | 5 | 86 | 222 |
