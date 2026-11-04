@@ -49,6 +49,8 @@ The `access_token` in the response is `IC_INSTAGRAM_ACCESS_TOKEN`. Refresh it ev
 
 ## Step 5 — expose your server via ngrok (for real posting)
 
+> **Blocked for now (2026-11-03).** The server no longer answers tunnelled requests: a tunnel's Host name is refused, and with `--allow-remote` a forwarded request counts as remote, so Meta's fetch of the MP4 would need the API token ([ADR-0022](../architecture/ADR-0022-local-api-token-and-loopback-guard.md)). Exposing the API to the internet is what that guard prevents. Real Instagram posting waits for a single expiring signed media URL, planned with the Instagram public-URL work in restart Phase 4. The steps below describe the intended flow.
+
 ```
 ngrok http 8765
 ```

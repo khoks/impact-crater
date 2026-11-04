@@ -19,19 +19,26 @@ The Instagram connector needs a public media URL, and in-app YouTube OAuth (S-3.
 ## Decision
 
 1. **Per-install token.** On first start the server writes `secrets.token_urlsafe(32)` to `~/.impact-crater/.api-token`, hardened like the Fernet key: `0600` on POSIX, the user-profile ACL on Windows.
-2. **Required on mutating requests.** A pure-ASGI middleware returns 401 unless `Authorization: Bearer <token>` matches, compared in constant time. It covers every `POST/PUT/PATCH/DELETE` under `/api/`, and every `/api/` request from a non-loopback client.
-   - Loopback reads (media, thumbnails, `render.mp4`, snapshots) stay tokenless, so `<img>` and `<video>` tags keep working. They are reachable only from this machine and only under a loopback Host name.
-3. **Host check.** `TrustedHostMiddleware` accepts `localhost` and `127.0.0.1` only. This is what defeats DNS rebinding. `--allow-remote` widens it to any host, and the token is still required.
-4. **How the page gets the token.**
-   - The SPA fallback serves `index.html` with `<meta name="impact-crater-api-token">` (no-store) to loopback clients only.
-   - Under the Vite dev server, the page reads `GET /api/session`, which answers loopback clients and returns 403 to everyone else.
+2. **Required on every `/api` request.** A pure-ASGI middleware returns 401 unless `Authorization: Bearer <token>` matches, compared in constant time. That covers reads too, because folder listings, project briefs and settings are personal data, and a tokenless `GET /api/folder/scan` let any web page make the server walk a disk or, on Windows, open an SMB session to a UNC path.
+   - A few files that `<img>` and `<video>` tags load stay tokenless for **local** requests only: `/api/media/{hash}/thumb.jpg`, `/api/snapshots/{id}/render.mp4` and `/api/feedback/{id}/screenshot.png`, plus `/api/health` and the API docs.
+   - The OpenAPI schema declares the bearer scheme, so `/api/docs` can send it.
+3. **What counts as local** (`api_auth.is_local`). All three must hold: a loopback client address, a loopback Host header, and no `Forwarded` / non-loopback `X-Forwarded-For` hop.
+   - The Host condition stops a DNS-rebinding page even when `--allow-remote` lifts the Host check.
+   - The forwarding condition stops a tunnel or `vite --host` from passing remote callers off as 127.0.0.1. The Vite proxy sets `xfwd`, so it reports the browser's real address.
+4. **Host check.** `HostGuardMiddleware` answers 400 unless the Host header names this machine (`localhost`, `127.0.0.1`, `[::1]`). `--allow-remote` lifts it, but the token and the local rule above still apply.
+5. **How the page gets the token.**
+   - The SPA fallback serves `index.html` with `<meta name="impact-crater-api-token">` (no-store) to local requests only.
+   - Under the Vite dev server, the page reads `GET /api/session`, which answers local requests and returns 403 to everyone else.
    - There is no CORS, so a page on another origin can read neither.
-5. **WebSocket.** The handshake is refused (1008) when an `Origin` is present and is neither loopback nor the server's own Host. After `accept`, the first message must be `{"type": "auth", "token": …}` within 10 s, otherwise the socket closes with 1008. Browsers cannot set headers on a WebSocket, and query strings leak into logs, so the token travels in a message.
-6. **CLI.** A non-loopback `--host` exits with code 2 unless `--allow-remote` is passed. With the flag, the CLI prints a warning naming the token file and sets `IMPACT_CRATER_ALLOW_REMOTE=1` for the app factory.
+   - The fallback only serves files inside the built frontend folder; `..` segments and absolute paths in the decoded URL path are refused.
+6. **WebSocket.** The handshake is refused (1008) when an `Origin` is present and is neither loopback nor the server's own Host. After `accept`, the first message must be `{"type": "auth", "token": …}` within 10 s, otherwise the socket closes with 1008. Browsers cannot set headers on a WebSocket, and query strings leak into logs, so the token travels in a message.
+7. **CLI.** A non-loopback `--host` exits with code 2 unless `--allow-remote` is passed. With the flag, the CLI prints a warning naming the token file and sets `IMPACT_CRATER_ALLOW_REMOTE=1` for the app factory.
 
 ## Consequences
 
-- A remote browser gets no token automatically, so the UI is effectively loopback-only even with `--allow-remote`. Remote use means API clients that send the header. A remote UI, a signed media URL for Instagram and the hosted mode (I-5) are separate decisions.
+- A remote browser gets no token automatically, so the UI is effectively loopback-only even with `--allow-remote`. Remote use means API clients that send the header. A remote UI, a signed media URL for Instagram (the tunnel in the Instagram guide is refused until then) and the hosted mode (I-5) are separate decisions.
+- A forwarder that rewrites Host to `localhost` and adds no `X-Forwarded-For` is indistinguishable from a local browser. Do not put one in front of the port.
+- Review: an independent pass on the first version of this change found that with `--allow-remote` the SPA fallback served any file (traversal) and `/api/session` handed the token to a rebinding page. It also found that forwarders looked local and that tokenless reads let any page trigger folder scans. All are fixed as described above, with tests.
 - Anything running as the user can read the token file. That is the same position as the Fernet key and the database, and it is out of scope in `SECURITY.md`.
-- Every frontend call goes through `apiFetch` (`frontend/src/api/client.ts`). A new endpoint called with a bare `fetch` gets a 401 if it mutates.
-- Tests create clients with `base_url="http://127.0.0.1"` and `headers=api_auth.auth_header()`. `tests/test_api_auth.py` covers 401s, the Host check, `/api/session`, the WebSocket auth and Origin checks, the CLI refusal and the meta injection.
+- Every frontend call goes through `apiFetch` (`frontend/src/api/client.ts`). A new endpoint called with a bare `fetch` gets a 401.
+- Tests create clients with `base_url="http://127.0.0.1"` and `headers=api_auth.auth_header()`. `tests/test_api_auth.py` covers 401s, tokenless media, the Host check (IPv6 included), rebinding under `--allow-remote`, forwarded requests, `/api/session`, UNC folder paths, the OpenAPI scheme, dist-folder containment, the WebSocket auth and Origin checks, the CLI refusal and the meta injection.

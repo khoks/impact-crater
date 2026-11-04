@@ -16,9 +16,9 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from impact_crater import __version__, api_auth
 from impact_crater.api import (
@@ -49,8 +49,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app(*, allow_remote: bool | None = None) -> FastAPI:
     """`allow_remote` (default: the `IMPACT_CRATER_ALLOW_REMOTE` env var the CLI sets for
-    `--allow-remote`) widens the accepted Host headers beyond loopback; the token is
-    required either way."""
+    `--allow-remote`) accepts Host headers other than this machine's; the token is
+    required either way, and only local requests are handed it (ADR-0022)."""
     if allow_remote is None:
         allow_remote = os.environ.get(api_auth.ALLOW_REMOTE_ENV) == "1"
     token = api_auth.get_or_create_token()
@@ -66,12 +66,9 @@ def create_app(*, allow_remote: bool | None = None) -> FastAPI:
 
     app.state.api_token = token
     app.add_middleware(api_auth.ApiTokenMiddleware, token=token)
-    # Added last so it runs first: a Host header other than this machine's own name is
-    # refused, which is what stops a DNS-rebinding page from reaching the API.
-    app.add_middleware(
-        TrustedHostMiddleware,
-        allowed_hosts=["*"] if allow_remote else ["localhost", "127.0.0.1"],
-    )
+    # Added last so it runs first.
+    app.add_middleware(api_auth.HostGuardMiddleware, allow_remote=allow_remote)
+    _declare_bearer_auth(app)
 
     @app.get("/api/health")
     async def health() -> dict[str, Any]:
@@ -79,7 +76,7 @@ def create_app(*, allow_remote: bool | None = None) -> FastAPI:
 
     @app.get(api_auth.SESSION_PATH)
     async def session(request: Request) -> dict[str, str]:
-        if request.client is None or not api_auth.is_loopback(request.client.host):
+        if not api_auth.is_local(request.scope):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="The API token is only handed to a browser on this machine.",
@@ -103,6 +100,22 @@ def create_app(*, allow_remote: bool | None = None) -> FastAPI:
     _mount_frontend(app, token)
 
     return app
+
+
+def _declare_bearer_auth(app: FastAPI) -> None:
+    """Advertise the bearer token in the OpenAPI schema so /api/docs can send it."""
+
+    def openapi() -> dict[str, Any]:
+        if app.openapi_schema is None:
+            schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+            schema.setdefault("components", {})["securitySchemes"] = {
+                "bearerAuth": {"type": "http", "scheme": "bearer"}
+            }
+            schema["security"] = [{"bearerAuth": []}]
+            app.openapi_schema = schema
+        return app.openapi_schema
+
+    app.openapi = openapi  # type: ignore[method-assign]
 
 
 def _mount_frontend(app: FastAPI, token: str) -> None:
@@ -131,18 +144,29 @@ def _mount_frontend(app: FastAPI, token: str) -> None:
 
     @app.get("/{full_path:path}", response_model=None)
     async def spa_fallback(full_path: str, request: Request) -> Response:
-        # Static files in dist root (favicon, etc).
-        candidate = dist_dir / full_path
-        if full_path and candidate.is_file() and candidate.name != "index.html":
+        candidate = _dist_file(dist_dir, full_path)
+        if candidate is not None:
             return FileResponse(candidate)
         # SPA fallback: every other route serves index.html so react-router takes over.
         return _index_html(dist_dir, token, request)
 
 
+def _dist_file(dist_dir: Path, full_path: str) -> Path | None:
+    """A static file in the dist root (favicon etc.), never anything outside it: the path
+    arrives percent-decoded, so `..` segments and absolute paths must not escape."""
+    if not full_path:
+        return None
+    root = dist_dir.resolve()
+    candidate = (root / full_path).resolve()
+    if not candidate.is_relative_to(root) or not candidate.is_file():
+        return None
+    return None if candidate.name == "index.html" else candidate
+
+
 def _index_html(dist_dir: Path, token: str, request: Request) -> HTMLResponse:
     """index.html, carrying the API token in a meta tag for a browser on this machine."""
     page = (dist_dir / "index.html").read_text(encoding="utf-8")
-    if request.client is not None and api_auth.is_loopback(request.client.host):
+    if api_auth.is_local(request.scope):
         meta = f'<meta name="{api_auth.TOKEN_META_NAME}" content="{html.escape(token)}">'
         page = page.replace("</head>", f"{meta}</head>", 1)
     return HTMLResponse(page, headers={"Cache-Control": "no-store"})
