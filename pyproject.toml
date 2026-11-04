@@ -162,3 +162,5 @@ exclude_lines = [
     "raise NotImplementedError",
     "if __name__ == .__main__.:",
 ]
+# Floor under the 82 % measured on 2026-11-03 (Windows); applies when --cov is passed.
+fail_under = 80

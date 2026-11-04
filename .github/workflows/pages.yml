@@ -36,7 +36,8 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install MkDocs Material
-        run: pip install "mkdocs-material>=9.5"
+        # Same pins as requirements-lock.txt and ci.yml (MkDocs 2.0 drops the plugin system).
+        run: pip install "mkdocs==1.6.1" "mkdocs-material==9.7.6"
       - name: Assemble external-facing site (overview only)
         run: |
           mkdir -p site-src
