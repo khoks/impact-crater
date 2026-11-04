@@ -10,6 +10,8 @@ export interface SettingsSnapshot {
   spend_cap_google_usd: number | null;
   today_total_spent_usd: number;
   today_per_provider_spent_usd: Record<string, number>;
+  publish_dry_run: boolean;
+  publish_dry_run_locked_by_env: boolean;
 }
 
 export interface SettingsUpdate {
@@ -18,6 +20,7 @@ export interface SettingsUpdate {
   spend_cap_total_usd?: number | null;
   spend_cap_anthropic_usd?: number | null;
   spend_cap_google_usd?: number | null;
+  publish_dry_run?: boolean | null;
 }
 
 export async function fetchSettingsSnapshot(): Promise<SettingsSnapshot> {

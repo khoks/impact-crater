@@ -156,4 +156,45 @@ describe("Settings", () => {
       expect(screen.getByRole("alert")).toHaveTextContent(/out of range/);
     });
   });
+
+  it("saves the dry-run switch, and locks it when the env var is set", async () => {
+    const fn = mockFetchSequence([
+      { ok: true, status: 200, body: { ...SNAPSHOT_KEYS_SET, publish_dry_run: true, publish_dry_run_locked_by_env: false } },
+      { ok: true, status: 200, body: { ok: true } },
+      { ok: true, status: 200, body: { ...SNAPSHOT_KEYS_SET, publish_dry_run: false, publish_dry_run_locked_by_env: false } },
+    ]);
+    render(
+      <MemoryRouter initialEntries={["/settings"]}>
+        <Routes>
+          <Route path="/settings" element={<Settings />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    const toggle = await screen.findByRole("checkbox", { name: /Dry-run/ });
+    expect(toggle).toBeChecked();
+    const user = userEvent.setup();
+    await user.click(toggle);
+    expect(screen.getByText(/posts the video for real/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Save changes/i }));
+    await waitFor(() => {
+      const post = fn.mock.calls.find((c) => (c[0] as string) === "/api/settings/update");
+      expect(post).toBeDefined();
+      expect(JSON.parse((post![1] as RequestInit).body as string).publish_dry_run).toBe(false);
+    });
+  });
+
+  it("disables the dry-run switch when IC_PUBLISH_DRY_RUN sets it", async () => {
+    mockFetchSequence([
+      { ok: true, status: 200, body: { ...SNAPSHOT_KEYS_SET, publish_dry_run: true, publish_dry_run_locked_by_env: true } },
+    ]);
+    render(
+      <MemoryRouter initialEntries={["/settings"]}>
+        <Routes>
+          <Route path="/settings" element={<Settings />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    expect(await screen.findByRole("checkbox", { name: /Dry-run/ })).toBeDisabled();
+    expect(screen.getByText(/overrides this switch/)).toBeInTheDocument();
+  });
 });

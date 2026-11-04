@@ -17,6 +17,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from impact_crater.connectors import dry_run
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -65,6 +66,8 @@ def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[P
     home = tmp_path / "impact-crater"
     home.mkdir()
     monkeypatch.setenv("IMPACT_CRATER_HOME", str(home))
+    # The Settings dry-run toggle is process state; start every test without it.
+    monkeypatch.setattr(dry_run, "_settings_dry_run", None)
     yield home
 
 

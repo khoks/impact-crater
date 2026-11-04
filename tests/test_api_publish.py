@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -13,6 +15,7 @@ from impact_crater.api import publish
 from impact_crater.app import create_app
 from impact_crater.connectors import ConnectorUploadResult
 from impact_crater.connectors.youtube import YouTubeConnector, store_credentials
+from impact_crater.pipeline.stage6_plan import snapshot_dir
 from impact_crater.storage.db import connection
 from impact_crater.storage.migrations import run_pending_migrations
 
@@ -113,6 +116,7 @@ async def test_publish_returns_url_and_writes_audit(client_with_setup) -> None:
     assert len(rows) == 1
     assert rows[0]["external_id"] == "vid-test"
     assert rows[0]["user_approval_token"] == body["audit_token"]
+    assert rows[0]["render_content_hash"] == hashlib.sha256(b"\x00" * 4096).hexdigest()
 
 
 async def test_publish_404_for_unknown_snapshot(client_with_setup) -> None:
@@ -166,3 +170,27 @@ async def test_youtube_disconnect_clears_credentials(client_with_setup) -> None:
     assert r.status_code == 200
     status_resp = await client.get("/api/connectors/youtube/status")
     assert status_resp.json()["connected"] is False
+
+
+async def test_publish_defaults_prefer_the_title_card_then_the_brief(client_with_setup) -> None:
+    client, project_id, snapshot_id = client_with_setup
+    brief = "A short reel of our Zion hikes. Keep it upbeat."
+    async with connection() as db:
+        await db.execute("UPDATE projects SET brief = ? WHERE id = ?", (brief, project_id))
+        await db.commit()
+
+    r = await client.get(f"/api/snapshots/{snapshot_id}/publish-defaults")
+    # The project name is its id (unnamed), so the brief's first sentence is the title.
+    assert r.json() == {"title": "A short reel of our Zion hikes", "description": brief}
+
+    (snapshot_dir(project_id, snapshot_id) / "plan.json").write_text(
+        json.dumps({"title_card_spec": {"enabled": True, "resolved_title": "Zion in Spring"}}),
+        encoding="utf-8",
+    )
+    r = await client.get(f"/api/snapshots/{snapshot_id}/publish-defaults")
+    assert r.json()["title"] == "Zion in Spring"
+
+
+async def test_publish_defaults_404_for_unknown_snapshot(client_with_setup) -> None:
+    client, _, _ = client_with_setup
+    assert (await client.get("/api/snapshots/nope/publish-defaults")).status_code == 404

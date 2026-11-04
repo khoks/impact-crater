@@ -14,6 +14,43 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
   facebook: "Facebook",
 };
 
+// What each connector accepts (S-3.3.8), so the panel only offers what will work.
+// Facebook's "unlisted" saves the video as a Page draft; first entry = default.
+export const PLATFORM_VISIBILITIES: Record<Platform, Visibility[]> = {
+  youtube: ["private", "unlisted", "public"],
+  instagram: ["public"],
+  facebook: ["unlisted", "public"],
+};
+
+// What a dry-run actually checks on each platform.
+export const DRY_RUN_CHECKS: Record<Platform, string> = {
+  youtube:
+    "A dry-run checks the title, description and visibility and records the attempt in the audit log. It needs no YouTube credentials and uploads nothing.",
+  instagram:
+    "A dry-run checks the request and that your Instagram credentials are set, then records the attempt. It refuses until the credentials exist and posts nothing.",
+  facebook:
+    "A dry-run checks the request and that your Facebook Page credentials are set, then records the attempt. It refuses until the credentials exist and posts nothing.",
+};
+
+const DOCS_BASE = "https://github.com/khoks/impact-crater/blob/master/docs/connectors";
+
+export function setupGuideUrl(platform: Platform): string {
+  return `${DOCS_BASE}/${platform}-setup.md`;
+}
+
+export interface PublishDefaults {
+  title: string;
+  description: string;
+}
+
+export async function fetchPublishDefaults(snapshotId: string): Promise<PublishDefaults> {
+  const r = await apiFetch(`/api/snapshots/${snapshotId}/publish-defaults`);
+  if (!r.ok) {
+    throw new Error(`GET /api/snapshots/${snapshotId}/publish-defaults → ${r.status}`);
+  }
+  return (await r.json()) as PublishDefaults;
+}
+
 export interface YouTubeStatusResponse {
   connected: boolean;
   user_handle: string | null;
@@ -76,7 +113,7 @@ export async function publishSnapshot(
     // 401 = ConnectorAuthError. Surface a more actionable message.
     if (r.status === 401) {
       throw new Error(
-        detail || "Connector isn't authenticated. Check env vars per docs/connectors/<platform>-setup.md."
+        detail || "This platform isn't connected. Set its credentials as described in its setup guide."
       );
     }
     throw new Error(detail || `Publish failed: ${r.status}`);

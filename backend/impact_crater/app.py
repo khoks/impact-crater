@@ -40,10 +40,14 @@ from impact_crater.api import (
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Per-process startup + shutdown hooks: run the pending schema migrations."""
+    """Per-process startup: run the pending schema migrations, load the dry-run toggle."""
+    from impact_crater.connectors import dry_run
     from impact_crater.storage import migrations
+    from impact_crater.storage import settings as settings_store
 
     await migrations.run_pending_migrations()
+    stored = await settings_store.get_value(settings_store.KEY_PUBLISH_DRY_RUN)
+    dry_run.set_settings_dry_run(None if stored is None else stored == "true")
     yield
 
 

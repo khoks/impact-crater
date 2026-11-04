@@ -28,6 +28,8 @@ KEY_CAST_BACKEND = "cast_backend"  # "gemini" | "insightface"
 # S-2.10.8 pluggable image embedder: "router" (default, caption-then-embed) |
 # "local_clip" (opt-in local CLIP/SigLIP; needs weights — stub until then).
 KEY_IMAGE_EMBED_BACKEND = "image_embed_backend"
+# S-3.3.8: "true" | "false"; an explicit IC_PUBLISH_DRY_RUN env var overrides it.
+KEY_PUBLISH_DRY_RUN = "publish_dry_run"
 
 
 async def set_value(key: str, value: str, *, encrypted: bool = False) -> None:
