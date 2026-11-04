@@ -33,7 +33,6 @@
 | [S-3.10.1](./stories/S-3.10.1-eval-plan-script-and-thresholds.md) | scripts/eval_plan.py + D-058 thresholds on frozen SW-US and Zion fixtures (pytest -m eval) (plan-phase-2) | Story | P0 | mvp-hardening | todo |
 | [E-3.5](./epics/E-3.5-power-user-polish-bundle.md) | Power-user + polish bundle (plan-phase-1, plan-phase-2, plan-phase-3) | Epic | P1 | v1 | todo |
 | [S-2.9.19](./stories/S-2.9.19-persist-job-registry-survive-restart.md) | Persist the job registry so live/preview views survive a restart (plan-phase-2) | Story | P1 | mvp-hardening | todo |
-| [S-3.3.8](./stories/S-3.3.8-publish-ux-honesty.md) | Publish UX honesty — caption, visibility, defaults and dry-run wording match what the connector will actually do (plan-phase-1) | Story | P1 | v1 | todo |
 | [S-3.5.5](./stories/S-3.5.5-refine-as-job-and-publish-from-any-snapshot.md) | Refine as a job + publish from any snapshot (SnapshotInspect canonical preview) (plan-phase-1, plan-phase-2) | Story | P1 | v1 | todo |
 | [S-3.10.2](./stories/S-3.10.2-golden-set-from-feedback.md) | Golden set — export the owner's decision-level feedback verdicts; harness reports agreement (plan-phase-2) | Story | P1 | mvp-hardening | todo |
 | [S-3.11.1](./stories/S-3.11.1-mid-job-quota-guard.md) | Mid-job quota guard — check before every paid call (total + per-provider), refinement and title card included, UTC day boundary (plan-phase-2) | Story | P1 | mvp-hardening | todo |
@@ -97,6 +96,7 @@ Placeholder stories backfilled on 2026-06-14 plus later filings whose restart-pl
 |---|---|---|---|
 | [S-3.11.6](./stories/S-3.11.6-clear-ruff-mypy-baseline-debt.md) | Clear the ruff / mypy baseline debt so CI can enforce them | Story | 2026-11-03 |
 | [S-3.11.3](./stories/S-3.11.3-local-api-hardening.md) | Local API hardening — per-install bearer token, WS origin check, refuse non-loopback --host without --allow-remote, SECURITY.md | Story | 2026-11-03 |
+| [S-3.3.8](./stories/S-3.3.8-publish-ux-honesty.md) | Publish UX honesty — caption, visibility, defaults and dry-run wording match what the connector will actually do | Story | 2026-11-03 |
 | [S-2.13.8](./stories/S-2.13.8-owner-model-availability-check-and-spend-envelope.md) | Owner-side $0 check: which Claude / Gemini model IDs still resolve; pick targets and the Phase 1 spend envelope | Story | 2026-10-25 |
 | [S-2.13.7](./stories/S-2.13.7-dead-code-sweep.md) | Dead-code sweep — placeholder router, six unimplemented routed ops, unused events and client methods | Story | 2026-10-25 |
 | [S-2.13.5](./stories/S-2.13.5-adr-truth-bundle-and-governance-files.md) | ADR truth bundle (ADR-0007/0009/0010/0012/0013/0018/0020 + ADR-0021) and repo governance files | Story | 2026-10-25 |
@@ -192,6 +192,6 @@ Regenerate with `python scripts/tracker_board.py`; `--check` fails when this fil
 |---|---|---|---|---|---|---|---|
 | Initiative | 2 | 0 | 0 | 1 | 2 | 0 | 5 |
 | Epic | 0 | 0 | 0 | 17 | 3 | 18 | 38 |
-| Story | 0 | 1 | 1 | 81 | 2 | 64 | 149 |
+| Story | 0 | 1 | 1 | 82 | 2 | 63 | 149 |
 | Task | 0 | 0 | 0 | 30 | 0 | 0 | 30 |
-| **All** | 2 | 1 | 1 | 129 | 7 | 82 | 222 |
+| **All** | 2 | 1 | 1 | 130 | 7 | 81 | 222 |

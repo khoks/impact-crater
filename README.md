@@ -60,7 +60,7 @@ For dev mode with hot reload (uvicorn `--reload` + the Vite dev server together)
 
 ## Publishing
 
-Connectors for **YouTube**, **Instagram** (container → poll → publish; needs a public HTTPS media URL) and **Facebook** (Page video) exist in the codebase. They read credentials from environment variables, default to **dry-run** (`IC_PUBLISH_DRY_RUN=1` — the request is validated and audited, nothing is sent), and have **never been live-tested**: no real publish has happened yet. In-app OAuth ("Connect in Settings") is not built. Output is 16:9 1080p only. Setup: [`docs/connectors/README.md`](./docs/connectors/README.md), then the per-platform guides for [YouTube](./docs/connectors/youtube-setup.md), [Instagram](./docs/connectors/instagram-setup.md) and [Facebook](./docs/connectors/facebook-setup.md). The preview-then-approve gate stays on regardless of mode.
+Connectors for **YouTube**, **Instagram** (container → poll → publish; needs a public HTTPS media URL) and **Facebook** (Page video) exist in the codebase. They read credentials from environment variables, default to **dry-run** (the request is validated and audited, nothing is sent; switch it off in Settings → Publishing, or with `IC_PUBLISH_DRY_RUN=0`), and have **never been live-tested**: no real publish has happened yet. In-app OAuth ("Connect in Settings") is not built. Output is 16:9 1080p only. Setup: [`docs/connectors/README.md`](./docs/connectors/README.md), then the per-platform guides for [YouTube](./docs/connectors/youtube-setup.md), [Instagram](./docs/connectors/instagram-setup.md) and [Facebook](./docs/connectors/facebook-setup.md). The preview-then-approve gate stays on regardless of mode.
 
 ## Where to look
 
