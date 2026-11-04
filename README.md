@@ -74,7 +74,7 @@ Connectors for **YouTube**, **Instagram** (container → poll → publish; needs
 - **Roadmap (scaffolding → MVP → v1 → v2 → v3):** [`docs/roadmap/ROADMAP.md`](./docs/roadmap/ROADMAP.md)
 - **Publishing connectors (setup guides):** [`docs/connectors/`](./docs/connectors/)
 - **Live status board (Initiatives / Epics / Stories / Tasks):** [`project/BOARD.md`](./project/BOARD.md)
-- **Contributing, security policy, conduct, third-party notices:** [`CONTRIBUTING.md`](./CONTRIBUTING.md) (DCO sign-off, branch → PR → squash, the checks to run), [`SECURITY.md`](./SECURITY.md) (loopback-only today, no API auth yet, how to report), [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md), [`NOTICE.md`](./NOTICE.md) (dependency and ML-model licences)
+- **Contributing, security policy, conduct, third-party notices:** [`CONTRIBUTING.md`](./CONTRIBUTING.md) (DCO sign-off, branch → PR → squash, the checks to run), [`SECURITY.md`](./SECURITY.md) (loopback by default, a per-install API token on every change, how to report), [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md), [`NOTICE.md`](./NOTICE.md) (dependency and ML-model licences)
 - **For Claude Code sessions:** [`CLAUDE.md`](./CLAUDE.md)
 
 ## Platforms

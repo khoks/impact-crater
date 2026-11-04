@@ -16,6 +16,9 @@ export default defineConfig({
         target: FASTAPI_DEV_TARGET,
         changeOrigin: true,
         ws: true,
+        // Tell the backend who the browser is, so a LAN device reaching a `vite --host`
+        // dev server is not mistaken for this machine (S-3.11.3).
+        xfwd: true,
       },
     },
   },

@@ -8,11 +8,13 @@ Usage:
     impact-crater --no-browser       # start server without opening browser
     impact-crater --port 9000        # request a specific port (errors if taken)
     impact-crater --host 127.0.0.1   # bind host (default: 127.0.0.1)
+    impact-crater --host 0.0.0.0 --allow-remote   # expose on the network (token still required)
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import socket
 import sys
 import threading
@@ -21,7 +23,7 @@ import webbrowser
 
 import uvicorn
 
-from impact_crater import __version__
+from impact_crater import __version__, api_auth, paths
 
 DEFAULT_HOST = "127.0.0.1"
 PREFERRED_PORT = 8765
@@ -33,6 +35,23 @@ def main(argv: list[str] | None = None) -> int:
     if args.version:
         print(f"impact-crater {__version__}")
         return 0
+
+    if not api_auth.is_loopback(args.host):
+        if not args.allow_remote:
+            print(
+                f"impact-crater: refusing to bind {args.host}. A non-loopback host lets other "
+                "devices on the network reach your settings, media and publish actions. "
+                "Re-run with --allow-remote if that is what you want.",
+                file=sys.stderr,
+            )
+            return 2
+        os.environ[api_auth.ALLOW_REMOTE_ENV] = "1"
+        print(
+            f"impact-crater: WARNING: listening on {args.host} with --allow-remote. Every API "
+            "request from another device needs 'Authorization: Bearer <token>', the token "
+            f"in {paths.api_token_path()}.",
+            file=sys.stderr,
+        )
 
     port = _choose_port(args.host, args.port)
     if port is None:
@@ -90,6 +109,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         "--reload",
         action="store_true",
         help="enable uvicorn auto-reload (dev mode)",
+    )
+    parser.add_argument(
+        "--allow-remote",
+        action="store_true",
+        help="allow a non-loopback --host; every request from another device still needs the API token",
     )
     parser.add_argument("--version", action="store_true", help="print version and exit")
     return parser.parse_args(argv)

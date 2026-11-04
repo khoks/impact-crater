@@ -8,16 +8,19 @@ uvicorn; the same factory is used by the test suite via httpx.AsyncClient.
 
 from __future__ import annotations
 
+import html
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from impact_crater import __version__
+from impact_crater import __version__, api_auth
 from impact_crater.api import (
     effort,
     feedback,
@@ -44,7 +47,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-def create_app() -> FastAPI:
+def create_app(*, allow_remote: bool | None = None) -> FastAPI:
+    """`allow_remote` (default: the `IMPACT_CRATER_ALLOW_REMOTE` env var the CLI sets for
+    `--allow-remote`) accepts Host headers other than this machine's; the token is
+    required either way, and only local requests are handed it (ADR-0022)."""
+    if allow_remote is None:
+        allow_remote = os.environ.get(api_auth.ALLOW_REMOTE_ENV) == "1"
+    token = api_auth.get_or_create_token()
     app = FastAPI(
         title="Impact Crater",
         version=__version__,
@@ -55,9 +64,24 @@ def create_app() -> FastAPI:
         openapi_url="/api/openapi.json",
     )
 
+    app.state.api_token = token
+    app.add_middleware(api_auth.ApiTokenMiddleware, token=token)
+    # Added last so it runs first.
+    app.add_middleware(api_auth.HostGuardMiddleware, allow_remote=allow_remote)
+    _declare_bearer_auth(app)
+
     @app.get("/api/health")
     async def health() -> dict[str, Any]:
         return {"status": "ok", "version": __version__}
+
+    @app.get(api_auth.SESSION_PATH)
+    async def session(request: Request) -> dict[str, str]:
+        if not api_auth.is_local(request.scope):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="The API token is only handed to a browser on this machine.",
+            )
+        return {"token": token}
 
     app.include_router(setup.router, prefix="/api/setup", tags=["setup"])
     app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
@@ -73,12 +97,28 @@ def create_app() -> FastAPI:
     app.include_router(publish.router, prefix="/api", tags=["publish"])
     app.include_router(profile.router, prefix="/api/profile", tags=["profile"])
 
-    _mount_frontend(app)
+    _mount_frontend(app, token)
 
     return app
 
 
-def _mount_frontend(app: FastAPI) -> None:
+def _declare_bearer_auth(app: FastAPI) -> None:
+    """Advertise the bearer token in the OpenAPI schema so /api/docs can send it."""
+
+    def openapi() -> dict[str, Any]:
+        if app.openapi_schema is None:
+            schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+            schema.setdefault("components", {})["securitySchemes"] = {
+                "bearerAuth": {"type": "http", "scheme": "bearer"}
+            }
+            schema["security"] = [{"bearerAuth": []}]
+            app.openapi_schema = schema
+        return app.openapi_schema
+
+    app.openapi = openapi  # type: ignore[method-assign]
+
+
+def _mount_frontend(app: FastAPI, token: str) -> None:
     """Serve the built React frontend from `frontend_dist/` if it exists.
 
     The frontend is bundled into the wheel under `impact_crater/frontend_dist/`
@@ -102,14 +142,34 @@ def _mount_frontend(app: FastAPI) -> None:
         name="assets",
     )
 
-    @app.get("/{full_path:path}", response_class=FileResponse)
-    async def spa_fallback(full_path: str) -> FileResponse:
-        # Static files in dist root (favicon, etc).
-        candidate = dist_dir / full_path
-        if full_path and candidate.is_file():
+    @app.get("/{full_path:path}", response_model=None)
+    async def spa_fallback(full_path: str, request: Request) -> Response:
+        candidate = _dist_file(dist_dir, full_path)
+        if candidate is not None:
             return FileResponse(candidate)
         # SPA fallback: every other route serves index.html so react-router takes over.
-        return FileResponse(dist_dir / "index.html")
+        return _index_html(dist_dir, token, request)
+
+
+def _dist_file(dist_dir: Path, full_path: str) -> Path | None:
+    """A static file in the dist root (favicon etc.), never anything outside it: the path
+    arrives percent-decoded, so `..` segments and absolute paths must not escape."""
+    if not full_path:
+        return None
+    root = dist_dir.resolve()
+    candidate = (root / full_path).resolve()
+    if not candidate.is_relative_to(root) or not candidate.is_file():
+        return None
+    return None if candidate.name == "index.html" else candidate
+
+
+def _index_html(dist_dir: Path, token: str, request: Request) -> HTMLResponse:
+    """index.html, carrying the API token in a meta tag for a browser on this machine."""
+    page = (dist_dir / "index.html").read_text(encoding="utf-8")
+    if api_auth.is_local(request.scope):
+        meta = f'<meta name="{api_auth.TOKEN_META_NAME}" content="{html.escape(token)}">'
+        page = page.replace("</head>", f"{meta}</head>", 1)
+    return HTMLResponse(page, headers={"Cache-Control": "no-store"})
 
 
 def _frontend_dist_dir() -> Path | None:

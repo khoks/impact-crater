@@ -12,6 +12,7 @@ what's actually inside the folder the user typed.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,6 +57,12 @@ class _ScanCounts:
 @router.get("/scan", response_model=FolderScanResponse)
 async def scan(path: str) -> FolderScanResponse:
     """Walk `path` (a server-side directory) and list supported media files."""
+    if path[:2].replace("/", "\\") == "\\\\":
+        # A UNC path makes Windows open an SMB session (and offer NTLM) to that host.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="network paths are not supported; pick a folder on this machine",
+        )
     p = Path(path).expanduser()
     if not p.exists():
         raise HTTPException(
@@ -68,9 +75,19 @@ async def scan(path: str) -> FolderScanResponse:
             detail=f"path is not a directory: {path}",
         )
 
-    p = p.resolve()
-    counts = _ScanCounts(items=[])
+    counts = await asyncio.to_thread(_scan, p.resolve())
+    return FolderScanResponse(
+        folder=str(p.resolve()),
+        items=counts.items,
+        photo_count=counts.photos,
+        video_count=counts.videos,
+        total_bytes=counts.bytes_,
+        truncated=counts.truncated,
+    )
 
+
+def _scan(p: Path) -> _ScanCounts:
+    counts = _ScanCounts(items=[])
     for entry in _walk_supported(p):
         # Reject symlinks that escape the original root.
         try:
@@ -94,15 +111,7 @@ async def scan(path: str) -> FolderScanResponse:
         if len(counts.items) >= _MAX_ENTRIES:
             counts.truncated = True
             break
-
-    return FolderScanResponse(
-        folder=str(p),
-        items=counts.items,
-        photo_count=counts.photos,
-        video_count=counts.videos,
-        total_bytes=counts.bytes_,
-        truncated=counts.truncated,
-    )
+    return counts
 
 
 def _walk_supported(root: Path) -> Iterator[Path]:

@@ -1,5 +1,7 @@
 // Fetch wrappers around /api/setup/*.
 
+import { apiFetch } from "./client";
+
 export interface SetupStatus {
   setup_complete: boolean;
 }
@@ -21,7 +23,7 @@ export interface CompletePayload {
 }
 
 export async function fetchSetupStatus(): Promise<SetupStatus> {
-  const r = await fetch("/api/setup/status");
+  const r = await apiFetch("/api/setup/status");
   if (!r.ok) {
     throw new Error(`GET /api/setup/status → ${r.status}`);
   }
@@ -29,7 +31,7 @@ export async function fetchSetupStatus(): Promise<SetupStatus> {
 }
 
 export async function testKey(provider: Provider, key: string): Promise<TestKeyResult> {
-  const r = await fetch("/api/setup/test-key", {
+  const r = await apiFetch("/api/setup/test-key", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ provider, key }),
@@ -41,7 +43,7 @@ export async function testKey(provider: Provider, key: string): Promise<TestKeyR
 }
 
 export async function completeSetup(payload: CompletePayload): Promise<void> {
-  const r = await fetch("/api/setup/complete", {
+  const r = await apiFetch("/api/setup/complete", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),

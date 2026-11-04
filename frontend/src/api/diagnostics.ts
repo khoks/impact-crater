@@ -2,6 +2,8 @@
 //   GET  /api/snapshots/:id/diagnostics
 //   POST /api/feedback
 
+import { apiFetch } from "./client";
+
 export interface DiagnosticDecision {
   content_hash?: string;
   scene_index?: number | null;
@@ -44,7 +46,7 @@ export interface Diagnostics {
 }
 
 export async function fetchDiagnostics(snapshotId: string): Promise<Diagnostics | null> {
-  const r = await fetch(`/api/snapshots/${snapshotId}/diagnostics`);
+  const r = await apiFetch(`/api/snapshots/${snapshotId}/diagnostics`);
   if (r.status === 404) return null; // pre-feature snapshot
   if (!r.ok) throw new Error(`GET diagnostics → ${r.status}`);
   return (await r.json()) as Diagnostics;
@@ -99,7 +101,7 @@ export interface JobDiagnosticEvent {
 }
 
 export async function submitFeedback(p: FeedbackPayload): Promise<{ id: number }> {
-  const r = await fetch("/api/feedback", {
+  const r = await apiFetch("/api/feedback", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(p),
