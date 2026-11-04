@@ -127,6 +127,7 @@ class TitleCardSpec(BaseModel):
     model_config = ConfigDict(extra="ignore")
     enabled: bool = False
     title_text: str | None = None  # explicit title; None → derived from brief
+    resolved_title: str | None = None  # what the card shows; set when the card is built
     style: str | None = None  # image style hint ("painterly sunset", "vintage film")
     spirit_prompt: str | None = None  # full override of the AI image prompt (advanced)
     title_position: TitlePosition = "lower-third"

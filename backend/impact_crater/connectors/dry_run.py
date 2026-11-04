@@ -97,17 +97,35 @@ class DryRunConnector:
         await self._wrapped.disconnect()
 
 
-def is_dry_run_enabled() -> bool:
-    """Read the env flag. Default: True (safe-by-default per v1 plan).
+_settings_dry_run: bool | None = None
 
-    User explicitly sets `IC_PUBLISH_DRY_RUN=0` to enable real posting.
-    Anything else (unset, empty, 1, true, yes) keeps dry-run on — an empty value
-    must never switch live posting on (D-060).
+
+def set_settings_dry_run(value: bool | None) -> None:
+    """The Settings toggle (S-3.3.8), loaded at startup and updated on save; no restart."""
+    global _settings_dry_run
+    _settings_dry_run = value
+
+
+def dry_run_from_env() -> bool | None:
+    """`IC_PUBLISH_DRY_RUN` when it is set to something non-empty, else None.
+
+    Only `0` / `false` / `no` / `off` mean live; any other non-empty value keeps
+    dry-run on. Unset or empty is "not set" and never switches live posting on (D-060).
     """
     import os
 
-    raw = os.environ.get("IC_PUBLISH_DRY_RUN", "1").strip().lower()
+    raw = os.environ.get("IC_PUBLISH_DRY_RUN", "").strip().lower()
+    if not raw:
+        return None
     return raw not in ("0", "false", "no", "off")
+
+
+def is_dry_run_enabled() -> bool:
+    """An explicit `IC_PUBLISH_DRY_RUN` wins, then the Settings toggle; default on."""
+    from_env = dry_run_from_env()
+    if from_env is not None:
+        return from_env
+    return _settings_dry_run if _settings_dry_run is not None else True
 
 
 def wrap_if_dry_run(connector: Connector) -> Connector:

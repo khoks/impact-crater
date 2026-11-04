@@ -26,6 +26,7 @@ from impact_crater.connectors import (
     InstagramConnector,
     PublishMetadata,
     YouTubeConnector,
+    dry_run,
     get_connector,
     is_dry_run_enabled,
 )
@@ -352,3 +353,27 @@ def _scrub_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 # `os.environ` import kept for symmetry with the connectors under test.
 _ = os
+
+
+def test_settings_toggle_applies_when_the_env_is_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("IC_PUBLISH_DRY_RUN", raising=False)
+    dry_run.set_settings_dry_run(False)
+    assert is_dry_run_enabled() is False
+    dry_run.set_settings_dry_run(True)
+    assert is_dry_run_enabled() is True
+
+
+@pytest.mark.parametrize(("env", "expected"), [("1", True), ("0", False)])
+def test_explicit_env_wins_over_the_settings_toggle(
+    monkeypatch: pytest.MonkeyPatch, env: str, expected: bool
+) -> None:
+    monkeypatch.setenv("IC_PUBLISH_DRY_RUN", env)
+    dry_run.set_settings_dry_run(not expected)
+    assert is_dry_run_enabled() is expected
+
+
+def test_empty_env_falls_through_to_the_settings_toggle(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("IC_PUBLISH_DRY_RUN", "  ")
+    assert is_dry_run_enabled() is True  # no toggle saved: still dry-run (D-060)
+    dry_run.set_settings_dry_run(False)
+    assert is_dry_run_enabled() is False

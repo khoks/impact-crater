@@ -80,3 +80,28 @@ async def test_settings_update_rejects_out_of_range_cap(
 ) -> None:
     r = await client.post("/api/settings/update", json={"spend_cap_total_usd": 0.50})
     assert r.status_code == 422
+
+
+async def test_dry_run_toggle_saves_and_applies_without_restart(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("IC_PUBLISH_DRY_RUN", raising=False)
+    snap = (await client.get("/api/settings/snapshot")).json()
+    assert snap["publish_dry_run"] is True
+    assert snap["publish_dry_run_locked_by_env"] is False
+
+    assert (
+        await client.post("/api/settings/update", json={"publish_dry_run": False})
+    ).status_code == 200
+    assert (await client.get("/api/settings/snapshot")).json()["publish_dry_run"] is False
+    assert (await settings_store.get_value(settings_store.KEY_PUBLISH_DRY_RUN)) == "false"
+
+
+async def test_env_locks_the_dry_run_toggle(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("IC_PUBLISH_DRY_RUN", "1")
+    await client.post("/api/settings/update", json={"publish_dry_run": False})
+    snap = (await client.get("/api/settings/snapshot")).json()
+    assert snap["publish_dry_run"] is True
+    assert snap["publish_dry_run_locked_by_env"] is True

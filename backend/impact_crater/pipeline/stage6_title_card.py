@@ -64,6 +64,7 @@ async def build_title_clip(
             or await _title_from_brief(router, brief, year)
             or "Our Trip"
         )
+        spec.resolved_title = title
 
         bg = _open_path(background_path) if background_path else None
         if bg is None:

@@ -11,9 +11,13 @@ import DiagnosticsPanel from "../components/DiagnosticsPanel";
 import { getJob, postRefine, type JobSnapshot, type RefineResponse } from "../api/jobs";
 import {
   ALL_PLATFORMS,
+  DRY_RUN_CHECKS,
   PLATFORM_LABELS,
+  PLATFORM_VISIBILITIES,
   fetchAllConnectorsStatus,
+  fetchPublishDefaults,
   publishSnapshot,
+  setupGuideUrl,
   type AllConnectorsStatus,
   type Platform,
   type PublishResponse,
@@ -38,7 +42,7 @@ export default function JobPreview() {
   const [publishPlatform, setPublishPlatform] = useState<Platform>("youtube");
   const [publishTitle, setPublishTitle] = useState("");
   const [publishDescription, setPublishDescription] = useState("");
-  const [publishVisibility, setPublishVisibility] = useState<Visibility>("public");
+  const [publishVisibility, setPublishVisibility] = useState<Visibility>("private");
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [publishResult, setPublishResult] = useState<PublishResponse | null>(null);
@@ -57,9 +61,19 @@ export default function JobPreview() {
           return;
         }
         setSnapshot(s);
-        // Default the publish title from the project_id; the user can edit
-        // before submitting. Description stays empty by design.
-        setPublishTitle(`Story Video — ${s.project_id.slice(0, 8)}`);
+        setPublishTitle(s.project_name || "Story Video");
+        if (!s.snapshot_id) return;
+        // Title card text, project name or the brief's first sentence; the brief as
+        // the description. The user edits both before publishing.
+        fetchPublishDefaults(s.snapshot_id)
+          .then((d) => {
+            if (cancelled || typeof d.title !== "string") return;
+            setPublishTitle(d.title);
+            setPublishDescription(d.description);
+          })
+          .catch(() => {
+            /* keep the fallback title */
+          });
       })
       .catch((err) => {
         if (cancelled) return;
@@ -204,7 +218,7 @@ export default function JobPreview() {
         </button>
       </div>
       <p className="mt-2 text-right text-xs text-slate-400">
-        Approve uploads this MP4 to your connected YouTube account.
+        {approveCaption(connectorsStatus)}
       </p>
 
       {diagOpen && (
@@ -300,7 +314,7 @@ export default function JobPreview() {
             {connectorsStatus?.dry_run && (
               <span
                 className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
-                title="IC_PUBLISH_DRY_RUN=1 — validates request without actually posting. Flip env to 0 to enable real posting."
+                title="Dry-run is on: nothing is posted. Switch it off in Settings → Publishing."
               >
                 DRY-RUN
               </span>
@@ -318,6 +332,9 @@ export default function JobPreview() {
                   type="button"
                   onClick={() => {
                     setPublishPlatform(p);
+                    if (!PLATFORM_VISIBILITIES[p].includes(publishVisibility)) {
+                      setPublishVisibility(PLATFORM_VISIBILITIES[p][0]);
+                    }
                     setPublishResult(null);
                     setPublishError(null);
                   }}
@@ -336,7 +353,7 @@ export default function JobPreview() {
                         (status.connected ? "bg-emerald-400" : "bg-slate-300")
                       }
                       aria-hidden
-                      title={status.connected ? "creds present in env" : "creds missing in env"}
+                      title={status.connected ? "credentials set" : "credentials not set"}
                     />
                   )}
                 </button>
@@ -349,24 +366,38 @@ export default function JobPreview() {
             const status = connectorsStatus.platforms.find(
               (s) => s.platform === publishPlatform
             );
+            const label = PLATFORM_LABELS[publishPlatform];
+            const guide = (
+              <a
+                href={setupGuideUrl(publishPlatform)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                {label} setup guide
+              </a>
+            );
+            if (connectorsStatus.dry_run) {
+              return (
+                <p className="mt-3 rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  {DRY_RUN_CHECKS[publishPlatform]}{" "}
+                  {status?.connected
+                    ? `${label} credentials are set.`
+                    : <>{label} credentials are not set; see the {guide}.</>}
+                </p>
+              );
+            }
             if (status?.connected) {
               return (
-                <p className="mt-3 rounded bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-                  {PLATFORM_LABELS[publishPlatform]} creds detected in env.
-                  {connectorsStatus.dry_run
-                    ? " Dry-run is ON — this publish will validate without posting."
-                    : " Live posting is ON — this publish will actually post."}
+                <p className="mt-3 rounded bg-red-50 px-3 py-2 text-xs text-red-800">
+                  Dry-run is off: this publish posts to {label} for real.
                 </p>
               );
             }
             return (
               <p className="mt-3 rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                {PLATFORM_LABELS[publishPlatform]} env vars are missing. See{" "}
-                <code className="rounded bg-amber-100 px-1">
-                  docs/connectors/{publishPlatform}-setup.md
-                </code>{" "}
-                for the credential setup. Dry-run will still validate the
-                request shape without hitting the platform.
+                Dry-run is off, but {label} credentials are not set, so the publish will
+                fail. See the {guide}.
               </p>
             );
           })()}
@@ -436,7 +467,7 @@ export default function JobPreview() {
               <div className="mt-3">
                 <label className="block text-xs font-medium text-slate-700">Visibility</label>
                 <div className="mt-1 flex gap-4 text-xs">
-                  {(["public", "unlisted", "private"] as Visibility[]).map((v) => (
+                  {PLATFORM_VISIBILITIES[publishPlatform].map((v) => (
                     <label key={v} className="flex items-center gap-1">
                       <input
                         type="radio"
@@ -445,19 +476,20 @@ export default function JobPreview() {
                         checked={publishVisibility === v}
                         onChange={() => setPublishVisibility(v)}
                       />
-                      <span>{v}</span>
+                      <span>
+                        {publishPlatform === "facebook" && v === "unlisted" ? "draft" : v}
+                      </span>
                     </label>
                   ))}
                 </div>
                 {publishPlatform === "instagram" && (
                   <p className="mt-1 text-[11px] text-slate-500">
-                    Instagram Reels are always public — visibility selector
-                    is ignored.
+                    Instagram Reels are always public.
                   </p>
                 )}
                 {publishPlatform === "facebook" && publishVisibility === "unlisted" && (
                   <p className="mt-1 text-[11px] text-slate-500">
-                    Facebook "unlisted" = saved as a Draft in the Page's drafts inbox.
+                    Saved as a draft in your Page's drafts, not shown to anyone.
                   </p>
                 )}
               </div>
@@ -485,4 +517,15 @@ export default function JobPreview() {
       )}
     </main>
   );
+}
+
+function approveCaption(status: AllConnectorsStatus | null): string {
+  if (status === null || status.dry_run) {
+    return "Dry-run is on: Approve checks the request and records it in the audit log. Nothing is posted.";
+  }
+  const connected = status.platforms.filter((p) => p.connected).map((p) => PLATFORM_LABELS[p.platform]);
+  if (connected.length === 0) {
+    return "Dry-run is off, but no platform is connected yet, so nothing can be posted.";
+  }
+  return `Dry-run is off: Approve posts this video to the platform you pick (connected: ${connected.join(", ")}).`;
 }

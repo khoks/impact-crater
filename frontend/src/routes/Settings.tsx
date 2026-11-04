@@ -23,6 +23,7 @@ export default function Settings() {
   const [totalCap, setTotalCap] = useState("");
   const [anthropicCap, setAnthropicCap] = useState("");
   const [googleCap, setGoogleCap] = useState("");
+  const [dryRun, setDryRun] = useState(true);
 
   async function refresh() {
     try {
@@ -31,6 +32,7 @@ export default function Settings() {
       setTotalCap(s.spend_cap_total_usd?.toString() ?? "");
       setAnthropicCap(s.spend_cap_anthropic_usd?.toString() ?? "");
       setGoogleCap(s.spend_cap_google_usd?.toString() ?? "");
+      setDryRun(s.publish_dry_run ?? true);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -53,6 +55,7 @@ export default function Settings() {
           ? Number.parseFloat(anthropicCap)
           : null,
         spend_cap_google_usd: googleCap ? Number.parseFloat(googleCap) : null,
+        publish_dry_run: snapshot?.publish_dry_run_locked_by_env ? null : dryRun,
       });
       // Clear key fields so the user has to re-type to rotate again.
       setAnthropicKey("");
@@ -143,6 +146,37 @@ export default function Settings() {
                 onChange={setGoogleCap}
               />
             </div>
+          </section>
+
+          <section className="mt-6 rounded border border-slate-200 bg-white p-6">
+            <h2 className="text-sm font-semibold text-slate-700">Publishing</h2>
+            <label className="mt-3 flex items-start gap-2 text-sm text-slate-700">
+              <input
+                id="publish-dry-run"
+                type="checkbox"
+                className="mt-1"
+                checked={dryRun}
+                disabled={snapshot.publish_dry_run_locked_by_env}
+                onChange={(e) => setDryRun(e.target.checked)}
+              />
+              <span>
+                Dry-run: Approve checks the request and records it in the audit log,
+                but posts nothing.
+              </span>
+            </label>
+            {snapshot.publish_dry_run_locked_by_env ? (
+              <p className="mt-2 text-xs text-slate-500">
+                Set by the <code>IC_PUBLISH_DRY_RUN</code> environment variable, which
+                overrides this switch. Remove it from your launcher to use the switch.
+              </p>
+            ) : (
+              !dryRun && (
+                <p className="mt-2 rounded bg-red-50 px-3 py-2 text-xs text-red-700">
+                  With dry-run off, Approve posts the video for real to the platform you
+                  pick. Takes effect when you save; no restart needed.
+                </p>
+              )
+            )}
           </section>
 
           <section className="mt-6 rounded border border-dashed border-slate-300 bg-slate-50 p-4 text-xs text-slate-600">

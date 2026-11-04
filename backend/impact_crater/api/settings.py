@@ -11,6 +11,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from impact_crater import quota
+from impact_crater.connectors import dry_run
 from impact_crater.storage import settings as settings_store
 
 router = APIRouter()
@@ -24,6 +25,8 @@ class SettingsSnapshotResponse(BaseModel):
     spend_cap_google_usd: float | None
     today_total_spent_usd: float
     today_per_provider_spent_usd: dict[str, float]
+    publish_dry_run: bool
+    publish_dry_run_locked_by_env: bool
 
 
 class SettingsUpdateRequest(BaseModel):
@@ -34,6 +37,7 @@ class SettingsUpdateRequest(BaseModel):
     spend_cap_total_usd: float | None = Field(default=None, ge=1.0, le=100_000.0)
     spend_cap_anthropic_usd: float | None = Field(default=None, ge=0.0, le=100_000.0)
     spend_cap_google_usd: float | None = Field(default=None, ge=0.0, le=100_000.0)
+    publish_dry_run: bool | None = None
 
 
 @router.get("/snapshot", response_model=SettingsSnapshotResponse)
@@ -56,6 +60,8 @@ async def settings_snapshot() -> SettingsSnapshotResponse:
         spend_cap_google_usd=_parse_float(google_cap_raw),
         today_total_spent_usd=spent_total,
         today_per_provider_spent_usd=spent_per_provider,
+        publish_dry_run=dry_run.is_dry_run_enabled(),
+        publish_dry_run_locked_by_env=dry_run.dry_run_from_env() is not None,
     )
 
 
@@ -82,6 +88,11 @@ async def settings_update(req: SettingsUpdateRequest) -> dict[str, bool]:
         await settings_store.set_value(
             settings_store.KEY_GOOGLE_CAP_USD, str(req.spend_cap_google_usd)
         )
+    if req.publish_dry_run is not None:
+        await settings_store.set_value(
+            settings_store.KEY_PUBLISH_DRY_RUN, "true" if req.publish_dry_run else "false"
+        )
+        dry_run.set_settings_dry_run(req.publish_dry_run)
     return {"ok": True}
 
 

@@ -12,7 +12,11 @@ the Connect button when the user wires up their Google Cloud project.
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import json
 import logging
+import re
 import secrets
 from collections.abc import Callable
 from pathlib import Path
@@ -35,6 +39,7 @@ from impact_crater.connectors import (
     is_dry_run_enabled,
 )
 from impact_crater.connectors.youtube import YouTubeConnector
+from impact_crater.pipeline.stage6_plan import snapshot_dir
 from impact_crater.storage.db import connection
 
 log = logging.getLogger(__name__)
@@ -141,6 +146,7 @@ async def publish_snapshot(snapshot_id: str, req: PublishRequest) -> PublishResp
             detail={"reason": "validation", "message": str(exc)},
         ) from exc
 
+    render_hash = await asyncio.to_thread(_sha256_file, render_path)
     dry_run = is_dry_run_enabled()
     log.info(
         "publish_attempt platform=%s snapshot_id=%s project_id=%s "
@@ -218,6 +224,7 @@ async def publish_snapshot(snapshot_id: str, req: PublishRequest) -> PublishResp
         response_summary=result.response_summary,
         description_full=req.description,
         visibility=result.visibility,
+        render_content_hash=render_hash,
     )
     await audit.write(entry)
 
@@ -242,6 +249,58 @@ async def publish_snapshot(snapshot_id: str, req: PublishRequest) -> PublishResp
         platform=req.platform,
         dry_run=dry_run,
     )
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+# ---- Publish defaults -------------------------------------------------
+
+
+class PublishDefaults(BaseModel):
+    title: str
+    description: str
+
+
+@router.get("/snapshots/{snapshot_id}/publish-defaults", response_model=PublishDefaults)
+async def publish_defaults(snapshot_id: str) -> PublishDefaults:
+    """Title and description to pre-fill the publish panel with (S-3.3.8): the title card's
+    text, else the project's own name, else the brief's first sentence; the brief as the
+    description."""
+    async with connection() as db:
+        cur = await db.execute(
+            "SELECT s.project_id, p.name, p.brief FROM snapshots s "
+            "LEFT JOIN projects p ON p.id = s.project_id WHERE s.id = ?",
+            (snapshot_id,),
+        )
+        row = await cur.fetchone()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"snapshot {snapshot_id!r} not found",
+        )
+    brief = (row["brief"] or "").strip()
+    name = (row["name"] or "").strip()
+    title = (
+        _title_card_text(row["project_id"], snapshot_id)
+        or (name if name != row["project_id"] else "")  # unnamed projects store their id
+        or re.split(r"[.!?\n]", brief, maxsplit=1)[0].strip()
+        or "Story Video"
+    )
+    return PublishDefaults(title=title[:100], description=brief)
+
+
+def _title_card_text(project_id: str, snapshot_id: str) -> str:
+    plan_path = snapshot_dir(project_id, snapshot_id) / "plan.json"
+    if not plan_path.is_file():
+        return ""
+    spec = json.loads(plan_path.read_text(encoding="utf-8")).get("title_card_spec") or {}
+    return str(spec.get("resolved_title") or spec.get("title_text") or "").strip()
 
 
 # ---- Connector status -------------------------------------------------
