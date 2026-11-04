@@ -25,9 +25,7 @@ from impact_crater.storage import settings as settings_store
 from impact_crater.storage.migrations import run_pending_migrations
 from PIL import Image
 
-pytestmark = pytest.mark.skipif(
-    not ff.has_ffmpeg(), reason="ffmpeg binary not installed"
-)
+pytestmark = pytest.mark.skipif(not ff.has_ffmpeg(), reason="ffmpeg binary not installed")
 
 
 def _photo(path: Path, color: tuple[int, int, int]) -> bytes:
@@ -244,9 +242,7 @@ async def test_submit_persists_project_name_and_brief(
     project_id = r.json()["project_id"]
 
     async with connection() as db:
-        cursor = await db.execute(
-            "SELECT name, brief FROM projects WHERE id = ?", (project_id,)
-        )
+        cursor = await db.execute("SELECT name, brief FROM projects WHERE id = ?", (project_id,))
         row = await cursor.fetchone()
     assert row is not None
     assert row["name"] == "Color study"

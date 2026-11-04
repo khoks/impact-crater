@@ -38,6 +38,7 @@ caller asks for "private" or "unlisted" so the audit-log isn't misleading.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -46,7 +47,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from impact_crater.connectors.base import (
     ConnectorAuthError,
@@ -119,10 +120,14 @@ class InstagramConnector:
             issues.append(
                 f"Instagram API has no '{metadata.visibility}' visibility — Reels are always public"
             )
-            suggestions.append("Set visibility=public, or pick a different platform for non-public posts.")
+            suggestions.append(
+                "Set visibility=public, or pick a different platform for non-public posts."
+            )
 
         if not _has_env_credentials():
-            issues.append("Instagram creds missing — set IC_INSTAGRAM_ACCESS_TOKEN + IC_INSTAGRAM_USER_ID")
+            issues.append(
+                "Instagram creds missing — set IC_INSTAGRAM_ACCESS_TOKEN + IC_INSTAGRAM_USER_ID"
+            )
             suggestions.append("See docs/connectors/instagram-setup.md for the credential setup.")
 
         return ConnectorValidationResult(
@@ -178,10 +183,8 @@ class InstagramConnector:
         )
 
         if on_progress is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await on_progress(0.1)
-            except Exception:  # pragma: no cover
-                pass
 
         # Step 1: create container.
         container = await self._post(
@@ -204,7 +207,7 @@ class InstagramConnector:
         # asynchronously; this can take 10-60s for short clips.
         deadline_s = 180
         sleep_s = 3.0
-        elapsed = 0
+        elapsed = 0.0
         while elapsed < deadline_s:
             await asyncio.sleep(sleep_s)
             elapsed += sleep_s
@@ -231,10 +234,8 @@ class InstagramConnector:
                     ),
                 )
             if on_progress is not None:
-                try:
+                with contextlib.suppress(Exception):
                     await on_progress(min(0.9, 0.1 + elapsed / deadline_s * 0.8))
-                except Exception:  # pragma: no cover
-                    pass
         else:
             raise ConnectorError(
                 f"Instagram container did not reach FINISHED within {deadline_s}s",
@@ -253,10 +254,8 @@ class InstagramConnector:
         media_id = str(publish.get("id", ""))
 
         if on_progress is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await on_progress(1.0)
-            except Exception:  # pragma: no cover
-                pass
 
         # Build a watch URL. Instagram returns no permalink in the publish
         # response; we have to either fetch /{media_id}?fields=permalink
@@ -290,12 +289,12 @@ class InstagramConnector:
 
     async def _post(self, path: str, *, data: dict[str, str]) -> dict[str, Any]:
         if self._transport is not None:
-            return await self._transport.post(path, data)
+            return cast("dict[str, Any]", await self._transport.post(path, data))
         return await asyncio.to_thread(_http_post, _GRAPH_HOST + path, data)
 
     async def _get(self, path: str, *, params: dict[str, str]) -> dict[str, Any]:
         if self._transport is not None:
-            return await self._transport.get(path, params)
+            return cast("dict[str, Any]", await self._transport.get(path, params))
         return await asyncio.to_thread(_http_get, _GRAPH_HOST + path, params)
 
 
@@ -303,10 +302,7 @@ class InstagramConnector:
 
 
 def _has_env_credentials() -> bool:
-    return all(
-        os.environ.get(name, "").strip()
-        for name in (_ENV_ACCESS_TOKEN, _ENV_USER_ID)
-    )
+    return all(os.environ.get(name, "").strip() for name in (_ENV_ACCESS_TOKEN, _ENV_USER_ID))
 
 
 def _compose_caption(metadata: PublishMetadata) -> str:
@@ -325,9 +321,7 @@ def _compose_caption(metadata: PublishMetadata) -> str:
     if metadata.tags:
         # IG accepts #hashtags inline. Sanitize the tag string — drop spaces.
         hashtags = " ".join(
-            f"#{''.join(c for c in t if c.isalnum())}"
-            for t in metadata.tags
-            if t.strip()
+            f"#{''.join(c for c in t if c.isalnum())}" for t in metadata.tags if t.strip()
         )
         if hashtags:
             parts.append(hashtags)
@@ -344,7 +338,7 @@ def _http_post(url: str, data: dict[str, str]) -> dict[str, Any]:
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            return cast("dict[str, Any]", json.loads(resp.read().decode("utf-8")))
     except urllib.error.HTTPError as exc:
         body_text = exc.read().decode("utf-8", errors="replace")
         raise ConnectorError(
@@ -357,7 +351,7 @@ def _http_get(url: str, params: dict[str, str]) -> dict[str, Any]:
     full = url + "?" + urllib.parse.urlencode(params)
     try:
         with urllib.request.urlopen(full, timeout=30) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            return cast("dict[str, Any]", json.loads(resp.read().decode("utf-8")))
     except urllib.error.HTTPError as exc:
         body_text = exc.read().decode("utf-8", errors="replace")
         raise ConnectorError(

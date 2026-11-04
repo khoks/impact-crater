@@ -92,9 +92,7 @@ async def get_diagnostics(snapshot_id: str) -> JSONResponse:
 
 async def _resolve_render_path(snapshot_id: str) -> Path:
     async with connection() as db:
-        cursor = await db.execute(
-            "SELECT render_path FROM snapshots WHERE id = ?", (snapshot_id,)
-        )
+        cursor = await db.execute("SELECT render_path FROM snapshots WHERE id = ?", (snapshot_id,))
         row = await cursor.fetchone()
     if row is None:
         raise HTTPException(
@@ -117,9 +115,7 @@ async def _resolve_render_path(snapshot_id: str) -> Path:
 
 async def _resolve_snapshot_dir(snapshot_id: str) -> Path:
     async with connection() as db:
-        cursor = await db.execute(
-            "SELECT plan_path FROM snapshots WHERE id = ?", (snapshot_id,)
-        )
+        cursor = await db.execute("SELECT plan_path FROM snapshots WHERE id = ?", (snapshot_id,))
         row = await cursor.fetchone()
     if row is None or not row["plan_path"]:
         raise HTTPException(
@@ -169,7 +165,9 @@ async def post_refine(snapshot_id: str, req: RefineRequest) -> RefineResponse:
     try:
         prior_plan = stage6_plan.load_plan(snapshot_id, project_id)
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="plan.json missing") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="plan.json missing"
+        ) from exc
 
     try:
         llm_router = await runner.build_router_from_settings()
@@ -186,7 +184,9 @@ async def post_refine(snapshot_id: str, req: RefineRequest) -> RefineResponse:
     )
 
     snap_dir = await _resolve_snapshot_dir(snapshot_id)
-    (snap_dir / "refinement_plan.json").write_text(result.model_dump_json(indent=2), encoding="utf-8")
+    (snap_dir / "refinement_plan.json").write_text(
+        result.model_dump_json(indent=2), encoding="utf-8"
+    )
 
     o = result.outcome
     return RefineResponse(

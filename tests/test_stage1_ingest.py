@@ -179,9 +179,7 @@ async def test_ingest_applies_exif_orientation(tmp_path: Path) -> None:
 async def test_ingest_writes_source_sidecar(synthetic_jpeg: Path) -> None:
     records = await stage1_ingest.ingest_media("proj-A", [synthetic_jpeg])
     rec = records[0]
-    sidecar = (
-        paths_mod.projects_dir() / "proj-A" / "sources" / f"{rec.content_hash}.json"
-    )
+    sidecar = paths_mod.projects_dir() / "proj-A" / "sources" / f"{rec.content_hash}.json"
     assert sidecar.is_file()
     payload = json.loads(sidecar.read_text(encoding="utf-8"))
     assert payload["content_hash"] == rec.content_hash
@@ -238,9 +236,7 @@ async def test_ingest_is_idempotent(synthetic_jpeg: Path) -> None:
 async def test_ingest_multiple_photos_share_project_join(
     synthetic_jpeg: Path, synthetic_png: Path
 ) -> None:
-    records = await stage1_ingest.ingest_media(
-        "proj-B", [synthetic_jpeg, synthetic_png]
-    )
+    records = await stage1_ingest.ingest_media("proj-B", [synthetic_jpeg, synthetic_png])
     hashes = {r.content_hash for r in records}
     assert len(hashes) == 2
 
@@ -290,12 +286,7 @@ async def test_ingest_video_extracts_scenes_and_frames(
             assert Path(fp).is_file()
 
     scenes_json = (
-        paths_mod.projects_dir()
-        / "proj-V"
-        / "cache"
-        / "scenes"
-        / rec.content_hash
-        / "scenes.json"
+        paths_mod.projects_dir() / "proj-V" / "cache" / "scenes" / rec.content_hash / "scenes.json"
     )
     assert scenes_json.is_file()
     parsed = json.loads(scenes_json.read_text(encoding="utf-8"))
@@ -304,8 +295,6 @@ async def test_ingest_video_extracts_scenes_and_frames(
 
 @pytest.mark.usefixtures("db_initialized")
 async def test_ingest_respects_scene_cap(synthetic_video: Path) -> None:
-    records = await stage1_ingest.ingest_media(
-        "proj-V", [synthetic_video], scene_cap=1
-    )
+    records = await stage1_ingest.ingest_media("proj-V", [synthetic_video], scene_cap=1)
     assert records[0].scenes is not None
     assert len(records[0].scenes) <= 1

@@ -5,12 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from PIL import Image
-
 from impact_crater import paths
 from impact_crater.media.collage import build_reference_collage
 from impact_crater.storage import persons as persons_repo
 from impact_crater.storage.migrations import run_pending_migrations
+from PIL import Image
 
 
 @pytest.fixture

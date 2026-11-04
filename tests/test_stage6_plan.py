@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-
 from impact_crater import paths
 from impact_crater.llm_clients.base import ArcJudgment, SelectedItem
 from impact_crater.pipeline import stage6_plan
@@ -52,14 +49,18 @@ def _video_record(
     )
 
 
-def _arc(items: list[SelectedItem], *, confidence: float = 0.7, reasoning: str = "test") -> ArcJudgment:
+def _arc(
+    items: list[SelectedItem], *, confidence: float = 0.7, reasoning: str = "test"
+) -> ArcJudgment:
     return ArcJudgment(selected_items=items, arc_reasoning=reasoning, confidence=confidence)
 
 
 # ---- S-2.11.1 per-clip duration caps ----------------------------------
 
 
-def _rc(ref: str, ms: int, *, kind: str = "photo", start: float = 0.0, end: float = 0.0) -> RenderClip:
+def _rc(
+    ref: str, ms: int, *, kind: str = "photo", start: float = 0.0, end: float = 0.0
+) -> RenderClip:
     return RenderClip(
         candidate_ref=ref,
         kind=kind,  # type: ignore[arg-type]
@@ -102,7 +103,8 @@ def test_cap_per_location_drops_excess_from_one_viewpoint() -> None:
         r = _photo_record(f"hb{i}")
         r.gps_lat, r.gps_lon = 36.879, -111.510
         recs.append(r)
-    other = _photo_record("zion"); other.gps_lat, other.gps_lon = 37.2, -112.95
+    other = _photo_record("zion")
+    other.gps_lat, other.gps_lon = 37.2, -112.95
     recs.append(other)
     clips = [_rc(f"hb{i}", 2500) for i in range(5)] + [_rc("zion", 2500)]
     out = stage6_plan._cap_per_location(clips, recs, max_per_loc=3)
@@ -117,13 +119,23 @@ async def test_compile_collapses_montage_group() -> None:
     recs = [_photo_record(f"b{i}") for i in range(6)]
     for r in recs:
         r.gps_lat, r.gps_lon = 36.879, -111.510
-    arc = _arc([
-        SelectedItem(candidate_ref=f"b{i}", placement_position=i, intended_duration_ms=2500, role="scene_set")
-        for i in range(6)
-    ])
+    arc = _arc(
+        [
+            SelectedItem(
+                candidate_ref=f"b{i}",
+                placement_position=i,
+                intended_duration_ms=2500,
+                role="scene_set",
+            )
+            for i in range(6)
+        ]
+    )
     plan = await compile_plan(
-        arc_judgment=arc, ingest_records=recs, project_id="p-montage",
-        target_duration_seconds=60, montage_groups=[[f"b{i}" for i in range(6)]],
+        arc_judgment=arc,
+        ingest_records=recs,
+        project_id="p-montage",
+        target_duration_seconds=60,
+        montage_groups=[[f"b{i}" for i in range(6)]],
     )
     montages = [c for c in plan.clips if c.kind == "burst_montage"]
     assert len(montages) == 1
@@ -139,10 +151,23 @@ async def test_compile_collapses_montage_group() -> None:
 async def test_compile_caps_iconic_viewpoint() -> None:
     recs = []
     for i in range(5):
-        r = _photo_record(f"v{i}"); r.gps_lat, r.gps_lon = 36.879, -111.510
+        r = _photo_record(f"v{i}")
+        r.gps_lat, r.gps_lon = 36.879, -111.510
         recs.append(r)
-    arc = _arc([SelectedItem(candidate_ref=f"v{i}", placement_position=i, intended_duration_ms=2500, role="scene_set") for i in range(5)])
-    plan = await compile_plan(arc_judgment=arc, ingest_records=recs, project_id="p-cap", target_duration_seconds=60)
+    arc = _arc(
+        [
+            SelectedItem(
+                candidate_ref=f"v{i}",
+                placement_position=i,
+                intended_duration_ms=2500,
+                role="scene_set",
+            )
+            for i in range(5)
+        ]
+    )
+    plan = await compile_plan(
+        arc_judgment=arc, ingest_records=recs, project_id="p-cap", target_duration_seconds=60
+    )
     assert len(plan.clips) == 3  # 5 same-overlook shots capped to 3
 
 
@@ -427,13 +452,7 @@ async def test_compile_writes_plan_json_and_db_row() -> None:
         project_id="p-fs",
         target_duration_seconds=2,
     )
-    plan_file = (
-        paths.projects_dir()
-        / "p-fs"
-        / "snapshots"
-        / plan.snapshot_id
-        / "plan.json"
-    )
+    plan_file = paths.projects_dir() / "p-fs" / "snapshots" / plan.snapshot_id / "plan.json"
     assert plan_file.is_file()
 
     async with connection() as db:

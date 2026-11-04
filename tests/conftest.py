@@ -50,9 +50,7 @@ def pytest_configure(config: pytest.Config) -> None:
     os.environ.setdefault("PYTEST_ASYNCIO_MODE", "auto")
 
 
-def pytest_collection_modifyitems(
-    config: pytest.Config, items: list[pytest.Item]
-) -> None:
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     if config.getoption("--integration"):
         return  # run everything
     skip_integration = pytest.mark.skip(reason="needs --integration to run")

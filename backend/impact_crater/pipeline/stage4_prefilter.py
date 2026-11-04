@@ -64,12 +64,12 @@ class CandidateSet:
 @dataclass
 class PreFilterOverrides:
     quality_threshold: float | None = None  # default 0.4
-    dedup_factor: int | None = None         # default 3
-    target_size: int | None = None          # user override; clamped to [floor, ceiling]
-    weight_quality: float | None = None     # default α=0.25
-    weight_narrative: float | None = None   # default β=0.40
+    dedup_factor: int | None = None  # default 3
+    target_size: int | None = None  # user override; clamped to [floor, ceiling]
+    weight_quality: float | None = None  # default α=0.25
+    weight_narrative: float | None = None  # default β=0.40
     weight_specialness: float | None = None  # default δ=0.20 (S-2.10.2)
-    weight_diversity: float | None = None   # default γ=0.15
+    weight_diversity: float | None = None  # default γ=0.15
     # S-2.10.2: a genuinely memorable shot (high Stage-3 specialness) survives the
     # quality floor even when slightly soft. None → default 0.75; raise to 1.1
     # to disable the rescue.
@@ -77,19 +77,19 @@ class PreFilterOverrides:
     # A-017 best-of-burst semantic dedup. Cosine ≥ threshold within the
     # time window collapses retakes to their best member. None → defaults;
     # set threshold to 1.1 (impossible) to disable.
-    semantic_dedup_threshold: float | None = None      # default 0.93
-    semantic_dedup_window_seconds: int | None = None   # default 120
+    semantic_dedup_threshold: float | None = None  # default 0.93
+    semantic_dedup_window_seconds: int | None = None  # default 120
     # S-2.11.4 burst-montage detection knobs. montage_enabled=False is a kill
     # switch (no montage groups ever produced).
-    montage_enabled: bool | None = None                # default True
-    montage_min_members: int | None = None             # default 6
-    montage_window_seconds: int | None = None          # default 1800
-    montage_phash_hamming: int | None = None           # default 14
+    montage_enabled: bool | None = None  # default True
+    montage_min_members: int | None = None  # default 6
+    montage_window_seconds: int | None = None  # default 1800
+    montage_phash_hamming: int | None = None  # default 14
     # S-2.10.6 capture-day stratified budget (A/B-gated). None → False (global
     # top-K, unchanged). When True, the final selection is allocated across
     # capture-days with a per-day floor so a long trip's later days aren't starved.
-    stratify_by_capture_day: bool | None = None        # default False
-    stratified_min_per_day: int | None = None          # default 3
+    stratify_by_capture_day: bool | None = None  # default False
+    stratified_min_per_day: int | None = None  # default 3
 
 
 # ---- Defaults ----------------------------------------------------------
@@ -156,9 +156,15 @@ def prefilter(
     overrides = overrides or PreFilterOverrides()
     weights = (
         overrides.weight_quality if overrides.weight_quality is not None else _DEFAULT_WEIGHTS[0],
-        overrides.weight_narrative if overrides.weight_narrative is not None else _DEFAULT_WEIGHTS[1],
-        overrides.weight_specialness if overrides.weight_specialness is not None else _DEFAULT_WEIGHTS[2],
-        overrides.weight_diversity if overrides.weight_diversity is not None else _DEFAULT_WEIGHTS[3],
+        overrides.weight_narrative
+        if overrides.weight_narrative is not None
+        else _DEFAULT_WEIGHTS[1],
+        overrides.weight_specialness
+        if overrides.weight_specialness is not None
+        else _DEFAULT_WEIGHTS[2],
+        overrides.weight_diversity
+        if overrides.weight_diversity is not None
+        else _DEFAULT_WEIGHTS[3],
     )
     rescue_threshold = (
         overrides.specialness_rescue_threshold
@@ -170,7 +176,9 @@ def prefilter(
         if overrides.quality_threshold is not None
         else _DEFAULT_QUALITY_THRESHOLD
     )
-    dedup_factor = overrides.dedup_factor if overrides.dedup_factor is not None else _DEFAULT_DEDUP_FACTOR
+    dedup_factor = (
+        overrides.dedup_factor if overrides.dedup_factor is not None else _DEFAULT_DEDUP_FACTOR
+    )
     semantic_threshold = (
         overrides.semantic_dedup_threshold
         if overrides.semantic_dedup_threshold is not None
@@ -240,7 +248,11 @@ def prefilter(
     # Step 3 — location/time clusters.
     location_clusters = _location_clusters(after_semantic)
     after_location = _cap_location_clusters(
-        after_semantic, location_clusters, _DEFAULT_LOCATION_CLUSTER_CAP, weights, filter_log,
+        after_semantic,
+        location_clusters,
+        _DEFAULT_LOCATION_CLUSTER_CAP,
+        weights,
+        filter_log,
         exempt=must_keep,
     )
 
@@ -262,7 +274,10 @@ def prefilter(
     # per ~1km GPS cell so the judge spreads across places and fills the target.
     # Montage members are EXEMPT (the montage represents the whole dense burst).
     after_location = _cap_gps_viewpoints(
-        after_location, _DEFAULT_VIEWPOINT_CANDIDATE_CAP, weights, filter_log,
+        after_location,
+        _DEFAULT_VIEWPOINT_CANDIDATE_CAP,
+        weights,
+        filter_log,
         exempt_keys=montage_member_keys | set(must_keep),
     )
 
@@ -579,7 +594,7 @@ def _stratified_take(ranked: list[_Asset], budget: int, min_per_day: int) -> lis
             buckets[d] = []
             order.append(d)
         buckets[d].append(a)
-    take = {d: 0 for d in order}
+    take = dict.fromkeys(order, 0)
     remaining = budget
     for d in order:  # floor per day
         if remaining <= 0:
@@ -614,8 +629,8 @@ def _annotate_destinations(
 def _make_asset(
     rec: MediaRecord,
     scene_index: int | None,
-    s2_by_key: dict,
-    s3_by_key: dict,
+    s2_by_key: dict[tuple[str, int | None], Stage2AssetOutputs],
+    s3_by_key: dict[tuple[str, int | None], Stage3AssetOutputs],
     *,
     scene: Any = None,
 ) -> _Asset:
@@ -633,15 +648,21 @@ def _make_asset(
         narrative_relevance_score=float(s2.narrative_relevance_score) if s2 else 0.0,
         caption=s2.caption if s2 else "",
         phash_hex=str(rec.quick_stats.get("phash") or "") or None,
-        location_description=metadata_dict.get("location", {}).get("description") if metadata_dict else None,
+        location_description=metadata_dict.get("location", {}).get("description")
+        if metadata_dict
+        else None,
         time_of_day=metadata_dict.get("time_of_day") if metadata_dict else None,
         raw_metadata=metadata_dict,
         metadata_summary=_summarize_metadata(metadata_dict) if metadata_dict else None,
         capture_timestamp=rec.capture_timestamp,
         capture_source=rec.capture_source,
         safety_level=str(metadata_dict.get("safety_level", "safe")) if metadata_dict else "safe",
-        specialness_score=float(metadata_dict.get("specialness_score", 0.5)) if metadata_dict else 0.5,
-        obstruction_level=float(metadata_dict.get("obstruction_level", 0.0)) if metadata_dict else 0.0,
+        specialness_score=float(metadata_dict.get("specialness_score", 0.5))
+        if metadata_dict
+        else 0.5,
+        obstruction_level=float(metadata_dict.get("obstruction_level", 0.0))
+        if metadata_dict
+        else 0.0,
         embedding=getattr(s2, "embedding", None) if s2 else None,
         gps_lat=rec.gps_lat,
         gps_lon=rec.gps_lon,
@@ -670,9 +691,8 @@ def _summarize_metadata(md: dict[str, Any]) -> str:
     vary framing, find emotional peaks, and avoid blocked shots.
     """
     parts: list[str] = []
-    if st := md.get("shot_type"):
-        if st != "ambiguous":
-            parts.append(f"shot={st}")
+    if (st := md.get("shot_type")) and st != "ambiguous":
+        parts.append(f"shot={st}")
     if td := md.get("time_of_day"):
         parts.append(f"time={td}")
     if mood := md.get("mood"):
@@ -713,9 +733,7 @@ def _summarize_metadata(md: dict[str, Any]) -> str:
 # ---- Filter steps -----------------------------------------------------
 
 
-def _apply_safety_floor(
-    assets: list[_Asset], filter_log: list[dict[str, Any]]
-) -> list[_Asset]:
+def _apply_safety_floor(assets: list[_Asset], filter_log: list[dict[str, Any]]) -> list[_Asset]:
     out = []
     for a in assets:
         if a.safety_level == "explicit":
@@ -773,8 +791,12 @@ def _apply_quality_floor(
         elif a.key in exempt:
             out.append(a)
             filter_log.append(
-                {"key": a.key, "decision": "keep", "reason": "must_keep_destination_coverage",
-                 **_scores(a)}
+                {
+                    "key": a.key,
+                    "decision": "keep",
+                    "reason": "must_keep_destination_coverage",
+                    **_scores(a),
+                }
             )
         elif a.specialness_score >= rescue_threshold:
             out.append(a)
@@ -810,7 +832,10 @@ def _phash_clusters(assets: list[_Asset]) -> list[list[_Asset]]:
         placed = False
         for cluster in clusters:
             head = cluster[0]
-            if head.phash_hex and _hamming_hex(a.phash_hex, head.phash_hex) <= _DEFAULT_PHASH_HAMMING:
+            if (
+                head.phash_hex
+                and _hamming_hex(a.phash_hex, head.phash_hex) <= _DEFAULT_PHASH_HAMMING
+            ):
                 cluster.append(a)
                 placed = True
                 break
@@ -862,7 +887,7 @@ def _apply_dedup(
 
 def _apply_semantic_dedup(
     assets: list[_Asset],
-    weights: tuple[float, float, float],
+    weights: tuple[float, float, float, float],
     threshold: float,
     window_seconds: int,
     filter_log: list[dict[str, Any]],
@@ -894,7 +919,9 @@ def _apply_semantic_dedup(
             head = clusters[ci][0]
             cos = float(np.dot(vec, rep))
             both_timed = a.capture_timestamp and head.capture_timestamp
-            eff_threshold = threshold if both_timed else max(threshold, _SEMANTIC_DEDUP_NO_TIME_THRESHOLD)
+            eff_threshold = (
+                threshold if both_timed else max(threshold, _SEMANTIC_DEDUP_NO_TIME_THRESHOLD)
+            )
             if cos < eff_threshold:
                 continue
             if both_timed and not _within_window(a, head, window_seconds):
@@ -1018,7 +1045,9 @@ def _detect_montage_groups(
     for a in assets:
         if a.scene_index is not None or a.gps_lat is None or a.gps_lon is None:
             continue  # photos with GPS only
-        cells.setdefault((round(a.gps_lat, _VIEWPOINT_CELL_DP), round(a.gps_lon, _VIEWPOINT_CELL_DP)), []).append(a)
+        cells.setdefault(
+            (round(a.gps_lat, _VIEWPOINT_CELL_DP), round(a.gps_lon, _VIEWPOINT_CELL_DP)), []
+        ).append(a)
     groups: list[list[str]] = []
     for cell, members in cells.items():
         if len(members) < min_members:
@@ -1038,9 +1067,7 @@ def _detect_montage_groups(
     return groups
 
 
-def _montage_runs(
-    members: list[_Asset], window_s: int, phash_hamming: int
-) -> list[list[_Asset]]:
+def _montage_runs(members: list[_Asset], window_s: int, phash_hamming: int) -> list[list[_Asset]]:
     """Split a GPS cell's photos into time+backdrop runs: a new run starts when
     the gap to the run's first member exceeds `window_s` OR the pHash distance to
     the run anchor exceeds `phash_hamming`."""
@@ -1086,7 +1113,9 @@ def _cap_gps_viewpoints(
         if a.gps_lat is None or a.gps_lon is None or a.key in exempt:
             keep.add(a.key)  # no-GPS / montage members exempt
             continue
-        by_cell.setdefault((round(a.gps_lat, _VIEWPOINT_CELL_DP), round(a.gps_lon, _VIEWPOINT_CELL_DP)), []).append(a)
+        by_cell.setdefault(
+            (round(a.gps_lat, _VIEWPOINT_CELL_DP), round(a.gps_lon, _VIEWPOINT_CELL_DP)), []
+        ).append(a)
     for cell, members in by_cell.items():
         ranked = sorted(members, key=lambda a: (-_combined_score(a, weights, 1), a.key))
         for a in ranked[:cap]:

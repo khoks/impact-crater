@@ -29,7 +29,9 @@ GUIDE = _unit(0, 0, 1, 0)
 
 
 def _obs(emb, ch, ts, loc) -> FaceObservation:
-    return FaceObservation(content_hash=ch, embedding=emb, capture_timestamp=ts, location_key=loc, bbox=(0, 0, 1, 1))
+    return FaceObservation(
+        content_hash=ch, embedding=emb, capture_timestamp=ts, location_key=loc, bbox=(0, 0, 1, 1)
+    )
 
 
 # ---- Clustering + group/crowd ------------------------------------------
@@ -83,10 +85,7 @@ def test_two_appearances_is_not_group_even_when_breadth_high() -> None:
 def test_many_appearances_one_day_is_not_group() -> None:
     """Many appearances spread over several LOCATIONS but all on ONE day is
     the day-tour-companion case — should stay crowd (requires >=2 days)."""
-    obs = [
-        _obs(BOB, f"b{i}", "2026-04-05T09:00:00", f"37.2{i},-112.9{i}")
-        for i in range(5)
-    ]
+    obs = [_obs(BOB, f"b{i}", "2026-04-05T09:00:00", f"37.2{i},-112.9{i}") for i in range(5)]
     inv = build_cast_inventory(obs, cluster_threshold=0.5)
     p = inv.persons[0]
     assert p.appearance_count == 5

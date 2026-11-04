@@ -11,6 +11,7 @@ overlaid above. Crops are rendered at 256×256.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,7 +36,7 @@ class CollageResult:
 
 async def build_reference_collage(
     *,
-    media_resolver: "callable[[str], Path] | None" = None,
+    media_resolver: Callable[[str], Path] | None = None,
 ) -> CollageResult | None:
     """Build (or load cached) reference collage for the current library.
 
@@ -80,6 +81,7 @@ async def build_reference_collage(
     canvas = Image.new("RGB", (canvas_w, canvas_h), (240, 240, 240))
     draw = ImageDraw.Draw(canvas)
 
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont
     try:
         font = ImageFont.truetype("arial.ttf", size=20)
     except OSError:
@@ -127,7 +129,7 @@ def _library_version_hash(pairs: list[tuple[Person, list[FacePhoto]]]) -> str:
     return hashlib.sha256("|".join(items).encode("utf-8")).hexdigest()[:32]
 
 
-def _crop_face(face: FacePhoto, media_resolver: "callable[[str], Path]") -> Image.Image:
+def _crop_face(face: FacePhoto, media_resolver: Callable[[str], Path]) -> Image.Image:
     src_path = media_resolver(face.content_hash)
     img = Image.open(src_path).convert("RGB")
     w, h = img.size

@@ -7,7 +7,6 @@ import wave
 from pathlib import Path
 
 import pytest
-
 from impact_crater.media import ffmpeg as ff
 
 
@@ -79,7 +78,7 @@ def _write_synthetic_wav(path: Path, *, duration_ms: int = 500, sample_rate: int
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(sample_rate)
-        w.writeframes(struct.pack("<%dh" % n_samples, *([0] * n_samples)))
+        w.writeframes(struct.pack(f"<{n_samples}h", *([0] * n_samples)))
 
 
 @pytest.mark.skipif(not ff.has_ffmpeg(), reason="ffmpeg binary not installed")

@@ -60,7 +60,7 @@ class ReservationSet:
     source: Literal["destination", "refinement", "feedback"] = "destination"
 
     @classmethod
-    def from_dest_matches(cls, matches: list[DestMatch]) -> "ReservationSet":
+    def from_dest_matches(cls, matches: list[DestMatch]) -> ReservationSet:
         keys: set[str] = set()
         reasons: dict[str, str] = {}
         for m in matches:
@@ -69,7 +69,7 @@ class ReservationSet:
                 reasons[k] = f"dest:{m.name}"
         return cls(keys=frozenset(keys), reason_by_key=reasons, source="destination")
 
-    def merged_with(self, other: "ReservationSet | None") -> "ReservationSet":
+    def merged_with(self, other: ReservationSet | None) -> ReservationSet:
         if other is None:
             return self
         reasons = dict(self.reason_by_key)
@@ -120,22 +120,22 @@ def map_destinations(
         name = str(getattr(dest, "name", "")).strip()
         if not name:
             continue
-        needles = {name.lower(), *[a for a in (getattr(dest, "aliases", []) or [])]}
+        needles = {name.lower(), *(getattr(dest, "aliases", []) or [])}
         needles = {n for n in needles if n}
         matched: list[Any] = []
         for a in assets:
             text = _search_text(a)
-            label = geo_labels.get(getattr(a, "key", None), "")
+            label = geo_labels.get(getattr(a, "key", ""), "")
             hay = f"{text} {label}".strip()
             if any(n in hay for n in needles):
                 matched.append(a)
         matched.sort(key=lambda a: (-_rank_score(a), getattr(a, "key", "")))
-        best = [getattr(a, "key") for a in matched[:per_dest]]
+        best = [a.key for a in matched[:per_dest]]
         matches.append(
             DestMatch(
                 name=name,
                 aliases=sorted(needles),
-                asset_keys={getattr(a, "key") for a in matched},
+                asset_keys={a.key for a in matched},
                 best_keys=best,
                 basis="matched" if matched else "none",
                 chronological_hint=getattr(dest, "chronological_hint", None),
@@ -169,10 +169,10 @@ def _reverse_geocode_labels(assets: list[Any]) -> dict[str, str]:
         return {}
     try:
         results = rg.search(coords)  # offline KD-tree over cities1000
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.info("reverse_geocode failed (text-only): %r", str(exc)[:120])
         return {}
     out: dict[str, str] = {}
-    for k, r in zip(keys, results):
+    for k, r in zip(keys, results, strict=False):
         out[k] = f"{r.get('name', '')} {r.get('admin1', '')}".strip().lower()
     return out

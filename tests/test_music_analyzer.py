@@ -8,9 +8,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-
 from impact_crater.media.music import (
-    CutGrid,
     LibrosaMusicAnalyzer,
     MusicAnalysis,
     Section,
@@ -47,9 +45,9 @@ def _write_click_wav(path: Path, *, duration_ms: int, bpm: float, sr: int = 2205
         if i + click_len <= n:
             # Decaying-sine click — librosa's onset detector picks it up.
             tt = np.arange(click_len) / sr
-            y[i : i + click_len] += (
-                0.5 * np.sin(2 * np.pi * 1000 * tt) * np.exp(-tt * 80)
-            ).astype(np.float32)
+            y[i : i + click_len] += (0.5 * np.sin(2 * np.pi * 1000 * tt) * np.exp(-tt * 80)).astype(
+                np.float32
+            )
         t += beat_period_s
     samples = (y * 32767).clip(-32767, 32767).astype(np.int16)
     with wave.open(str(path), "wb") as w:
@@ -106,7 +104,9 @@ async def test_analyze_missing_file_raises(tmp_path: Path) -> None:
 # ---- CutGrid tests ----------------------------------------------------
 
 
-def _fake_analysis(*, bpm: float, duration_ms: int = 8000, sections: list[Section] | None = None) -> MusicAnalysis:
+def _fake_analysis(
+    *, bpm: float, duration_ms: int = 8000, sections: list[Section] | None = None
+) -> MusicAnalysis:
     beat_period_ms = int(60_000 / bpm)
     beats_ms = list(range(0, duration_ms, beat_period_ms))
     return MusicAnalysis(
@@ -150,9 +150,7 @@ def test_cut_grid_snaps_to_section_boundary_within_200ms() -> None:
     analysis = _fake_analysis(bpm=120, duration_ms=8000, sections=sections)
     # Force a cut frequency that produces a cut point near the 2050ms boundary.
     grid = generate_cut_grid(analysis, cut_frequency_override=4)
-    assert 2050 in grid.cut_points_ms or any(
-        abs(c - 2050) <= 50 for c in grid.cut_points_ms
-    )
+    assert 2050 in grid.cut_points_ms or any(abs(c - 2050) <= 50 for c in grid.cut_points_ms)
     # Section boundary 2050 should appear in the section_aligned_cuts list.
     assert 2050 in grid.section_aligned_cuts
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from impact_crater.llm_clients.base import ArcJudgment, SelectedItem
 from impact_crater.media.music import CutGrid, MusicAnalysis
 from impact_crater.pipeline import stage6_plan

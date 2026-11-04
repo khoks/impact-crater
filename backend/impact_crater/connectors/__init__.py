@@ -42,6 +42,7 @@ from impact_crater.connectors.instagram import InstagramConnector
 from impact_crater.connectors.youtube import YouTubeConnector
 
 __all__ = [
+    "LIVE_PUBLISH_PLATFORMS",
     "Connector",
     "ConnectorAuthError",
     "ConnectorError",
@@ -52,7 +53,6 @@ __all__ = [
     "DryRunConnector",
     "FacebookConnector",
     "InstagramConnector",
-    "LIVE_PUBLISH_PLATFORMS",
     "Platform",
     "PublishMetadata",
     "Visibility",
@@ -71,14 +71,13 @@ def get_connector(platform: str) -> Connector:
     """
     base: Connector
     if platform == "youtube":
-        base = YouTubeConnector()  # type: ignore[assignment]
+        base = YouTubeConnector()
     elif platform == "instagram":
-        base = InstagramConnector()  # type: ignore[assignment]
+        base = InstagramConnector()
     elif platform == "facebook":
-        base = FacebookConnector()  # type: ignore[assignment]
+        base = FacebookConnector()
     else:
         raise ValueError(
-            f"unknown publish platform {platform!r}; "
-            f"supported: {LIVE_PUBLISH_PLATFORMS}"
+            f"unknown publish platform {platform!r}; supported: {LIVE_PUBLISH_PLATFORMS}"
         )
     return wrap_if_dry_run(base)

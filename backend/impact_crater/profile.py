@@ -15,7 +15,7 @@ import json
 import threading
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -25,7 +25,7 @@ _LOCK = threading.Lock()
 
 
 def _iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 # ---- Feedback events --------------------------------------------------
@@ -70,9 +70,8 @@ def emit(event: FeedbackEvent) -> None:
     """Append a feedback event to the log."""
     line = json.dumps(asdict(event), separators=(",", ":"))
     target = _feedback_log_path()
-    with _LOCK:
-        with target.open("a", encoding="utf-8") as f:
-            f.write(line + "\n")
+    with _LOCK, target.open("a", encoding="utf-8") as f:
+        f.write(line + "\n")
 
 
 def read_events() -> Iterator[dict[str, Any]]:
@@ -197,9 +196,7 @@ def derive_profile() -> Profile:
         elif et == "publish_succeeded":
             visibility = payload.get("visibility")
             if isinstance(visibility, str):
-                style.visibility_counts[visibility] = (
-                    style.visibility_counts.get(visibility, 0) + 1
-                )
+                style.visibility_counts[visibility] = style.visibility_counts.get(visibility, 0) + 1
 
         # Side-channel: target_duration may be on multiple events.
         td = payload.get("target_duration_seconds")
@@ -264,10 +261,8 @@ def suggestions_for_new_job(profile: Profile | None = None) -> JobSuggestions:
 
     avg = p.style_preferences.target_duration_seconds_avg
     if avg is not None:
-        suggestion.suggested_target_duration_seconds = int(round(avg))
-        rationale_bits.append(
-            f"avg target duration across past jobs: {int(round(avg))}s"
-        )
+        suggestion.suggested_target_duration_seconds = round(avg)
+        rationale_bits.append(f"avg target duration across past jobs: {round(avg)}s")
 
     if p.style_preferences.mode_counts:
         top_mode = max(p.style_preferences.mode_counts.items(), key=lambda kv: kv[1])[0]
@@ -276,9 +271,7 @@ def suggestions_for_new_job(profile: Profile | None = None) -> JobSuggestions:
             rationale_bits.append(f"you usually pick {top_mode} mode")
 
     if p.style_preferences.visibility_counts:
-        top_vis = max(
-            p.style_preferences.visibility_counts.items(), key=lambda kv: kv[1]
-        )[0]
+        top_vis = max(p.style_preferences.visibility_counts.items(), key=lambda kv: kv[1])[0]
         if top_vis in ("public", "unlisted", "private"):
             suggestion.suggested_visibility = top_vis  # type: ignore[assignment]
             rationale_bits.append(f"you usually publish as {top_vis}")

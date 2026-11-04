@@ -64,7 +64,7 @@ async def build_cast(
         faces_total += len(crops)
         embeddings = await embedder.embed_face_crops([c for c, _ in crops])
         loc = location_key(rec.gps_lat, rec.gps_lon, desc_by_hash.get(rec.content_hash))
-        for (_, bbox), emb in zip(crops, embeddings):
+        for (_, bbox), emb in zip(crops, embeddings, strict=False):
             observations.append(
                 FaceObservation(
                     content_hash=rec.content_hash,

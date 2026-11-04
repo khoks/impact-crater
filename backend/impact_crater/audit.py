@@ -15,7 +15,8 @@ from __future__ import annotations
 import json
 import threading
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 
 from impact_crater import paths
 from impact_crater.storage.db import connection
@@ -24,7 +25,7 @@ _LOCK = threading.Lock()
 
 
 def _iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 @dataclass
@@ -48,9 +49,8 @@ async def write(entry: AuditEntry) -> None:
     """Append to JSONL + INSERT into the audit SQLite table."""
     line = json.dumps(asdict(entry), separators=(",", ":"))
     target = paths.audit_path()
-    with _LOCK:
-        with target.open("a", encoding="utf-8") as f:
-            f.write(line + "\n")
+    with _LOCK, target.open("a", encoding="utf-8") as f:
+        f.write(line + "\n")
     async with connection() as db:
         await db.execute(
             """
@@ -80,7 +80,7 @@ async def write(entry: AuditEntry) -> None:
         await db.commit()
 
 
-async def list_for_project(project_id: str, limit: int = 50) -> list[dict]:
+async def list_for_project(project_id: str, limit: int = 50) -> list[dict[str, Any]]:
     async with connection() as db:
         cur = await db.execute(
             """

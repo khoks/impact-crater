@@ -377,7 +377,8 @@ class LLMRouter:
         )
         if cached is not None:
             await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
-            return cached  # numpy ndarray
+            embedding: Embedding = cached
+            return embedding
 
         result = await self._dispatch(route, params, client.embed_image(image_bytes, params=params))
         await cache.put(
@@ -420,7 +421,8 @@ class LLMRouter:
         )
         if cached is not None:
             await self._record_call(route, cache_hit=True, result_bytes_hash=content_hash)
-            return cached
+            text_embedding: Embedding = cached
+            return text_embedding
 
         result = await self._dispatch(route, params, client.embed_text(text, params=params))
         await cache.put(

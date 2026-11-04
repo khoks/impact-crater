@@ -13,8 +13,6 @@ from unittest.mock import AsyncMock
 
 import numpy as np
 import pytest
-from PIL import Image
-
 from impact_crater.llm_clients.base import ArcJudgment, SelectedItem
 from impact_crater.pipeline.runner import (
     HeadlessJobConfig,
@@ -24,6 +22,7 @@ from impact_crater.pipeline.runner import (
 from impact_crater.pipeline.types import RichMetadataPhoto
 from impact_crater.storage import settings as settings_store
 from impact_crater.storage.migrations import run_pending_migrations
+from PIL import Image
 
 
 @pytest.fixture

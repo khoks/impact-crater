@@ -6,15 +6,13 @@ import io
 from pathlib import Path
 
 import piexif
-import pytest
-from PIL import Image
-
 from impact_crater.media.privacy import (
     PrivacySettings,
     blur_faces,
     prepare_for_llm,
     strip_exif,
 )
+from PIL import Image
 
 
 def _jpeg_with_exif(*, gps: bool = True, color: tuple[int, int, int] = (200, 80, 30)) -> bytes:

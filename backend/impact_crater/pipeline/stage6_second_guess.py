@@ -118,14 +118,20 @@ async def second_guess(
     brief: str,
 ) -> SecondGuessResult:
     """Tier-M check on the M2/M4 plan."""
-    selected_items_text = "\n".join(
-        f"  [{i.placement_position}] role={i.role} dur={i.intended_duration_ms}ms ref={i.candidate_ref} notes={i.notes!r}"
-        for i in arc_judgment.selected_items
-    ) or "  (empty)"
-    clips_text = "\n".join(
-        f"  [{i}] {c.kind} dur={c.intended_duration_ms}ms aspect={c.aspect_ratio_action} ref={c.candidate_ref}"
-        for i, c in enumerate(plan.clips)
-    ) or "  (empty)"
+    selected_items_text = (
+        "\n".join(
+            f"  [{i.placement_position}] role={i.role} dur={i.intended_duration_ms}ms ref={i.candidate_ref} notes={i.notes!r}"
+            for i in arc_judgment.selected_items
+        )
+        or "  (empty)"
+    )
+    clips_text = (
+        "\n".join(
+            f"  [{i}] {c.kind} dur={c.intended_duration_ms}ms aspect={c.aspect_ratio_action} ref={c.candidate_ref}"
+            for i, c in enumerate(plan.clips)
+        )
+        or "  (empty)"
+    )
 
     prompt = _PROMPT.format(
         brief=brief,

@@ -16,8 +16,6 @@ import wave
 from pathlib import Path
 
 import pytest
-from PIL import Image
-
 from impact_crater.llm_clients.anthropic_client import AnthropicLLMClient
 from impact_crater.llm_clients.google_client import GoogleLLMClient
 from impact_crater.llm_clients.router import LLMRouter
@@ -25,6 +23,7 @@ from impact_crater.media import ffmpeg as ff
 from impact_crater.pipeline.runner import FullJobConfig, run_full_pipeline
 from impact_crater.storage import settings as settings_store
 from impact_crater.storage.migrations import run_pending_migrations
+from PIL import Image
 
 pytestmark = pytest.mark.integration
 
@@ -105,8 +104,15 @@ async def test_full_m2_pipeline_real_apis_end_to_end(
 
     # ffprobe-validate the MP4 has a video + audio stream.
     probe = ff.run_ffprobe(
-        ["-v", "error", "-show_format", "-show_streams", "-print_format", "json",
-         result.render_path]
+        [
+            "-v",
+            "error",
+            "-show_format",
+            "-show_streams",
+            "-print_format",
+            "json",
+            result.render_path,
+        ]
     )
     parsed = json.loads(probe.stdout.decode("utf-8"))
     video_streams = [s for s in parsed["streams"] if s["codec_type"] == "video"]

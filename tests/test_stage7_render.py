@@ -13,8 +13,6 @@ import wave
 from pathlib import Path
 
 import pytest
-from PIL import Image
-
 from impact_crater.llm_clients.base import ArcJudgment, SelectedItem
 from impact_crater.media import ffmpeg as ff
 from impact_crater.pipeline import stage6_plan, stage7_render
@@ -22,10 +20,9 @@ from impact_crater.pipeline.stage1_ingest import MediaRecord
 from impact_crater.pipeline.stage6_plan import StandardMusicSpec
 from impact_crater.storage.db import connection
 from impact_crater.storage.migrations import run_pending_migrations
+from PIL import Image
 
-pytestmark = pytest.mark.skipif(
-    not ff.has_ffmpeg(), reason="ffmpeg binary not installed"
-)
+pytestmark = pytest.mark.skipif(not ff.has_ffmpeg(), reason="ffmpeg binary not installed")
 
 
 @pytest.fixture
@@ -40,7 +37,9 @@ def _photo_file(tmp_path: Path, name: str, color: tuple[int, int, int]) -> Path:
     return p
 
 
-def _photo_record(path: Path, content_hash: str, *, width: int = 640, height: int = 480) -> MediaRecord:
+def _photo_record(
+    path: Path, content_hash: str, *, width: int = 640, height: int = 480
+) -> MediaRecord:
     return MediaRecord(
         content_hash=content_hash,
         source_path=str(path),
@@ -70,9 +69,12 @@ def _synthetic_wav(path: Path, *, duration_ms: int, sample_rate: int = 22050) ->
 def _ffprobe_video(path: Path) -> dict:
     cp = ff.run_ffprobe(
         [
-            "-v", "error",
-            "-show_format", "-show_streams",
-            "-print_format", "json",
+            "-v",
+            "error",
+            "-show_format",
+            "-show_streams",
+            "-print_format",
+            "json",
             str(path),
         ]
     )
@@ -89,8 +91,12 @@ async def test_render_two_photos_no_audio(tmp_path: Path) -> None:
     p2 = _photo_file(tmp_path, "p2.jpg", (40, 200, 100))
     arc = ArcJudgment(
         selected_items=[
-            SelectedItem(candidate_ref="h1", placement_position=0, intended_duration_ms=1000, role="opener"),
-            SelectedItem(candidate_ref="h2", placement_position=1, intended_duration_ms=1000, role="closer"),
+            SelectedItem(
+                candidate_ref="h1", placement_position=0, intended_duration_ms=1000, role="opener"
+            ),
+            SelectedItem(
+                candidate_ref="h2", placement_position=1, intended_duration_ms=1000, role="closer"
+            ),
         ],
         arc_reasoning="warm to cool",
         confidence=0.7,
@@ -129,7 +135,9 @@ async def test_render_with_music_normalizes_audio(tmp_path: Path) -> None:
 
     arc = ArcJudgment(
         selected_items=[
-            SelectedItem(candidate_ref="h", placement_position=0, intended_duration_ms=2000, role="opener"),
+            SelectedItem(
+                candidate_ref="h", placement_position=0, intended_duration_ms=2000, role="opener"
+            ),
         ],
         arc_reasoning="single shot",
         confidence=0.6,
@@ -179,8 +187,12 @@ async def test_audio_fade_lands_inside_actual_timeline(tmp_path: Path) -> None:
 
     arc = ArcJudgment(
         selected_items=[
-            SelectedItem(candidate_ref="h1", placement_position=0, intended_duration_ms=1400, role="opener"),
-            SelectedItem(candidate_ref="h2", placement_position=1, intended_duration_ms=1400, role="closer"),
+            SelectedItem(
+                candidate_ref="h1", placement_position=0, intended_duration_ms=1400, role="opener"
+            ),
+            SelectedItem(
+                candidate_ref="h2", placement_position=1, intended_duration_ms=1400, role="closer"
+            ),
         ],
         arc_reasoning="short",
         confidence=0.6,
@@ -219,11 +231,16 @@ async def test_audio_fade_lands_inside_actual_timeline(tmp_path: Path) -> None:
     def _mean_volume(start_s: float, dur_s: float) -> float:
         cp = ff.run_ffmpeg(
             [
-                "-ss", f"{start_s:.3f}",
-                "-t", f"{dur_s:.3f}",
-                "-i", str(audio_art),
-                "-af", "volumedetect",
-                "-f", "null",
+                "-ss",
+                f"{start_s:.3f}",
+                "-t",
+                f"{dur_s:.3f}",
+                "-i",
+                str(audio_art),
+                "-af",
+                "volumedetect",
+                "-f",
+                "null",
                 "-",
             ]
         )
@@ -244,7 +261,9 @@ async def test_render_updates_snapshot_render_status(tmp_path: Path) -> None:
     p = _photo_file(tmp_path, "p.jpg", (100, 100, 100))
     arc = ArcJudgment(
         selected_items=[
-            SelectedItem(candidate_ref="h", placement_position=0, intended_duration_ms=1000, role="opener"),
+            SelectedItem(
+                candidate_ref="h", placement_position=0, intended_duration_ms=1000, role="opener"
+            ),
         ],
         arc_reasoning="x",
         confidence=0.5,
@@ -273,7 +292,9 @@ async def test_render_emits_render_event_telemetry(tmp_path: Path) -> None:
     p = _photo_file(tmp_path, "p.jpg", (10, 100, 50))
     arc = ArcJudgment(
         selected_items=[
-            SelectedItem(candidate_ref="h", placement_position=0, intended_duration_ms=1000, role="opener"),
+            SelectedItem(
+                candidate_ref="h", placement_position=0, intended_duration_ms=1000, role="opener"
+            ),
         ],
         arc_reasoning="x",
         confidence=0.5,

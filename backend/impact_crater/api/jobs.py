@@ -12,6 +12,7 @@ Quota gate (402) and router factory (412) shared by all sync endpoints.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 from dataclasses import asdict
@@ -20,8 +21,6 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field
-
-log = logging.getLogger(__name__)
 
 from impact_crater.jobs import get_registry
 from impact_crater.jobs.runner_glue import submit_full_pipeline_job
@@ -38,6 +37,8 @@ from impact_crater.pipeline.stage4_prefilter import PreFilterOverrides
 from impact_crater.pipeline.stage7_render import RenderError
 from impact_crater.storage import settings as settings_store
 from impact_crater.storage.db import connection
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -431,10 +432,8 @@ async def ws_job_progress(websocket: WebSocket, job_id: str) -> None:
         log.info("ws_disconnected_early job_id=%s", job_id)
     finally:
         await registry.unsubscribe(job_id, queue)
-        try:
+        with contextlib.suppress(Exception):
             await websocket.close()
-        except Exception:
-            pass
         if not disconnected:
             log.info("ws_closed job_id=%s", job_id)
 

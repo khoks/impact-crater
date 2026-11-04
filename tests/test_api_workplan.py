@@ -12,7 +12,9 @@ from impact_crater.storage.migrations import run_pending_migrations
 
 
 @pytest.fixture
-async def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[httpx.AsyncClient]:
+async def client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> AsyncIterator[httpx.AsyncClient]:
     await run_pending_migrations()
     # Point the workplan parser at a synthetic project/ tree.
     proj = tmp_path / "project"

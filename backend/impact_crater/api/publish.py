@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import logging
 import secrets
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
@@ -59,10 +60,12 @@ class PublishResponse(BaseModel):
 
 
 # Test-only injection point — see `set_connector_factory` below.
-_connector_factory_override: "callable[[str], Connector] | None" = None
+_connector_factory_override: Callable[[str], Connector] | None = None
 
 
-def set_connector_factory(factory: "callable[[], YouTubeConnector] | callable[[str], Connector]") -> None:
+def set_connector_factory(
+    factory: Callable[[], YouTubeConnector] | Callable[[str], Connector],
+) -> None:
     """Tests inject a connector factory. Two signatures supported for
     backward compatibility:
 
@@ -70,15 +73,21 @@ def set_connector_factory(factory: "callable[[], YouTubeConnector] | callable[[s
       - 1-arg `(platform) -> Connector` — v1 multi-platform tests.
     """
     import inspect
+
     global _connector_factory_override
     try:
         n_params = len(inspect.signature(factory).parameters)
     except (TypeError, ValueError):
         n_params = 0
     if n_params == 0:
-        _connector_factory_override = lambda _platform: factory()  # type: ignore[misc]
+        legacy = cast("Callable[[], YouTubeConnector]", factory)
+
+        def _youtube_only(_platform: str) -> Connector:
+            return legacy()
+
+        _connector_factory_override = _youtube_only
     else:
-        _connector_factory_override = factory  # type: ignore[assignment]
+        _connector_factory_override = cast("Callable[[str], Connector]", factory)
 
 
 def _get_connector(platform: str = "youtube") -> Connector:
@@ -93,9 +102,7 @@ def _get_connector(platform: str = "youtube") -> Connector:
 
 
 @router.post("/snapshots/{snapshot_id}/publish", response_model=PublishResponse)
-async def publish_snapshot(
-    snapshot_id: str, req: PublishRequest
-) -> PublishResponse:
+async def publish_snapshot(snapshot_id: str, req: PublishRequest) -> PublishResponse:
     async with connection() as db:
         cur = await db.execute(
             "SELECT project_id, render_path FROM snapshots WHERE id = ?",
@@ -159,7 +166,11 @@ async def publish_snapshot(
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"reason": "auth", "message": str(exc), "suggested_action": exc.suggested_action},
+            detail={
+                "reason": "auth",
+                "message": str(exc),
+                "suggested_action": exc.suggested_action,
+            },
         ) from exc
     except ConnectorValidationError as exc:
         log.warning(
@@ -171,7 +182,11 @@ async def publish_snapshot(
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"reason": "validation", "message": str(exc), "suggested_action": exc.suggested_action},
+            detail={
+                "reason": "validation",
+                "message": str(exc),
+                "suggested_action": exc.suggested_action,
+            },
         ) from exc
     except ConnectorError as exc:
         log.error(

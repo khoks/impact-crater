@@ -21,6 +21,7 @@ Defaults are configurable via `IC_WORKER_CPU` / `IC_WORKER_FFMPEG` /
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 from collections.abc import Awaitable, Callable, Iterable
 from typing import Any, Literal, TypeVar
@@ -69,9 +70,7 @@ class WorkerPool:
             "ffmpeg": ffmpeg_workers or _read_int("IC_WORKER_FFMPEG", 2),
             "network": network_workers or _read_int("IC_WORKER_NETWORK", 8),
         }
-        self._semaphores = {
-            cls: asyncio.Semaphore(limit) for cls, limit in self._limits.items()
-        }
+        self._semaphores = {cls: asyncio.Semaphore(limit) for cls, limit in self._limits.items()}
         self._tasks: set[asyncio.Task[Any]] = set()
         self._cancelled = False
         self._subprocesses: set[asyncio.subprocess.Process] = set()
@@ -130,6 +129,7 @@ class WorkerPool:
         Fails fast on the first exception. For partial-failure tolerance,
         use `submit_many_tolerant`.
         """
+
         async def _one(item: Any) -> T:
             return await self.submit(worker_class, lambda: coro_factory(item))
 
@@ -164,10 +164,10 @@ class WorkerPool:
                 raise  # never swallow cancellation
             except BaseException as exc:
                 if on_error is not None:
-                    try:
+                    with contextlib.suppress(
+                        Exception
+                    ):  # never let the error-handler crash the batch
                         on_error(idx, item, exc)
-                    except Exception:
-                        pass  # never let the error-handler crash the batch
                 return None
 
         return await asyncio.gather(*[_one(i, it) for i, it in enumerate(items_list)])
@@ -189,10 +189,8 @@ class WorkerPool:
         for task in list(self._tasks):
             task.cancel()
         for proc in list(self._subprocesses):
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 proc.terminate()
-            except ProcessLookupError:
-                pass
         if self._subprocesses:
             try:
                 await asyncio.wait_for(
@@ -202,12 +200,10 @@ class WorkerPool:
                     ),
                     timeout=grace_period_s,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 for proc in list(self._subprocesses):
-                    try:
+                    with contextlib.suppress(ProcessLookupError):
                         proc.kill()
-                    except ProcessLookupError:
-                        pass
 
     def in_flight(self, worker_class: WorkerClass | None = None) -> int:
         """Approximate in-flight count, optionally per class.

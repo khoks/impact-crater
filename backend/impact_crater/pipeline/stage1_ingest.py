@@ -26,7 +26,7 @@ from typing import Any, Literal
 
 # Register HEIF codec for Pillow before any image-open call.
 try:  # pragma: no cover — env-specific
-    from pillow_heif import register_heif_opener  # type: ignore[import-not-found]
+    from pillow_heif import register_heif_opener
 
     register_heif_opener()
 except ImportError:  # pragma: no cover
@@ -162,9 +162,7 @@ async def _ingest_one(
     file_size = path.stat().st_size
 
     if media_type == "photo":
-        record = await asyncio.to_thread(
-            _ingest_photo, project_id, path, content_hash, file_size
-        )
+        record = await asyncio.to_thread(_ingest_photo, project_id, path, content_hash, file_size)
     else:
         record = await asyncio.to_thread(
             _ingest_video,
@@ -188,7 +186,7 @@ def _ingest_photo(
     content_hash: str,
     file_size: int,
 ) -> MediaRecord:
-    img = Image.open(path)
+    img: Image.Image = Image.open(path)
     # Apply the EXIF orientation tag to the pixels. Phone photos shot in
     # portrait are stored landscape + Orientation=6/8 — without this,
     # width/height (and so Stage 6's aspect decision), the pHash, and the
@@ -390,7 +388,7 @@ def _subdivide_long_scenes(
     return out
 
 
-def _pseudo_scene(start_s: float, end_s: float, fps: float, frame_count: int) -> tuple:
+def _pseudo_scene(start_s: float, end_s: float, fps: float, frame_count: int) -> tuple[Any, Any]:
     """Produce a (start_timecode, end_timecode) pair compatible with scenedetect output."""
     from scenedetect import FrameTimecode
 
@@ -399,7 +397,7 @@ def _pseudo_scene(start_s: float, end_s: float, fps: float, frame_count: int) ->
     return (start, end)
 
 
-def _scene_bounds(scene: tuple) -> tuple[float, float]:
+def _scene_bounds(scene: tuple[Any, Any]) -> tuple[float, float]:
     """scenedetect yields (start_timecode, end_timecode) tuples."""
     start, end = scene
     # scenedetect 0.7 exposes `.seconds`; older versions had get_seconds().
@@ -556,7 +554,7 @@ async def _persist(project_id: str, record: MediaRecord) -> None:
         await db.commit()
 
 
-def load_media_records(project_id: str) -> list["MediaRecord"]:
+def load_media_records(project_id: str) -> list[MediaRecord]:
     """Reconstruct all MediaRecords for a project from its source sidecars.
 
     Used by the refinement layer (Stage 9) to re-run curation without a full

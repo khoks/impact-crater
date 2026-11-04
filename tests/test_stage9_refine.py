@@ -20,22 +20,41 @@ from impact_crater.pipeline.stage9_refine import (
 
 def _plan() -> RenderPlan:
     return RenderPlan(
-        project_id="p", snapshot_id="s0", target_duration_ms=10_000, brief="a zion trip",
-        arc_reasoning="warm to cool", arc_confidence=0.8,
+        project_id="p",
+        snapshot_id="s0",
+        target_duration_ms=10_000,
+        brief="a zion trip",
+        arc_reasoning="warm to cool",
+        arc_confidence=0.8,
         clips=[
-            RenderClip(candidate_ref="a", kind="photo", source_path="/tmp/a.jpg",
-                       intended_duration_ms=2000, aspect_ratio_action="as_is", role="opener"),
-            RenderClip(candidate_ref="b", kind="photo", source_path="/tmp/b.jpg",
-                       intended_duration_ms=2000, aspect_ratio_action="as_is"),
+            RenderClip(
+                candidate_ref="a",
+                kind="photo",
+                source_path="/tmp/a.jpg",
+                intended_duration_ms=2000,
+                aspect_ratio_action="as_is",
+                role="opener",
+            ),
+            RenderClip(
+                candidate_ref="b",
+                kind="photo",
+                source_path="/tmp/b.jpg",
+                intended_duration_ms=2000,
+                aspect_ratio_action="as_is",
+            ),
         ],
     )
 
 
 def test_outcome_pure_pacing_from_directive_patch() -> None:
-    outcome = _outcome_from_raw({
-        "interpretation": "hold the opener longer",
-        "directive_patch": {"positional_rules": [{"region": [0.0, 0.2], "delta_ms": 2000, "raises_band": True}]},
-    })
+    outcome = _outcome_from_raw(
+        {
+            "interpretation": "hold the opener longer",
+            "directive_patch": {
+                "positional_rules": [{"region": [0.0, 0.2], "delta_ms": 2000, "raises_band": True}]
+            },
+        }
+    )
     assert outcome.directive_patch is not None
     assert outcome.is_light is True
     assert outcome.needs_rejudge is False
@@ -43,14 +62,18 @@ def test_outcome_pure_pacing_from_directive_patch() -> None:
 
 
 def test_outcome_reserve_destination_needs_rejudge() -> None:
-    outcome = _outcome_from_raw({"interpretation": "keep vegas", "reserve_destinations": ["Las Vegas"]})
+    outcome = _outcome_from_raw(
+        {"interpretation": "keep vegas", "reserve_destinations": ["Las Vegas"]}
+    )
     assert outcome.needs_rejudge is True
     assert outcome.is_light is False
     assert outcome.reserve_destinations == ["Las Vegas"]
 
 
 def test_outcome_empty_directive_patch_is_ignored() -> None:
-    outcome = _outcome_from_raw({"interpretation": "x", "directive_patch": {"positional_rules": []}})
+    outcome = _outcome_from_raw(
+        {"interpretation": "x", "directive_patch": {"positional_rules": []}}
+    )
     assert outcome.directive_patch is None
     assert outcome.is_actionable is False
 
@@ -62,10 +85,12 @@ def test_outcome_explanation_only() -> None:
 
 
 def test_outcome_title_card_patch_is_light() -> None:
-    outcome = _outcome_from_raw({
-        "interpretation": "rename the title + move it up",
-        "title_card_patch": {"title_text": "Desert Wandering", "title_position": "top"},
-    })
+    outcome = _outcome_from_raw(
+        {
+            "interpretation": "rename the title + move it up",
+            "title_card_patch": {"title_text": "Desert Wandering", "title_position": "top"},
+        }
+    )
     assert outcome.title_card_patch == {"title_text": "Desert Wandering", "title_position": "top"}
     assert outcome.is_light is True  # title-only edit re-runs Stage 6 only, no re-judge
     assert outcome.needs_rejudge is False
@@ -74,7 +99,9 @@ def test_outcome_title_card_patch_is_light() -> None:
 
 def test_apply_title_patch_sets_only_given_fields() -> None:
     base = TitleCardSpec(enabled=True, title_text="Old", text_color="white")
-    out = _apply_title_patch(base, {"title_text": "New", "title_position": "top", "show_year": False})
+    out = _apply_title_patch(
+        base, {"title_text": "New", "title_position": "top", "show_year": False}
+    )
     assert out.title_text == "New"
     assert out.title_position == "top"
     assert out.show_year is False
@@ -95,8 +122,12 @@ async def test_plan_refinement_calls_router_and_parses() -> None:
         "directive_patch": {"positional_rules": [{"region": [0.0, 0.2], "multiplier": 0.7}]},
     }
     outcome = await plan_refinement(
-        router, refinement_message="snappier intro", brief="b",
-        plan_summary="2 clips", destinations_available="", music_summary="",
+        router,
+        refinement_message="snappier intro",
+        brief="b",
+        plan_summary="2 clips",
+        destinations_available="",
+        music_summary="",
     )
     assert outcome.is_light
     assert router.parse_user_brief.await_count == 1
@@ -106,8 +137,16 @@ async def test_plan_refinement_calls_router_and_parses() -> None:
 
 def test_arc_from_plan_skips_title_card() -> None:
     plan = _plan()
-    plan.clips.insert(0, RenderClip(candidate_ref="__title__", kind="title_card",
-                                   source_path="/t.png", intended_duration_ms=3000, aspect_ratio_action="as_is"))
+    plan.clips.insert(
+        0,
+        RenderClip(
+            candidate_ref="__title__",
+            kind="title_card",
+            source_path="/t.png",
+            intended_duration_ms=3000,
+            aspect_ratio_action="as_is",
+        ),
+    )
     arc = _arc_from_plan(plan)
     refs = [i.candidate_ref for i in arc.selected_items]
     assert "__title__" not in refs
@@ -124,12 +163,29 @@ def test_reservations_from_outcome_refs() -> None:
 
 def test_montage_groups_from_plan() -> None:
     plan = _plan()
-    plan.clips.append(RenderClip(
-        candidate_ref="m", kind="burst_montage", source_path="/m.jpg",
-        intended_duration_ms=3000, aspect_ratio_action="as_is",
-        members=[MontageMember(candidate_ref="m1", source_path="/m1.jpg", aspect_ratio_action="as_is", duration_ms=500),
-                 MontageMember(candidate_ref="m2", source_path="/m2.jpg", aspect_ratio_action="as_is", duration_ms=500)],
-    ))
+    plan.clips.append(
+        RenderClip(
+            candidate_ref="m",
+            kind="burst_montage",
+            source_path="/m.jpg",
+            intended_duration_ms=3000,
+            aspect_ratio_action="as_is",
+            members=[
+                MontageMember(
+                    candidate_ref="m1",
+                    source_path="/m1.jpg",
+                    aspect_ratio_action="as_is",
+                    duration_ms=500,
+                ),
+                MontageMember(
+                    candidate_ref="m2",
+                    source_path="/m2.jpg",
+                    aspect_ratio_action="as_is",
+                    duration_ms=500,
+                ),
+            ],
+        )
+    )
     assert _montage_groups_from_plan(plan) == [["m1", "m2"]]
 
 

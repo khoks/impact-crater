@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-
 from impact_crater.media.cast import (
     FaceObservation,
     _merge_oversplit_clusters,
@@ -18,8 +17,11 @@ def _unit(*vals: float) -> np.ndarray:
 
 def _obs(ch: str, vec: np.ndarray, day: str = "2026-04-05") -> FaceObservation:
     return FaceObservation(
-        content_hash=ch, embedding=vec, capture_timestamp=f"{day}T10:00:00",
-        location_key="loc", bbox=(0.4, 0.4, 0.2, 0.2),
+        content_hash=ch,
+        embedding=vec,
+        capture_timestamp=f"{day}T10:00:00",
+        location_key="loc",
+        bbox=(0.4, 0.4, 0.2, 0.2),
     )
 
 
@@ -65,15 +67,24 @@ def test_merge_flips_split_member_to_group() -> None:
     # across 3 days/appearances.
     # cluster_threshold so tight the base clusterer keeps them as 3 singletons;
     # the merge-pass (0.99) then fuses them into one 3-day person → group.
-    inv = build_cast_inventory([obs[0], obs[1], obs[2]], cluster_threshold=0.999999,
-                               group_min_appearances=3, group_min_days=3, group_min_breadth=3,
-                               merge_oversplit=True, cluster_merge_threshold=0.99)
+    inv = build_cast_inventory(
+        [obs[0], obs[1], obs[2]],
+        cluster_threshold=0.999999,
+        group_min_appearances=3,
+        group_min_days=3,
+        group_min_breadth=3,
+        merge_oversplit=True,
+        cluster_merge_threshold=0.99,
+    )
     assert any(p.is_group for p in inv.persons)
 
 
 def test_merge_off_is_inert() -> None:
     # cos ~0.93 — the base clusterer (0.99) keeps them separate, and with the
     # merge-pass off they stay two distinct persons.
-    inv = build_cast_inventory([_obs("a", _unit(1.0, 0.0, 0.0)), _obs("b", _unit(0.93, 0.367, 0.0))],
-                               cluster_threshold=0.99, merge_oversplit=False)
+    inv = build_cast_inventory(
+        [_obs("a", _unit(1.0, 0.0, 0.0)), _obs("b", _unit(0.93, 0.367, 0.0))],
+        cluster_threshold=0.99,
+        merge_oversplit=False,
+    )
     assert len(inv.persons) == 2  # no merge → two clusters

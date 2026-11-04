@@ -84,9 +84,7 @@ async def test_feedback_saves_screenshot(client: httpx.AsyncClient) -> None:
 
 
 async def test_feedback_without_screenshot_has_no_file(client: httpx.AsyncClient) -> None:
-    r = await client.post(
-        "/api/feedback", json={"phase": "cast", "verdict": "correct"}
-    )
+    r = await client.post("/api/feedback", json={"phase": "cast", "verdict": "correct"})
     fid = r.json()["id"]
     shot = await client.get(f"/api/feedback/{fid}/screenshot.png")
     assert shot.status_code == 404

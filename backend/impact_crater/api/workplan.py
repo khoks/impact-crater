@@ -106,9 +106,7 @@ async def get_workplan() -> WorkplanResponse:
     """The full work hierarchy with effective priorities + rollup counts."""
     proj = _project_dir()
     if proj is None:
-        return WorkplanResponse(
-            items=[], available=False, counts_by_status={}, counts_by_phase={}
-        )
+        return WorkplanResponse(items=[], available=False, counts_by_status={}, counts_by_phase={})
 
     overrides = await _overrides()
     items: list[WorkItem] = []

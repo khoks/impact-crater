@@ -56,5 +56,7 @@ def decrypt(ciphertext: str) -> str:
     try:
         plain = fernet().decrypt(ciphertext.encode("ascii"))
     except InvalidToken as exc:
-        raise FernetUnavailableError("Ciphertext does not validate against the current key.") from exc
+        raise FernetUnavailableError(
+            "Ciphertext does not validate against the current key."
+        ) from exc
     return plain.decode("utf-8")

@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -138,7 +139,9 @@ class _RegistryReporter:
         await self._registry.emit_diagnostics(self._job_id, phase_doc)
 
 
-def _make_router_sink(registry: JobRegistry, job_id: str):
+def _make_router_sink(
+    registry: JobRegistry, job_id: str
+) -> Callable[[dict[str, Any]], Awaitable[None]]:
     async def _sink(payload: dict[str, Any]) -> None:
         await registry.record_llm_call(
             job_id,
@@ -248,7 +251,7 @@ async def _run_and_capture(
             "job_quota_denied job_id=%s reason=%s estimate_usd=%.4f",
             job_id,
             exc.reason,
-            exc.quota_snapshot.get("estimate_usd", 0.0),
+            exc.snapshot.get("estimate_usd", 0.0),
         )
         await registry.update_state(
             job_id,

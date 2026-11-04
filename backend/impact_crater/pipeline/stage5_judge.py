@@ -56,8 +56,7 @@ async def judge_narrative_arc(
     extra_arg = extra or None
 
     log.info(
-        "stage5_judge_start mode=%s candidate_count=%d target_duration_s=%d "
-        "music_video=%s",
+        "stage5_judge_start mode=%s candidate_count=%d target_duration_s=%d music_video=%s",
         mode,
         len(candidate_set.items),
         target_duration_seconds,

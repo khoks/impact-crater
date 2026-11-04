@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import pytest
 from impact_crater.pipeline.types import RichMetadataPhoto
+from pydantic import ValidationError
 
 
 def test_string_with_trailing_bracket_parses_to_list() -> None:
@@ -57,7 +58,11 @@ def test_new_fields_default_when_absent() -> None:
 def test_main_subjects_structured() -> None:
     raw = {
         "main_subjects": [
-            {"descriptor": "woman, white cap, center", "expression": "broad smile", "prominence": 0.9},
+            {
+                "descriptor": "woman, white cap, center",
+                "expression": "broad smile",
+                "prominence": 0.9,
+            },
             {"descriptor": "child left", "expression": "laughing", "prominence": 0.5},
         ]
     }
@@ -135,7 +140,7 @@ def test_non_string_non_list_value_unchanged() -> None:
     """Pydantic still rejects truly bad inputs (e.g. a number where a list
     is required)."""
     raw = {"generic_tags": 42}
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         RichMetadataPhoto.model_validate(raw)
 
 

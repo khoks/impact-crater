@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from impact_crater.llm_clients.base import ArcJudgment, SelectedItem
 from impact_crater.media.music import MusicAnalysis, Section
 from impact_crater.pipeline import stage6_plan
@@ -27,10 +26,17 @@ async def db_initialized() -> None:
     await run_pending_migrations()
 
 
-def _rc(ref: str, ms: int, *, kind: str = "photo", start: float = 0.0, end: float = 0.0) -> RenderClip:
+def _rc(
+    ref: str, ms: int, *, kind: str = "photo", start: float = 0.0, end: float = 0.0
+) -> RenderClip:
     return RenderClip(
-        candidate_ref=ref, kind=kind, source_path=f"/tmp/{ref}",  # type: ignore[arg-type]
-        start_seconds=start, end_seconds=end, intended_duration_ms=ms, aspect_ratio_action="as_is",
+        candidate_ref=ref,
+        kind=kind,
+        source_path=f"/tmp/{ref}",  # type: ignore[arg-type]
+        start_seconds=start,
+        end_seconds=end,
+        intended_duration_ms=ms,
+        aspect_ratio_action="as_is",
     )
 
 
@@ -54,7 +60,9 @@ def test_merge_directive_appends_positional_and_overrides_scalars() -> None:
     assert labels == {"a", "b"}  # appended, not replaced
     assert merged.max_clips_per_location == 5  # scalar override wins
     # Re-editing the same region+label replaces rather than duplicates.
-    patch2 = PlanDirective(positional_rules=[PositionalRule(region=(0.0, 0.2), label="a", delta_ms=500)])
+    patch2 = PlanDirective(
+        positional_rules=[PositionalRule(region=(0.0, 0.2), label="a", delta_ms=500)]
+    )
     merged2 = merge_directive(base, patch2)
     a_rules = [r for r in merged2.positional_rules if r.label == "a"]
     assert len(a_rules) == 1 and a_rules[0].delta_ms == 500
@@ -64,8 +72,14 @@ def test_positional_opener_can_exceed_band_and_neighbor_shrinks() -> None:
     clips = [_rc(str(i), 2000) for i in range(6)]
     directive = PlanDirective(
         positional_rules=[
-            PositionalRule(region=(0.0, 0.2), delta_ms=2000, raises_band=True,
-                           neighbor_delta_ms=-500, neighbor_span=0.1, label="opener"),
+            PositionalRule(
+                region=(0.0, 0.2),
+                delta_ms=2000,
+                raises_band=True,
+                neighbor_delta_ms=-500,
+                neighbor_span=0.1,
+                label="opener",
+            ),
         ]
     )
     shaped = stage6_plan._apply_positional(clips, directive, target_ms=12_000)
@@ -79,10 +93,12 @@ def test_positional_opener_can_exceed_band_and_neighbor_shrinks() -> None:
 def test_tempo_profile_shortens_the_high_energy_half() -> None:
     clips = [_rc(str(i), 2000) for i in range(4)]
     directive = PlanDirective(
-        tempo=TempoProfile(bands=[
-            TempoBand(start_frac=0.0, end_frac=0.5, duration_multiplier=0.7),
-            TempoBand(start_frac=0.5, end_frac=1.0, duration_multiplier=1.3),
-        ])
+        tempo=TempoProfile(
+            bands=[
+                TempoBand(start_frac=0.0, end_frac=0.5, duration_multiplier=0.7),
+                TempoBand(start_frac=0.5, end_frac=1.0, duration_multiplier=1.3),
+            ]
+        )
     )
     out = stage6_plan._apply_tempo_profile(clips, directive, target_ms=8000)
     first_half = out[0].intended_duration_ms + out[1].intended_duration_ms
@@ -98,7 +114,9 @@ def test_soft_align_snaps_boundary_within_window_only() -> None:
     out = stage6_plan._soft_align_boundaries(clips, directive)
     assert out[0].intended_duration_ms == 1100  # snapped to the section start
     # A far section start would not move the boundary.
-    far = PlanDirective(soft_align=SoftAlignSpec(enabled=True, section_starts_ms=[5000], window_ms=400))
+    far = PlanDirective(
+        soft_align=SoftAlignSpec(enabled=True, section_starts_ms=[5000], window_ms=400)
+    )
     unchanged = stage6_plan._soft_align_boundaries(clips, far)
     assert unchanged[0].intended_duration_ms == 1000
 
@@ -111,8 +129,11 @@ def test_soft_align_disabled_is_noop() -> None:
 
 def test_build_directive_from_music_shortens_loud_half_and_seeds_sections() -> None:
     analysis = MusicAnalysis(
-        duration_ms=60_000, bpm=120.0, bpm_stability=0.9,
-        beats_ms=[], downbeats_ms=[],
+        duration_ms=60_000,
+        bpm=120.0,
+        bpm_stability=0.9,
+        beats_ms=[],
+        downbeats_ms=[],
         sections=[
             Section(label="a", start_ms=0, end_ms=30_000, energy_mean=1.0, energy_std=0.1),
             Section(label="b", start_ms=30_000, end_ms=60_000, energy_mean=0.3, energy_std=0.1),
@@ -133,17 +154,43 @@ def test_build_directive_from_music_shortens_loud_half_and_seeds_sections() -> N
 
 
 async def test_compile_plan_persists_directive_and_round_trips(db_initialized: None) -> None:
-    recs = [MediaRecord(content_hash=h, source_path=f"/tmp/{h}.jpg", media_type="photo",
-                        file_size=1, quick_stats={"width": 1920, "height": 1080}) for h in ("a", "b")]
+    recs = [
+        MediaRecord(
+            content_hash=h,
+            source_path=f"/tmp/{h}.jpg",
+            media_type="photo",
+            file_size=1,
+            quick_stats={"width": 1920, "height": 1080},
+        )
+        for h in ("a", "b")
+    ]
     arc = ArcJudgment(
-        selected_items=[SelectedItem(candidate_ref="a", placement_position=0, intended_duration_ms=2000, role="", notes=""),
-                        SelectedItem(candidate_ref="b", placement_position=1, intended_duration_ms=2000, role="", notes="")],
-        arc_reasoning="t", confidence=0.7,
+        selected_items=[
+            SelectedItem(
+                candidate_ref="a",
+                placement_position=0,
+                intended_duration_ms=2000,
+                role="",
+                notes="",
+            ),
+            SelectedItem(
+                candidate_ref="b",
+                placement_position=1,
+                intended_duration_ms=2000,
+                role="",
+                notes="",
+            ),
+        ],
+        arc_reasoning="t",
+        confidence=0.7,
     )
     directive = PlanDirective(max_clips_per_location=5, provenance="music")
     plan = await compile_plan(
-        arc_judgment=arc, ingest_records=recs, project_id="p-dir",
-        target_duration_seconds=10, directive=directive,
+        arc_judgment=arc,
+        ingest_records=recs,
+        project_id="p-dir",
+        target_duration_seconds=10,
+        directive=directive,
     )
     assert plan.schema_version == 2
     assert plan.directive.max_clips_per_location == 5

@@ -10,12 +10,10 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
-from PIL import Image
-
-from impact_crater.llm_clients.exceptions import LLMOperationFailed
 from impact_crater.pipeline import stage3_metadata
 from impact_crater.pipeline.stage1_ingest import MediaRecord, SceneRecord
 from impact_crater.pipeline.types import RichMetadataPhoto, RichMetadataVideoScene
+from PIL import Image
 
 
 def _photo_record(tmp_path: Path, content_hash: str = "h-photo") -> MediaRecord:

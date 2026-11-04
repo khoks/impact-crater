@@ -23,6 +23,7 @@ used.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -39,7 +40,6 @@ from impact_crater.connectors.base import (
     ConnectorValidationError,
     ConnectorValidationResult,
     PublishMetadata,
-    Visibility,
 )
 from impact_crater.storage.db import connection
 
@@ -170,7 +170,7 @@ class YouTubeConnector:
         if _has_env_credentials():
             body = _metadata_to_youtube_body(metadata)
             if self._transport is not None:
-                return await self._transport.upload(
+                injected: ConnectorUploadResult = await self._transport.upload(
                     render_path=render_path,
                     metadata=body,
                     credentials={
@@ -180,6 +180,7 @@ class YouTubeConnector:
                     },
                     on_progress=on_progress,
                 )
+                return injected
             return await _real_youtube_upload(
                 render_path=render_path,
                 body=body,
@@ -206,12 +207,13 @@ class YouTubeConnector:
                 suggested_action="Use IC_YOUTUBE_* env vars instead.",
             )
 
-        return await self._transport.upload(
+        uploaded: ConnectorUploadResult = await self._transport.upload(
             render_path=render_path,
             metadata=_metadata_to_youtube_body(metadata),
             credentials=creds,
             on_progress=on_progress,
         )
+        return uploaded
 
 
 # ---- Helpers -----------------------------------------------------------
@@ -249,9 +251,7 @@ async def _read_credentials() -> dict[str, Any] | None:
     return {
         "user_handle": row["user_handle"],
         "access_token": crypto.decrypt(row["access_token"]),
-        "refresh_token": (
-            crypto.decrypt(row["refresh_token"]) if row["refresh_token"] else None
-        ),
+        "refresh_token": (crypto.decrypt(row["refresh_token"]) if row["refresh_token"] else None),
         "expires_at": int(row["expires_at"]),
         "scopes_granted": (row["scopes_granted"] or "").split(","),
     }
@@ -260,9 +260,7 @@ async def _read_credentials() -> dict[str, Any] | None:
 async def _write_credentials(creds: dict[str, Any]) -> None:
     """Upsert credentials with Fernet-encrypted tokens."""
     enc_access = crypto.encrypt(creds["access_token"])
-    enc_refresh = (
-        crypto.encrypt(creds["refresh_token"]) if creds.get("refresh_token") else None
-    )
+    enc_refresh = crypto.encrypt(creds["refresh_token"]) if creds.get("refresh_token") else None
     async with connection() as db:
         await db.execute(
             """
@@ -329,11 +327,11 @@ async def _real_youtube_upload(
         # Import here so test environments without google-api-python-client
         # available can still import this module (real wiring only needed
         # when the env path is exercised).
-        from google.oauth2.credentials import Credentials  # type: ignore[import-not-found]
-        from googleapiclient.discovery import build  # type: ignore[import-not-found]
-        from googleapiclient.http import MediaFileUpload  # type: ignore[import-not-found]
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.discovery import build
+        from googleapiclient.http import MediaFileUpload
 
-        creds = Credentials(
+        creds = Credentials(  # type: ignore[no-untyped-call]
             token=None,
             refresh_token=os.environ[_ENV_REFRESH_TOKEN],
             client_id=os.environ[_ENV_CLIENT_ID],
@@ -363,9 +361,7 @@ async def _real_youtube_upload(
             # below at completion. Live progress would need a thread→loop
             # bridge, deferred to v1+.
             if status is not None:
-                log.debug(
-                    "youtube_upload_chunk progress=%.2f", status.progress()
-                )
+                log.debug("youtube_upload_chunk progress=%.2f", status.progress())
         return response
 
     try:
@@ -387,10 +383,8 @@ async def _real_youtube_upload(
         ) from exc
 
     if on_progress is not None:
-        try:
+        with contextlib.suppress(Exception):
             await on_progress(1.0)
-        except Exception:  # pragma: no cover
-            pass
 
     video_id = str(response.get("id", ""))
     visibility = str(

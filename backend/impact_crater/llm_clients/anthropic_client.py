@@ -20,7 +20,8 @@ from __future__ import annotations
 import base64
 import io
 import logging
-from typing import Any, Literal
+from collections.abc import Awaitable, Callable
+from typing import Any, Literal, TypeVar
 
 import anthropic
 from PIL import Image, ImageOps
@@ -43,6 +44,8 @@ from impact_crater.llm_clients.base import (
 from impact_crater.llm_clients.exceptions import LLMOperationFailed, LLMTransientError
 
 log = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
 
 # Backoff between transient retries; tests swap in `wait_none()`.
 _RETRY_WAIT = wait_exponential(multiplier=1.0, min=1.0, max=8.0)
@@ -286,7 +289,9 @@ class AnthropicLLMClient:
             kwargs["system"] = system
         if tools:
             kwargs["tools"] = tools
-        msg = await _retry(params, lambda: self._client.messages.create(**kwargs))
+        msg: anthropic.types.Message = await _retry(
+            params, lambda: self._client.messages.create(**kwargs)
+        )
         _apply_usage(params, msg)
         _check_stop_reason(params, msg)
         return msg
@@ -439,7 +444,7 @@ def _fit_image_for_anthropic(image_bytes: bytes) -> bytes:
             # decode path which will raise a more useful error.
             pass
 
-    img = Image.open(io.BytesIO(image_bytes))
+    img: Image.Image = Image.open(io.BytesIO(image_bytes))
     # Re-encoding strips EXIF, so bake the orientation into the pixels
     # first — otherwise portrait phone photos reach the API sideways
     # with no orientation tag left to correct them.
@@ -563,7 +568,7 @@ def _is_transient(e: BaseException) -> bool:
     return isinstance(e, anthropic.APIConnectionError | anthropic.APITimeoutError)
 
 
-async def _retry(params: CallParams, callable_: Any) -> Any:
+async def _retry(params: CallParams, callable_: Callable[[], Awaitable[_T]]) -> _T:
     """Retry wrapper for transient Anthropic errors.
 
     `callable_` is a zero-arg awaitable factory so we can re-invoke on retry.

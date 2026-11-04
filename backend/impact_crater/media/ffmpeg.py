@@ -23,6 +23,7 @@ import os
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -123,7 +124,7 @@ def run_ffprobe(
 async def run_ffmpeg_async(
     args: list[str],
     *,
-    on_subprocess_started: "callable[[asyncio.subprocess.Process], None] | None" = None,
+    on_subprocess_started: Callable[[asyncio.subprocess.Process], None] | None = None,
     timeout_s: float | None = None,
 ) -> tuple[int, bytes, bytes]:
     """Run ffmpeg as an asyncio subprocess.
@@ -147,11 +148,11 @@ async def run_ffmpeg_async(
             stdout, stderr = await proc.communicate()
         else:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.terminate()
         try:
             await asyncio.wait_for(proc.wait(), timeout=2.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
         raise
     return (proc.returncode or 0, stdout, stderr)

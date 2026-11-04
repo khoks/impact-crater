@@ -7,10 +7,9 @@ from pathlib import Path
 
 import httpx
 import pytest
-from PIL import Image
-
 from impact_crater.app import create_app
 from impact_crater.storage.migrations import run_pending_migrations
+from PIL import Image
 
 
 @pytest.fixture
@@ -54,16 +53,12 @@ async def test_scan_recursive(client: httpx.AsyncClient, tmp_path: Path) -> None
     assert r.json()["photo_count"] == 2
 
 
-async def test_scan_400_on_missing_path(
-    client: httpx.AsyncClient, tmp_path: Path
-) -> None:
+async def test_scan_400_on_missing_path(client: httpx.AsyncClient, tmp_path: Path) -> None:
     r = await client.get(f"/api/folder/scan?path={tmp_path}/nope")
     assert r.status_code == 400
 
 
-async def test_scan_400_when_path_is_a_file(
-    client: httpx.AsyncClient, tmp_path: Path
-) -> None:
+async def test_scan_400_when_path_is_a_file(client: httpx.AsyncClient, tmp_path: Path) -> None:
     f = tmp_path / "a.jpg"
     _photo(f, (0, 0, 0))
     r = await client.get(f"/api/folder/scan?path={f}")

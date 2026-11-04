@@ -161,9 +161,7 @@ def _exif_gps(path: Path) -> GpsCoord | None:
     except ImportError:  # pragma: no cover
         return None
     gps = exif.get("GPS") or {}
-    lat = _gps_to_decimal(
-        gps.get(piexif.GPSIFD.GPSLatitude), gps.get(piexif.GPSIFD.GPSLatitudeRef)
-    )
+    lat = _gps_to_decimal(gps.get(piexif.GPSIFD.GPSLatitude), gps.get(piexif.GPSIFD.GPSLatitudeRef))
     lon = _gps_to_decimal(
         gps.get(piexif.GPSIFD.GPSLongitude), gps.get(piexif.GPSIFD.GPSLongitudeRef)
     )
@@ -209,17 +207,25 @@ def _rational(value: object) -> float | None:
 # (y, mo, d, h, mi, s, ms?) so one builder handles them all.
 _FILENAME_PATTERNS: list[re.Pattern[str]] = [
     # Pixel: PXL_20260405_223121903.jpg / .MP.jpg / .mp4 (last 3 = millis)
-    re.compile(r"PXL_(?P<y>\d{4})(?P<mo>\d{2})(?P<d>\d{2})_(?P<h>\d{2})(?P<mi>\d{2})(?P<s>\d{2})(?P<ms>\d{3})"),
+    re.compile(
+        r"PXL_(?P<y>\d{4})(?P<mo>\d{2})(?P<d>\d{2})_(?P<h>\d{2})(?P<mi>\d{2})(?P<s>\d{2})(?P<ms>\d{3})"
+    ),
     # IMG_/VID_/generic: IMG_20240101_123456 , VID_20240101_123456
-    re.compile(r"(?:IMG|VID|MVIMG|PANO)[_-](?P<y>\d{4})(?P<mo>\d{2})(?P<d>\d{2})[_-](?P<h>\d{2})(?P<mi>\d{2})(?P<s>\d{2})"),
+    re.compile(
+        r"(?:IMG|VID|MVIMG|PANO)[_-](?P<y>\d{4})(?P<mo>\d{2})(?P<d>\d{2})[_-](?P<h>\d{2})(?P<mi>\d{2})(?P<s>\d{2})"
+    ),
     # WhatsApp: IMG-20240101-WA0001.jpg (date only)
     re.compile(r"(?:IMG|VID)-(?P<y>\d{4})(?P<mo>\d{2})(?P<d>\d{2})-WA\d+"),
     # Screenshot_20240101-123456 / Screenshot_20240101_123456
     re.compile(r"(?P<y>\d{4})(?P<mo>\d{2})(?P<d>\d{2})[-_](?P<h>\d{2})(?P<mi>\d{2})(?P<s>\d{2})"),
     # Signal / dashed date+time: 2024-01-01-12-34-56 or 2024-01-01_12.34.56
-    re.compile(r"(?P<y>\d{4})-(?P<mo>\d{2})-(?P<d>\d{2})[-_ ](?P<h>\d{2})[.:-](?P<mi>\d{2})[.:-](?P<s>\d{2})"),
+    re.compile(
+        r"(?P<y>\d{4})-(?P<mo>\d{2})-(?P<d>\d{2})[-_ ](?P<h>\d{2})[.:-](?P<mi>\d{2})[.:-](?P<s>\d{2})"
+    ),
     # "2024-01-01 12.34.56" (macOS screenshot-ish)
-    re.compile(r"(?P<y>\d{4})-(?P<mo>\d{2})-(?P<d>\d{2}) (?P<h>\d{2})\.(?P<mi>\d{2})\.(?P<s>\d{2})"),
+    re.compile(
+        r"(?P<y>\d{4})-(?P<mo>\d{2})-(?P<d>\d{2}) (?P<h>\d{2})\.(?P<mi>\d{2})\.(?P<s>\d{2})"
+    ),
     # Date only: 20240101 or 2024-01-01 (time defaults to midnight)
     re.compile(r"(?<!\d)(?P<y>\d{4})[-_]?(?P<mo>\d{2})[-_]?(?P<d>\d{2})(?!\d)"),
 ]
