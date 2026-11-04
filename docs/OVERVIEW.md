@@ -1,6 +1,6 @@
 # Impact Crater — Product & Architecture Overview
 
-*Reflects the application as of 2026-10-24 (restart audit); updated as the product changes.*
+*Reflects the application as of 2026-11-03; updated as the product changes.*
 
 [![Impact Crater — video masterpieces from your media; you describe, the AI does it](banner.png)](https://notebooklm.google.com/notebook/d7db525d-d686-47d9-995b-211092185d03/artifact/39a9e5a9-eccb-4cd2-a52a-9d07423c4eb0?utm_source=nlm_web_share&utm_medium=google_oo&utm_campaign=art_share_1&utm_content=&utm_smc=nlm_web_share_google_oo_art_share_1_)
 
@@ -106,7 +106,7 @@ videos from their own media without spending hours in an editor.
 - **Story Video** — a single themed video built from your media with a
   background music track, rendered for landscape (16:9, 1080p) viewing. It can
   be published to YouTube once the owner has supplied YouTube credentials (environment variables today; no in-app connect yet); publishing runs in
-  dry-run mode by default, so nothing is posted until you switch it on. Two
+  dry-run mode by default, so nothing is posted until you switch dry-run off in Settings. Two
   modes:
   - **Standard** — your music plays under a narrative cut of the best moments.
   - **Music-video** — the cuts are synchronized to the beat of your song, and
@@ -241,12 +241,15 @@ flowchart TD
    stays cached.
 
 10. **Preview, approve, publish.** You watch the result. Two clear actions:
-    **Approve & publish** opens a publish form where you pick the platform, a
-    title and description, and the visibility (private, unlisted, or public),
-    and see whether that platform has credentials and whether dry-run is on;
-    or **Refine**. Publishing runs in dry-run mode by default: the request is
-    validated and written to the audit log, but nothing is posted until the
-    owner supplies credentials and turns live posting on (see §7).
+    **Approve & publish** opens a publish form where you pick the platform. The
+    title and description are filled in from the video's title card and your
+    brief. The visibility choices are only the ones that platform accepts, with
+    private first. The form says whether that platform has credentials and what
+    a dry run will check there. The other action is **Refine**. Publishing runs
+    in dry-run mode by default: the request is validated and written to the
+    audit log, together with a fingerprint of the exact video you approved, but
+    nothing is posted until the owner supplies credentials and switches dry-run
+    off in Settings (see §7).
 
 11. **Refine.** Tell it what to change in plain language — anything, not from a
     fixed menu: "insert more photos of Las Vegas," "don't drop Las Vegas even if
@@ -416,8 +419,9 @@ flowchart TB
 - **Publishing connectors** — adapters for YouTube, Instagram Reels, and
   Facebook Page video. Credentials are read from environment variables set by
   the owner (no account is connected out of the box; a Settings-based connect
-  flow is on the roadmap); publishing runs in dry-run mode by default; and every
-  publish attempt — including dry runs — is appended to a local audit log. The
+  flow is on the roadmap); publishing runs in dry-run mode by default, switchable
+  in Settings; and every publish attempt — including dry runs — is appended to a
+  local audit log that records which rendered file was approved. The
   API keys for the AI providers, by contrast, are stored encrypted in the app's
   local database.
 
@@ -555,8 +559,14 @@ flowchart LR
 - **Publish only on approval.** Nothing is posted publicly without an explicit
   approval step in which you choose the platform and visibility. Today
   publishing additionally defaults to a dry run, so nothing is posted until the
-  owner turns live posting on — and every attempt, dry run or live, is appended
-  to a local audit log.
+  owner switches dry-run off in Settings — and every attempt, dry run or live, is
+  appended to a local audit log.
+- **The app answers only this computer.** The app's own API requires a key that
+  is created at install and handed only to a browser on this machine. Other web
+  pages you visit, and other devices on your network, cannot read your folders,
+  change settings, start paid jobs or publish. Exposing the app beyond this
+  computer needs an explicit start-up flag, and even then every request needs
+  the key.
 - **Your data stays on your machine — with one gap.** Self-hosted; the app's
   own telemetry (per-call cost and timing) is written to a local file and sent
   nowhere; AI-provider API keys are stored encrypted in the local database.
