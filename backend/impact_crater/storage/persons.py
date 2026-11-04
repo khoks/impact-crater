@@ -48,9 +48,7 @@ async def create_person(*, display_name: str, notes: str | None = None) -> Perso
 
 async def list_persons() -> list[Person]:
     async with connection() as db:
-        cur = await db.execute(
-            "SELECT id, display_name, notes FROM persons ORDER BY display_name"
-        )
+        cur = await db.execute("SELECT id, display_name, notes FROM persons ORDER BY display_name")
         rows = await cur.fetchall()
     return [Person(id=r["id"], display_name=r["display_name"], notes=r["notes"]) for r in rows]
 
@@ -141,7 +139,7 @@ async def list_face_photos(person_id: str) -> list[FacePhoto]:
                 id=row["id"],
                 person_id=row["person_id"],
                 content_hash=row["content_hash"],
-                face_crop_bbox=tuple(bbox),  # type: ignore[arg-type]
+                face_crop_bbox=tuple(bbox),
                 is_primary=bool(row["is_primary"]),
             )
         )
@@ -150,8 +148,6 @@ async def list_face_photos(person_id: str) -> list[FacePhoto]:
 
 async def delete_face_photo(face_photo_id: str) -> bool:
     async with connection() as db:
-        cur = await db.execute(
-            "DELETE FROM person_face_photos WHERE id = ?", (face_photo_id,)
-        )
+        cur = await db.execute("DELETE FROM person_face_photos WHERE id = ?", (face_photo_id,))
         await db.commit()
     return (cur.rowcount or 0) > 0

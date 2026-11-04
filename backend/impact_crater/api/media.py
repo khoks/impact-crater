@@ -46,9 +46,7 @@ def _find_scene_frame(content_hash: str, scene_index: int) -> str | None:
     if not root.is_dir():
         return None
     for label in ("middle", "start", "end"):
-        for match in root.glob(
-            f"*/cache/scenes/{content_hash}/scene-{scene_index}-{label}.png"
-        ):
+        for match in root.glob(f"*/cache/scenes/{content_hash}/scene-{scene_index}-{label}.png"):
             if match.is_file():
                 return str(match)
     return None

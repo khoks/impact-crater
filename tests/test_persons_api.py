@@ -6,7 +6,6 @@ from collections.abc import AsyncIterator
 
 import httpx
 import pytest
-
 from impact_crater.app import create_app
 from impact_crater.storage import persons as persons_repo
 from impact_crater.storage.migrations import run_pending_migrations

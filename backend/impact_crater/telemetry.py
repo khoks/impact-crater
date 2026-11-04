@@ -14,7 +14,7 @@ import json
 import threading
 from collections.abc import Iterable, Iterator
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -30,7 +30,7 @@ _LOCK = threading.Lock()
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 @dataclass
@@ -110,9 +110,8 @@ def emit(event: TelemetryEvent) -> None:
     """
     line = json.dumps(asdict(event), separators=(",", ":"))
     target = paths.telemetry_path()
-    with _LOCK:
-        with target.open("a", encoding="utf-8") as f:
-            f.write(line + "\n")
+    with _LOCK, target.open("a", encoding="utf-8") as f:
+        f.write(line + "\n")
 
 
 def emit_many(events: Iterable[TelemetryEvent]) -> None:
@@ -121,9 +120,8 @@ def emit_many(events: Iterable[TelemetryEvent]) -> None:
     lines = [json.dumps(asdict(e), separators=(",", ":")) for e in events]
     if not lines:
         return
-    with _LOCK:
-        with target.open("a", encoding="utf-8") as f:
-            f.write("\n".join(lines) + "\n")
+    with _LOCK, target.open("a", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
 
 
 # ---- Reader / aggregation helpers --------------------------------------

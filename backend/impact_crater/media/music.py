@@ -19,9 +19,10 @@ ADR-0012's tempo-aware adjustment + section-boundary snapping.
 from __future__ import annotations
 
 import asyncio
+import itertools
 import logging
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
@@ -107,14 +108,14 @@ class LibrosaMusicAnalyzer:
 
         y, sr = librosa.load(str(path), sr=self._sample_rate, mono=True)
         duration_s = float(librosa.get_duration(y=y, sr=sr))
-        duration_ms = int(round(duration_s * 1000))
+        duration_ms = round(duration_s * 1000)
 
         # ---- Beats + tempo --------------------------------------------
         # `tightness` controls how strict beat-period regularity is. 100
         # is librosa's default; lower values let tempo drift more freely.
         tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, units="frames")
         beats_s = librosa.frames_to_time(beat_frames, sr=sr)
-        beats_ms = [int(round(t * 1000)) for t in beats_s]
+        beats_ms = [round(t * 1000) for t in beats_s]
         bpm = _to_scalar(tempo)
 
         # BPM stability = 1.0 / (1 + cv_of_beat_intervals). Higher = more steady.
@@ -132,7 +133,7 @@ class LibrosaMusicAnalyzer:
         downbeats_ms = beats_ms[::4]
 
         # ---- Sections -------------------------------------------------
-        sections = self._detect_sections(y, sr, duration_ms)
+        sections = self._detect_sections(y, int(sr), duration_ms)
 
         # ---- Energy curve --------------------------------------------
         # 100 Hz sampling rate as ADR-0012 specified.
@@ -157,7 +158,7 @@ class LibrosaMusicAnalyzer:
             analyzer=self.name,
         )
 
-    def _detect_sections(self, y: "np.ndarray", sr: int, duration_ms: int) -> list[Section]:
+    def _detect_sections(self, y: np.ndarray, sr: int, duration_ms: int) -> list[Section]:
         """librosa.segment.agglomerative section detection per ADR-0012.
 
         Falls back to a single full-duration "outro" section if librosa
@@ -172,7 +173,7 @@ class LibrosaMusicAnalyzer:
             mel_db = librosa.power_to_db(mel, ref=np.max)
             n_segments = max(2, min(8, int(duration_ms / 30000) + 2))
             boundaries = librosa.segment.agglomerative(mel_db, k=n_segments)
-            boundary_ms = [int(round(b * 220 / sr * 1000)) for b in boundaries]
+            boundary_ms = [round(b * 220 / sr * 1000) for b in boundaries]
             boundary_ms.append(duration_ms)
         except Exception as exc:  # pragma: no cover — librosa edge cases
             log.warning("section detection failed: %s; using single-section fallback", exc)
@@ -181,7 +182,7 @@ class LibrosaMusicAnalyzer:
         # Heuristic labels: longest = chorus, first = intro, last = outro,
         # middles alternate verse / bridge.
         sections: list[Section] = []
-        ranges = list(zip(boundary_ms, boundary_ms[1:]))
+        ranges = list(itertools.pairwise(boundary_ms))
         if not ranges:
             ranges = [(0, duration_ms)]
         durations = [b - a for a, b in ranges]
@@ -211,7 +212,7 @@ class LibrosaMusicAnalyzer:
         return sections
 
     def _segment_energy(
-        self, y: "np.ndarray", sr: int, start_ms: int, end_ms: int
+        self, y: np.ndarray, sr: int, start_ms: int, end_ms: int
     ) -> tuple[float, float]:
         a = int(start_ms / 1000.0 * sr)
         b = int(end_ms / 1000.0 * sr)
@@ -222,11 +223,15 @@ class LibrosaMusicAnalyzer:
         # Approximate std via per-100ms windows.
         win = max(int(sr * 0.1), 1)
         chunks = [seg[i : i + win] for i in range(0, len(seg), win) if len(seg[i : i + win]) > 0]
-        std = float(np.std([float(np.sqrt(np.mean(c.astype(np.float32) ** 2))) for c in chunks])) if chunks else 0.0
+        std = (
+            float(np.std([float(np.sqrt(np.mean(c.astype(np.float32) ** 2))) for c in chunks]))
+            if chunks
+            else 0.0
+        )
         return (float(rms_window), std)
 
 
-def _to_scalar(x: object) -> float:
+def _to_scalar(x: Any) -> float:
     """librosa.beat.beat_track sometimes returns a 0-d ndarray for tempo."""
     if isinstance(x, np.ndarray):
         return float(x.item() if x.ndim == 0 else x.flat[0])
@@ -303,9 +308,9 @@ def generate_cut_grid(
 
 def _tempo_aware_cut_frequency(bpm: float) -> int:
     """Per ADR-0012:
-        <80 BPM  → 8-beat cuts (2 bars at 4/4)
-        80-140   → 4-beat cuts (1 bar)
-        >140 BPM → 8-beat cuts (2 bars; keeps clip durations reasonable)
+    <80 BPM  → 8-beat cuts (2 bars at 4/4)
+    80-140   → 4-beat cuts (1 bar)
+    >140 BPM → 8-beat cuts (2 bars; keeps clip durations reasonable)
     """
     if bpm < 80:
         return 8

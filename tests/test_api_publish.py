@@ -8,7 +8,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-
 from impact_crater.api import publish
 from impact_crater.app import create_app
 from impact_crater.connectors import ConnectorUploadResult
@@ -133,10 +132,8 @@ async def test_publish_400_when_title_empty(client_with_setup) -> None:
 
 
 async def test_publish_500_path_when_connector_errors(setup_publish, monkeypatch) -> None:
-    project_id, snapshot_id, _ = setup_publish
-    publish.set_connector_factory(
-        lambda: YouTubeConnector(transport=FakeTransport(fail=True))
-    )
+    _project_id, snapshot_id, _ = setup_publish
+    publish.set_connector_factory(lambda: YouTubeConnector(transport=FakeTransport(fail=True)))
     app = create_app()
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:

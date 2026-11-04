@@ -5,7 +5,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock
 
 import numpy as np
-
 from impact_crater.media.image_embed import (
     LocalClipImageEmbedder,
     RouterImageEmbedder,

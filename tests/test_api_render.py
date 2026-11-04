@@ -11,18 +11,15 @@ from unittest.mock import AsyncMock
 import httpx
 import numpy as np
 import pytest
-from PIL import Image
-
 from impact_crater.app import create_app
 from impact_crater.llm_clients.base import ArcJudgment, SelectedItem
 from impact_crater.media import ffmpeg as ff
 from impact_crater.pipeline import runner
 from impact_crater.storage import settings as settings_store
 from impact_crater.storage.migrations import run_pending_migrations
+from PIL import Image
 
-pytestmark = pytest.mark.skipif(
-    not ff.has_ffmpeg(), reason="ffmpeg binary not installed"
-)
+pytestmark = pytest.mark.skipif(not ff.has_ffmpeg(), reason="ffmpeg binary not installed")
 
 
 def _photo(tmp_path: Path, name: str, color: tuple[int, int, int]) -> Path:
@@ -84,7 +81,9 @@ async def _score_by_dim(*args, **kwargs) -> float:
 
 
 @pytest.fixture
-async def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
+async def client(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> AsyncIterator[httpx.AsyncClient]:
     await run_pending_migrations()
     await settings_store.set_value(settings_store.KEY_TOTAL_CAP_USD, "100.00")
 
@@ -93,7 +92,10 @@ async def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> AsyncIterat
     # The arc judgment must reference content_hashes that exist post-ingest.
     # We pre-compute the SHA-256 of two test photos and stuff them into the
     # mock so the candidate_refs resolve cleanly during plan compile.
-    photo_paths = [_photo(tmp_path, "p1.jpg", (200, 80, 30)), _photo(tmp_path, "p2.jpg", (40, 200, 100))]
+    photo_paths = [
+        _photo(tmp_path, "p1.jpg", (200, 80, 30)),
+        _photo(tmp_path, "p2.jpg", (40, 200, 100)),
+    ]
     import hashlib
 
     hashes = []
@@ -140,9 +142,7 @@ async def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> AsyncIterat
 # ---- Tests -------------------------------------------------------------
 
 
-async def test_render_endpoint_produces_mp4(
-    client: httpx.AsyncClient, tmp_path: Path
-) -> None:
+async def test_render_endpoint_produces_mp4(client: httpx.AsyncClient, tmp_path: Path) -> None:
     audio = _wav(tmp_path, duration_ms=3000)
     photos: list[Path] = client._test_photo_paths  # type: ignore[attr-defined]
 
@@ -165,10 +165,18 @@ async def test_render_endpoint_produces_mp4(
     assert body["arc_judgment"]["confidence"] == pytest.approx(0.7)
     # ffprobe-validate the render.
     probe = ff.run_ffprobe(
-        ["-v", "error", "-show_format", "-show_streams", "-print_format", "json",
-         body["render_path"]]
+        [
+            "-v",
+            "error",
+            "-show_format",
+            "-show_streams",
+            "-print_format",
+            "json",
+            body["render_path"],
+        ]
     )
     import json
+
     parsed = json.loads(probe.stdout.decode("utf-8"))
     assert any(s["codec_type"] == "video" for s in parsed["streams"])
     assert any(s["codec_type"] == "audio" for s in parsed["streams"])

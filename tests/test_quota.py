@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-
 from impact_crater import quota
 from impact_crater.storage import settings as settings_store
 from impact_crater.storage.migrations import run_pending_migrations

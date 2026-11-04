@@ -108,7 +108,12 @@ select = [
 ]
 ignore = [
     "E501",
+    # Exception names here read as events (LLMOperationFailed, JobCancelled); renaming
+    # them is churn across the codebase for no behavioural gain.
+    "N818",
 ]
+# Typographic characters the docstrings and comments use on purpose.
+allowed-confusables = ["×", "–", "α", "γ"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -130,6 +135,8 @@ module = [
     "soundfile.*",
     "piexif.*",
     "insightface.*",
+    "mediapipe.*",
+    "googleapiclient.*",
 ]
 ignore_missing_imports = true
 

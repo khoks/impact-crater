@@ -28,8 +28,7 @@ async def list_projects() -> list[dict[str, Any]]:
     """
     async with connection() as db:
         cursor = await db.execute(
-            "SELECT id, name, brief, created_at, updated_at FROM projects "
-            "ORDER BY created_at DESC"
+            "SELECT id, name, brief, created_at, updated_at FROM projects ORDER BY created_at DESC"
         )
         project_rows = await cursor.fetchall()
         cursor = await db.execute(
@@ -42,9 +41,7 @@ async def list_projects() -> list[dict[str, Any]]:
     for s in snapshot_rows:
         render_path = s["render_path"]
         has_render = bool(
-            s["render_status"] == "success"
-            and render_path
-            and Path(render_path).is_file()
+            s["render_status"] == "success" and render_path and Path(render_path).is_file()
         )
         snaps_by_project.setdefault(s["project_id"], []).append(
             {

@@ -69,9 +69,11 @@ async def parse_brief(
         raw = await router.parse_user_brief(
             brief,
             schema=BRIEF_SCHEMA,
-            prompt_vars={"hints": {"media_count": media_count, "target_seconds": target_duration_seconds}},
+            prompt_vars={
+                "hints": {"media_count": media_count, "target_seconds": target_duration_seconds}
+            },
         )
-    except Exception as exc:  # noqa: BLE001 — never block a job on brief-parse
+    except Exception as exc:
         log.warning("brief_intent parse failed (proceeding without): %r", str(exc)[:200])
         return BriefIntent()
     return _to_intent(raw)

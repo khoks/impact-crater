@@ -209,12 +209,12 @@ def _cluster_faces(
     """Greedy single-pass cosine clustering. Faces without an embedding
     become their own singleton person (we can't identify them)."""
     clusters: list[list[FaceObservation]] = []
-    centroids: list[FaceVector] = []
+    centroids: list[FaceVector | None] = []
     for obs in observations:
         vec = obs.embedding
         if vec is None:
             clusters.append([obs])
-            centroids.append(None)  # type: ignore[arg-type]
+            centroids.append(None)
             continue
         best_ci = -1
         best_cos = threshold
@@ -238,7 +238,7 @@ def _cluster_faces(
     return clusters
 
 
-def _cluster_centroid(members: list[FaceObservation]) -> "FaceVector | None":
+def _cluster_centroid(members: list[FaceObservation]) -> FaceVector | None:
     embs = [m.embedding for m in members if m.embedding is not None]
     if not embs:
         return None
@@ -265,12 +265,14 @@ def _merge_oversplit_clusters(
     while merged:
         merged = False
         for i in range(len(clusters)):
-            if centroids[i] is None:
+            ci = centroids[i]
+            if ci is None:
                 continue
             for j in range(i + 1, len(clusters)):
-                if centroids[j] is None or (hashes[i] & hashes[j]):
+                cj = centroids[j]
+                if cj is None or (hashes[i] & hashes[j]):
                     continue
-                if float(np.dot(centroids[i], centroids[j])) >= merge_threshold:
+                if float(np.dot(ci, cj)) >= merge_threshold:
                     clusters[i].extend(clusters[j])
                     hashes[i] |= hashes[j]
                     centroids[i] = _cluster_centroid(clusters[i])

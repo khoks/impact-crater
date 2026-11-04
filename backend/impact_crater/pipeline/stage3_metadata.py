@@ -102,8 +102,8 @@ async def _extract(
     asset: _Asset,
     *,
     brief: str,
-    schema_photo: dict,
-    schema_video: dict,
+    schema_photo: dict[str, Any],
+    schema_video: dict[str, Any],
 ) -> Stage3AssetOutputs:
     image_bytes = await asyncio.to_thread(asset.path.read_bytes)
     schema = schema_video if asset.scene_index is not None else schema_photo
@@ -149,7 +149,7 @@ async def _extract(
 
 
 def _validate(
-    raw: dict,
+    raw: dict[str, Any],
     is_video_scene: bool,
     *,
     attempt: int,

@@ -80,7 +80,9 @@ class RefinementOutcome(BaseModel):
     def is_light(self) -> bool:
         """A cheap edit that re-runs Stage 6 only (pacing and/or title-card), no
         re-judge."""
-        return (self.directive_patch is not None or bool(self.title_card_patch)) and not self.needs_rejudge
+        return (
+            self.directive_patch is not None or bool(self.title_card_patch)
+        ) and not self.needs_rejudge
 
     @property
     def is_actionable(self) -> bool:
@@ -107,7 +109,12 @@ _REFINE_SCHEMA = {
                     "items": {
                         "type": "object",
                         "properties": {
-                            "region": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+                            "region": {
+                                "type": "array",
+                                "items": {"type": "number"},
+                                "minItems": 2,
+                                "maxItems": 2,
+                            },
                             "multiplier": {"type": "number"},
                             "delta_ms": {"type": "integer"},
                             "neighbor_multiplier": {"type": "number"},
@@ -145,7 +152,9 @@ _REFINE_SCHEMA = {
             "properties": {
                 "title_text": {"type": ["string", "null"]},
                 "style": {"type": ["string", "null"]},
-                "title_position": {"enum": ["center", "lower-third", "upper-third", "top", "bottom"]},
+                "title_position": {
+                    "enum": ["center", "lower-third", "upper-third", "top", "bottom"]
+                },
                 "text_color": {"type": "string"},
                 "text_size_scale": {"type": "number"},
                 "show_year": {"type": "boolean"},
@@ -184,7 +193,9 @@ async def plan_refinement(
 def _outcome_from_raw(raw: dict[str, Any]) -> RefinementOutcome:
     patch = raw.get("directive_patch")
     directive_patch: PlanDirective | None = None
-    if isinstance(patch, dict) and any(patch.get(k) for k in ("positional_rules", "tempo", "bands")):
+    if isinstance(patch, dict) and any(
+        patch.get(k) for k in ("positional_rules", "tempo", "bands")
+    ):
         try:
             directive_patch = PlanDirective.model_validate({**patch, "provenance": "refine"})
         except Exception as exc:
@@ -342,15 +353,22 @@ async def execute_refinement(
         brief_intent = await _reserve_intent(router, brief, media, outcome)
         reservations = _reservations_from_outcome(outcome)
         candidate_set = stage4_prefilter.prefilter(
-            media=media, stage2=s2, stage3=s3, target_duration_seconds=target_seconds,
-            brief_intent=brief_intent, reservations=reservations,
+            media=media,
+            stage2=s2,
+            stage3=s3,
+            target_duration_seconds=target_seconds,
+            brief_intent=brief_intent,
+            reservations=reservations,
         )
         judge_brief = brief
         if outcome.brief_addendum:
             judge_brief = f"{brief}\n\nRefinement addendum:\n{outcome.brief_addendum}"
         arc = await stage5_judge.judge_narrative_arc(
-            router=router, candidate_set=candidate_set, brief=judge_brief,
-            target_duration_seconds=target_seconds, mode=prior_plan.mode,
+            router=router,
+            candidate_set=candidate_set,
+            brief=judge_brief,
+            target_duration_seconds=target_seconds,
+            mode=prior_plan.mode,
             coverage_plan=candidate_set.coverage_plan,
             chronological=brief_intent.chronological,
         )
@@ -360,24 +378,39 @@ async def execute_refinement(
             else prior_plan.directive
         )
         new_plan = await stage6_plan.compile_plan(
-            arc_judgment=arc, ingest_records=media, project_id=project_id,
-            target_duration_seconds=target_seconds, mode=prior_plan.mode,
-            audio=prior_plan.music, montage_groups=candidate_set.montage_groups,
-            directive=merged, brief=brief, parent_snapshot_id=prior_plan.snapshot_id,
+            arc_judgment=arc,
+            ingest_records=media,
+            project_id=project_id,
+            target_duration_seconds=target_seconds,
+            mode=prior_plan.mode,
+            audio=prior_plan.music,
+            montage_groups=candidate_set.montage_groups,
+            directive=merged,
+            brief=brief,
+            parent_snapshot_id=prior_plan.snapshot_id,
         )
 
     # Re-inject the title card (S-2.12.4): refinement re-plans from the arc, which
     # drops the post-plan title card — preserve it, or rebuild it if the user
     # asked to change it.
-    new_plan = await _reinject_title_card(router, project_id, prior_plan, new_plan, media, outcome, brief)
+    new_plan = await _reinject_title_card(
+        router, project_id, prior_plan, new_plan, media, outcome, brief
+    )
 
-    await stage7_render.render_plan(new_plan, correlation_id=f"refine-{new_plan.snapshot_id}", pool=pool)
+    await stage7_render.render_plan(
+        new_plan, correlation_id=f"refine-{new_plan.snapshot_id}", pool=pool
+    )
     return RefinementResult(outcome=outcome, new_snapshot_id=new_plan.snapshot_id, rendered=True)
 
 
 async def _reinject_title_card(
-    router: LLMRouter, project_id: str, prior_plan: RenderPlan, new_plan: RenderPlan,
-    media: list[Any], outcome: RefinementOutcome, brief: str,
+    router: LLMRouter,
+    project_id: str,
+    prior_plan: RenderPlan,
+    new_plan: RenderPlan,
+    media: list[Any],
+    outcome: RefinementOutcome,
+    brief: str,
 ) -> RenderPlan:
     """Preserve (or rebuild, if patched) the opt-in title card as clip 0 of the
     refined plan. Fail-soft: on any error the plan is returned unchanged."""
@@ -393,12 +426,20 @@ async def _reinject_title_card(
     try:
         if patch:
             spec = _apply_title_patch(base_spec, patch)
-            reuse_bg = None if _title_patch_touches_image(patch) else str(parent_dir / "title_card_bg.png")
+            reuse_bg = (
+                None if _title_patch_touches_image(patch) else str(parent_dir / "title_card_bg.png")
+            )
             if reuse_bg is not None and not Path(reuse_bg).is_file():
                 reuse_bg = None
             title_clip = await stage6_title_card.build_title_clip(
-                router=router, plan=new_plan, media=media, cast=_load_cast(project_id),
-                brief=brief, spec=spec, snapshot_dir=child_dir, background_path=reuse_bg,
+                router=router,
+                plan=new_plan,
+                media=media,
+                cast=_load_cast(project_id),
+                brief=brief,
+                spec=spec,
+                snapshot_dir=child_dir,
+                background_path=reuse_bg,
             )
             if title_clip is None:
                 return new_plan
@@ -406,19 +447,33 @@ async def _reinject_title_card(
             # No title change — preserve the parent's rendered card.
             spec = base_spec
             parent_png = parent_dir / "title_card.png"
-            prior_clip = prior_plan.clips[0] if prior_plan.clips and prior_plan.clips[0].kind == "title_card" else None
-            src = str(parent_png) if parent_png.is_file() else (prior_clip.source_path if prior_clip else None)
+            prior_clip = (
+                prior_plan.clips[0]
+                if prior_plan.clips and prior_plan.clips[0].kind == "title_card"
+                else None
+            )
+            src = (
+                str(parent_png)
+                if parent_png.is_file()
+                else (prior_clip.source_path if prior_clip else None)
+            )
             if not src or not Path(src).is_file():
                 return new_plan
             title_clip = RenderClip(
-                candidate_ref="__title__", kind="title_card", source_path=src,
+                candidate_ref="__title__",
+                kind="title_card",
+                source_path=src,
                 intended_duration_ms=prior_clip.intended_duration_ms if prior_clip else 3000,
-                aspect_ratio_action="as_is", role="title", notes="title card (preserved on refine)",
+                aspect_ratio_action="as_is",
+                role="title",
+                notes="title card (preserved on refine)",
             )
     except Exception as exc:
         log.warning("title_card_reinject_failed (proceeding without): %r", str(exc)[:200])
         return new_plan
-    new_plan = new_plan.model_copy(update={"clips": [title_clip, *new_plan.clips], "title_card_spec": spec})
+    new_plan = new_plan.model_copy(
+        update={"clips": [title_clip, *new_plan.clips], "title_card_spec": spec}
+    )
     (child_dir / "plan.json").write_text(new_plan.model_dump_json(indent=2), encoding="utf-8")
     return new_plan
 
@@ -447,7 +502,9 @@ def _load_cast(project_id: str) -> Any:
     try:
         d = json.loads(p.read_text(encoding="utf-8"))
         persons = [Person(**pp) for pp in d.get("persons", [])]
-        return CastInventory(persons=persons, group_persons_by_hash=d.get("group_persons_by_hash", {}))
+        return CastInventory(
+            persons=persons, group_persons_by_hash=d.get("group_persons_by_hash", {})
+        )
     except Exception:
         return None
 
@@ -461,7 +518,9 @@ def _reservations_from_outcome(outcome: RefinementOutcome) -> ReservationSet | N
     if not outcome.reserve_refs:
         return None
     reasons = dict.fromkeys(outcome.reserve_refs, "refine:forced")
-    return ReservationSet(keys=frozenset(outcome.reserve_refs), reason_by_key=reasons, source="refinement")
+    return ReservationSet(
+        keys=frozenset(outcome.reserve_refs), reason_by_key=reasons, source="refinement"
+    )
 
 
 async def _reserve_intent(
@@ -481,13 +540,18 @@ async def _reserve_intent(
 def _arc_from_plan(plan: RenderPlan) -> ArcJudgment:
     items = [
         SelectedItem(
-            candidate_ref=c.candidate_ref, placement_position=i,
-            intended_duration_ms=c.intended_duration_ms, role=c.role, notes=c.notes,
+            candidate_ref=c.candidate_ref,
+            placement_position=i,
+            intended_duration_ms=c.intended_duration_ms,
+            role=c.role,
+            notes=c.notes,
         )
         for i, c in enumerate(plan.clips)
         if c.candidate_ref != "__title__"
     ]
-    return ArcJudgment(selected_items=items, arc_reasoning=plan.arc_reasoning, confidence=plan.arc_confidence)
+    return ArcJudgment(
+        selected_items=items, arc_reasoning=plan.arc_reasoning, confidence=plan.arc_confidence
+    )
 
 
 def _montage_groups_from_plan(plan: RenderPlan) -> list[list[str]]:
@@ -506,7 +570,7 @@ def _summarize_plan(plan: RenderPlan) -> str:
             f"  {i}: {c.kind} ref={c.candidate_ref[:12]} {c.intended_duration_ms}ms role={c.role or '-'}{dest}"
         )
     total = sum(c.intended_duration_ms for c in plan.clips)
-    return f"{len(plan.clips)} clips, {total/1000:.1f}s total:\n" + "\n".join(lines[:80])
+    return f"{len(plan.clips)} clips, {total / 1000:.1f}s total:\n" + "\n".join(lines[:80])
 
 
 async def _summarize_destinations(router: LLMRouter, brief: str, media: list[Any]) -> str:

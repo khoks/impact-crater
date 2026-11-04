@@ -5,9 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock
 
 import pytest
-
 from impact_crater.llm_clients.base import ArcJudgment, SelectedItem
-from impact_crater.pipeline import stage6_second_guess
 from impact_crater.pipeline.stage6_plan import RenderClip, RenderPlan, apply_overrides
 from impact_crater.pipeline.stage6_second_guess import (
     Override,
@@ -62,8 +60,12 @@ async def test_second_guess_returns_typed_result_when_router_returns_valid_json(
     )
     arc = _arc(
         [
-            SelectedItem(candidate_ref="a", placement_position=0, intended_duration_ms=2000, role="opener"),
-            SelectedItem(candidate_ref="b", placement_position=1, intended_duration_ms=2000, role="peak"),
+            SelectedItem(
+                candidate_ref="a", placement_position=0, intended_duration_ms=2000, role="opener"
+            ),
+            SelectedItem(
+                candidate_ref="b", placement_position=1, intended_duration_ms=2000, role="peak"
+            ),
         ]
     )
     plan = _plan([_clip("a", 0), _clip("b", 1)])
@@ -85,7 +87,13 @@ async def test_second_guess_empty_overrides_when_judge_was_solid() -> None:
             "rationale": "plan looks reasonable",
         }
     )
-    arc = _arc([SelectedItem(candidate_ref="a", placement_position=0, intended_duration_ms=2000, role="opener")])
+    arc = _arc(
+        [
+            SelectedItem(
+                candidate_ref="a", placement_position=0, intended_duration_ms=2000, role="opener"
+            )
+        ]
+    )
     plan = _plan([_clip("a", 0)])
     result = await second_guess(
         router=router, arc_judgment=arc, plan=plan, music_spec=None, brief="x"

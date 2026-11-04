@@ -18,7 +18,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -197,12 +197,11 @@ async def compile_plan(
     instead of the full content_hash. Smoke-test (Paris run) showed
     this happens occasionally despite the prompt instructions.
     """
-    if mode == "music_video":
-        if audio is None or audio.cut_grid is None:
-            raise ValueError(
-                "music_video mode requires StandardMusicSpec.cut_grid "
-                "(populated by the runner via MusicAnalyzer.analyze)"
-            )
+    if mode == "music_video" and (audio is None or audio.cut_grid is None):
+        raise ValueError(
+            "music_video mode requires StandardMusicSpec.cut_grid "
+            "(populated by the runner via MusicAnalyzer.analyze)"
+        )
 
     directive = directive or DEFAULT_DIRECTIVE
     target_ms = max(target_duration_seconds, 1) * 1000
@@ -336,9 +335,9 @@ def _collapse_montage_groups(
             ref_to_group[ref] = gi
     group_clips: dict[int, list[RenderClip]] = {}
     for c in clips:
-        gi = ref_to_group.get(c.candidate_ref)
-        if gi is not None:
-            group_clips.setdefault(gi, []).append(c)
+        group_idx = ref_to_group.get(c.candidate_ref)
+        if group_idx is not None:
+            group_clips.setdefault(group_idx, []).append(c)
     anchor_montage: dict[str, RenderClip] = {}
     drop_refs: set[str] = set()
     for members in group_clips.values():
@@ -658,7 +657,7 @@ def _apply_positional(
             mult = rule.multiplier if in_region else rule.neighbor_multiplier
             delta = rule.delta_ms if in_region else rule.neighbor_delta_ms
             new_ms = max(int(c.intended_duration_ms * mult) + delta, 250)
-            update: dict = {"intended_duration_ms": new_ms}
+            update: dict[str, Any] = {"intended_duration_ms": new_ms}
             # An emphasis that pushes a clip above its band records emphasis_ms so
             # _band_for lets it exceed the cap; a shrink stays within the band.
             if in_region and rule.raises_band and new_ms > c.emphasis_ms:
@@ -828,7 +827,7 @@ def snapshot_dir(project_id: str, snapshot_id: str) -> Path:
     return p
 
 
-def apply_overrides(plan: RenderPlan, overrides: list) -> RenderPlan:
+def apply_overrides(plan: RenderPlan, overrides: list[Any]) -> RenderPlan:
     """Apply Override objects to a RenderPlan. Returns a new plan instance.
 
     Implementation per ADR-0011 § Override types. M6 baseline supports

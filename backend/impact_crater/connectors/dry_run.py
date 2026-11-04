@@ -14,6 +14,7 @@ don't happen during integration testing.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import secrets
 from pathlib import Path
@@ -66,15 +67,12 @@ class DryRunConnector:
         # Fake an upload-progress sequence so any UI progress meter still ticks.
         if on_progress is not None:
             for f in (0.0, 0.5, 1.0):
-                try:
+                with contextlib.suppress(Exception):
                     await on_progress(f)
-                except Exception:  # pragma: no cover
-                    pass
 
         fake_id = f"dry-run-{secrets.token_urlsafe(12)}"
         log.info(
-            "publish_dry_run platform=%s render_path=%s title=%r visibility=%s "
-            "fake_external_id=%s",
+            "publish_dry_run platform=%s render_path=%s title=%r visibility=%s fake_external_id=%s",
             self._wrapped.name,
             str(render_path),
             metadata.title[:80],
@@ -115,7 +113,7 @@ def is_dry_run_enabled() -> bool:
 def wrap_if_dry_run(connector: Connector) -> Connector:
     """If dry-run is enabled, wrap the connector. Otherwise pass through."""
     if is_dry_run_enabled():
-        return DryRunConnector(connector)  # type: ignore[return-value]
+        return DryRunConnector(connector)
     return connector
 
 

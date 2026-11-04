@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
-
-from PIL import Image
+from typing import ClassVar
 
 from impact_crater.pipeline import stage6_title_card as tc
 from impact_crater.pipeline.stage1_ingest import MediaRecord
+from PIL import Image
 
 
 class _OkRouter:
@@ -46,22 +46,31 @@ class _RaisingTitleRouter(_TitleRouter):
 
 
 class _Plan:
-    clips: list = []
+    clips: ClassVar[list] = []
 
 
 def _photo(tmp: Path, ch: str = "p0") -> MediaRecord:
     p = tmp / f"{ch}.jpg"
     Image.new("RGB", (1920, 1080), (200, 150, 100)).save(p, quality=90)
     return MediaRecord(
-        content_hash=ch, source_path=str(p), media_type="photo", file_size=1,
-        quick_stats={"width": 1920, "height": 1080}, capture_timestamp="2026-04-05T10:00:00",
+        content_hash=ch,
+        source_path=str(p),
+        media_type="photo",
+        file_size=1,
+        quick_stats={"width": 1920, "height": 1080},
+        capture_timestamp="2026-04-05T10:00:00",
     )
 
 
 async def test_title_card_with_ai_background(tmp_path: Path) -> None:
     clip = await tc.build_title_clip(
-        router=_OkRouter(), plan=_Plan(), media=[_photo(tmp_path)], cast=None,
-        brief="A highlight video of our Zion trip", spec=tc.TitleCardSpec(enabled=True), snapshot_dir=tmp_path,
+        router=_OkRouter(),
+        plan=_Plan(),
+        media=[_photo(tmp_path)],
+        cast=None,
+        brief="A highlight video of our Zion trip",
+        spec=tc.TitleCardSpec(enabled=True),
+        snapshot_dir=tmp_path,
     )
     assert clip is not None
     assert clip.kind == "title_card" and clip.candidate_ref == "__title__"
@@ -71,8 +80,13 @@ async def test_title_card_with_ai_background(tmp_path: Path) -> None:
 
 async def test_title_card_falls_back_to_photo_when_image_gen_fails(tmp_path: Path) -> None:
     clip = await tc.build_title_clip(
-        router=_FailRouter(), plan=_Plan(), media=[_photo(tmp_path)], cast=None,
-        brief="Zion trip", spec=tc.TitleCardSpec(enabled=True, title_text="My Trip"), snapshot_dir=tmp_path,
+        router=_FailRouter(),
+        plan=_Plan(),
+        media=[_photo(tmp_path)],
+        cast=None,
+        brief="Zion trip",
+        spec=tc.TitleCardSpec(enabled=True, title_text="My Trip"),
+        snapshot_dir=tmp_path,
     )
     assert clip is not None and clip.kind == "title_card"  # typographic fallback over a photo
     assert Path(clip.source_path).is_file()
@@ -80,8 +94,13 @@ async def test_title_card_falls_back_to_photo_when_image_gen_fails(tmp_path: Pat
 
 async def test_title_card_none_when_no_background_available(tmp_path: Path) -> None:
     clip = await tc.build_title_clip(
-        router=_FailRouter(), plan=_Plan(), media=[], cast=None,
-        brief="x", spec=tc.TitleCardSpec(enabled=True), snapshot_dir=tmp_path,
+        router=_FailRouter(),
+        plan=_Plan(),
+        media=[],
+        cast=None,
+        brief="x",
+        spec=tc.TitleCardSpec(enabled=True),
+        snapshot_dir=tmp_path,
     )
     assert clip is None
 
@@ -104,7 +123,8 @@ async def test_title_card_composites_group_faces(tmp_path: Path, monkeypatch) ->
     face_buf = io.BytesIO()
     Image.new("RGB", (120, 120), (10, 220, 10)).save(face_buf, format="JPEG")
     monkeypatch.setattr(
-        tc.cast_mod, "detect_and_crop_faces",
+        tc.cast_mod,
+        "detect_and_crop_faces",
         lambda data: [(face_buf.getvalue(), (0.4, 0.4, 0.2, 0.2))],
     )
     cast = _Cast(group=[_Person([photo.content_hash])])
@@ -149,7 +169,9 @@ async def test_title_from_brief_falls_back_to_heuristic_on_error() -> None:
 
 
 async def test_title_from_brief_falls_back_when_router_lacks_op() -> None:
-    title = await tc._title_from_brief(_Plan(), "Bryce Canyon getaway", "")  # no generate_title_text
+    title = await tc._title_from_brief(
+        _Plan(), "Bryce Canyon getaway", ""
+    )  # no generate_title_text
     assert title == "Bryce Canyon Getaway"
 
 
@@ -161,17 +183,26 @@ async def test_title_from_brief_falls_back_on_empty_llm_title() -> None:
 async def test_title_card_uses_llm_title_and_skips_it_when_title_given(tmp_path: Path) -> None:
     router = _TitleRouter("Zion & Bryce")
     clip = await tc.build_title_clip(
-        router=router, plan=_Plan(), media=[_photo(tmp_path)], cast=None,
+        router=router,
+        plan=_Plan(),
+        media=[_photo(tmp_path)],
+        cast=None,
         brief="A highlight video of our trip through zion and bryce",
-        spec=tc.TitleCardSpec(enabled=True), snapshot_dir=tmp_path,
+        spec=tc.TitleCardSpec(enabled=True),
+        snapshot_dir=tmp_path,
     )
     assert clip is not None and clip.kind == "title_card"
     assert router.title_calls  # the LLM title op was consulted
 
     router2 = _TitleRouter("Should Not Be Used")
     clip2 = await tc.build_title_clip(
-        router=router2, plan=_Plan(), media=[_photo(tmp_path, "p1")], cast=None,
-        brief="whatever", spec=tc.TitleCardSpec(enabled=True, title_text="My Explicit Title"), snapshot_dir=tmp_path,
+        router=router2,
+        plan=_Plan(),
+        media=[_photo(tmp_path, "p1")],
+        cast=None,
+        brief="whatever",
+        spec=tc.TitleCardSpec(enabled=True, title_text="My Explicit Title"),
+        snapshot_dir=tmp_path,
     )
     assert clip2 is not None
     assert router2.title_calls == []  # an explicit title short-circuits the LLM call
@@ -187,7 +218,9 @@ def test_clean_title_sanitizes_llm_output() -> None:
 def test_clean_title_folds_typographic_glyphs_the_font_cannot_draw() -> None:
     # Interior em-dash tofu'd on a real card ("Zion □ Best"); fold to ASCII.
     assert tc._clean_title("Short Early-April Zion — Best") == "Short Early-April Zion - Best"
-    assert tc._clean_title("Zion’s “Golden” Hour…") == "Zion's \"Golden\" Hour"  # edge ellipsis stripped
+    assert (
+        tc._clean_title("Zion’s “Golden” Hour…") == 'Zion\'s "Golden" Hour'  # noqa: RUF001
+    )  # edge ellipsis stripped
     assert tc._clean_title("Café Zürich") == "Cafe Zurich"  # accents fold, not vanish
 
 
@@ -208,12 +241,22 @@ async def test_title_card_reuses_background_and_persists_raw_bg(tmp_path: Path) 
     Image.new("RGB", (1280, 720), (20, 30, 40)).save(raw_bg)
     router = _NoImageRouter()
     spec = tc.TitleCardSpec(
-        enabled=True, title_text="Top Title", title_position="top",
-        text_color="gold", show_year=False, show_faces=False,
+        enabled=True,
+        title_text="Top Title",
+        title_position="top",
+        text_color="gold",
+        show_year=False,
+        show_faces=False,
     )
     clip = await tc.build_title_clip(
-        router=router, plan=_Plan(), media=[_photo(tmp_path)], cast=None,
-        brief="x", spec=spec, snapshot_dir=tmp_path, background_path=str(raw_bg),
+        router=router,
+        plan=_Plan(),
+        media=[_photo(tmp_path)],
+        cast=None,
+        brief="x",
+        spec=spec,
+        snapshot_dir=tmp_path,
+        background_path=str(raw_bg),
     )
     assert clip is not None and clip.kind == "title_card"
     assert router.bg_called is False  # reused the provided background — no image-gen
@@ -229,12 +272,30 @@ def test_placement_and_color_helpers() -> None:
 
 def test_derive_year_modal() -> None:
     media = [
-        MediaRecord(content_hash="a", source_path="a", media_type="photo", file_size=1,
-                    quick_stats={}, capture_timestamp="2026-04-05T10:00:00"),
-        MediaRecord(content_hash="b", source_path="b", media_type="photo", file_size=1,
-                    quick_stats={}, capture_timestamp="2026-04-06T10:00:00"),
-        MediaRecord(content_hash="c", source_path="c", media_type="photo", file_size=1,
-                    quick_stats={}, capture_timestamp=None),
+        MediaRecord(
+            content_hash="a",
+            source_path="a",
+            media_type="photo",
+            file_size=1,
+            quick_stats={},
+            capture_timestamp="2026-04-05T10:00:00",
+        ),
+        MediaRecord(
+            content_hash="b",
+            source_path="b",
+            media_type="photo",
+            file_size=1,
+            quick_stats={},
+            capture_timestamp="2026-04-06T10:00:00",
+        ),
+        MediaRecord(
+            content_hash="c",
+            source_path="c",
+            media_type="photo",
+            file_size=1,
+            quick_stats={},
+            capture_timestamp=None,
+        ),
     ]
     assert tc._derive_year(media) == "2026"
     assert tc._derive_year([]) == ""

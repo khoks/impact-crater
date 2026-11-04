@@ -75,9 +75,26 @@ def _fixture():
         filter_log=[
             {"key": "kept1", "decision": "keep"},
             {"key": "kept2", "decision": "keep"},
-            {"key": "drop1", "decision": "drop", "reason": "semantic_duplicate", "kept_key": "kept1", "cluster_size": 3},
-            {"key": "drop2", "decision": "drop", "reason": "quality_below_threshold", "quality_score": 0.2, "threshold": 0.4},
-            {"key": "drop3", "decision": "drop", "reason": "safety_explicit", "safety_level": "explicit"},
+            {
+                "key": "drop1",
+                "decision": "drop",
+                "reason": "semantic_duplicate",
+                "kept_key": "kept1",
+                "cluster_size": 3,
+            },
+            {
+                "key": "drop2",
+                "decision": "drop",
+                "reason": "quality_below_threshold",
+                "quality_score": 0.2,
+                "threshold": 0.4,
+            },
+            {
+                "key": "drop3",
+                "decision": "drop",
+                "reason": "safety_explicit",
+                "safety_level": "explicit",
+            },
         ],
         cluster_metadata={"input_count": 5},
         target_size=2,
@@ -108,8 +125,13 @@ def _fixture():
 def test_diagnostics_has_all_phases() -> None:
     cs, arc, plan, media = _fixture()
     doc = build_diagnostics(
-        project_id="proj", snapshot_id="snap",
-        candidate_set=cs, arc_judgment=arc, plan=plan, cast=None, media=media,
+        project_id="proj",
+        snapshot_id="snap",
+        candidate_set=cs,
+        arc_judgment=arc,
+        plan=plan,
+        cast=None,
+        media=media,
     )
     phases = {p["phase"] for p in doc["phases"]}
     assert phases == {"stage_4_prefilter", "stage_5_judge", "stage_6_plan"}
@@ -119,8 +141,13 @@ def test_diagnostics_has_all_phases() -> None:
 def test_stage4_decisions_carry_reason_and_thumb() -> None:
     cs, arc, plan, media = _fixture()
     doc = build_diagnostics(
-        project_id="proj", snapshot_id="snap",
-        candidate_set=cs, arc_judgment=arc, plan=plan, cast=None, media=media,
+        project_id="proj",
+        snapshot_id="snap",
+        candidate_set=cs,
+        arc_judgment=arc,
+        plan=plan,
+        cast=None,
+        media=media,
     )
     s4 = next(p for p in doc["phases"] if p["phase"] == "stage_4_prefilter")
     assert s4["summary"]["input_count"] == 5
@@ -138,8 +165,13 @@ def test_stage4_decisions_carry_reason_and_thumb() -> None:
 def test_stage5_selection_ordered_with_reasoning() -> None:
     cs, arc, plan, media = _fixture()
     doc = build_diagnostics(
-        project_id="proj", snapshot_id="snap",
-        candidate_set=cs, arc_judgment=arc, plan=plan, cast=None, media=media,
+        project_id="proj",
+        snapshot_id="snap",
+        candidate_set=cs,
+        arc_judgment=arc,
+        plan=plan,
+        cast=None,
+        media=media,
     )
     s5 = next(p for p in doc["phases"] if p["phase"] == "stage_5_judge")
     assert s5["summary"]["confidence"] == 0.85
@@ -152,8 +184,13 @@ def test_video_scene_ref_split() -> None:
     cs, arc, plan, media = _fixture()
     cs.filter_log.append({"key": "vid1#2", "decision": "keep"})
     doc = build_diagnostics(
-        project_id="proj", snapshot_id="snap",
-        candidate_set=cs, arc_judgment=arc, plan=plan, cast=None, media=media,
+        project_id="proj",
+        snapshot_id="snap",
+        candidate_set=cs,
+        arc_judgment=arc,
+        plan=plan,
+        cast=None,
+        media=media,
     )
     s4 = next(p for p in doc["phases"] if p["phase"] == "stage_4_prefilter")
     vid = next(d for d in s4["decisions"] if d["ref"] == "vid1#2")

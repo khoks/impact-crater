@@ -24,7 +24,6 @@ than speed at MVP scale.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import re
@@ -376,7 +375,6 @@ def _video_filter(action: str) -> str:
     All actions land at exactly _OUT_W × _OUT_H (1920×1080) yuv420p; the
     differences are how source pixels map onto that canvas.
     """
-    target = f"{_OUT_W}:{_OUT_H}"
     if action == "letterbox":
         return (
             f"scale=w={_OUT_W}:h={_OUT_H}:force_original_aspect_ratio=decrease,"
@@ -615,7 +613,7 @@ async def _set_render_status(snapshot_id: str, status: str, render_path: str | N
         await db.commit()
 
 
-__all__ = ["render_plan", "RenderResult", "RenderError"]
+__all__ = ["RenderError", "RenderResult", "render_plan"]
 
 
 # Annotations imports kept silent for ruff:

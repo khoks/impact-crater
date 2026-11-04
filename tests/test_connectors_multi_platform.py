@@ -20,7 +20,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
-
 from impact_crater.connectors import (
     DryRunConnector,
     FacebookConnector,
@@ -35,7 +34,6 @@ from impact_crater.connectors.base import (
     ConnectorUploadResult,
     ConnectorValidationError,
 )
-
 
 # ---- Factory ----------------------------------------------------------
 
@@ -65,17 +63,13 @@ def test_is_dry_run_enabled_default_true(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 @pytest.mark.parametrize("val", ["0", "false", "False", "no", "off"])
-def test_is_dry_run_disabled_when_explicitly_off(
-    monkeypatch: pytest.MonkeyPatch, val: str
-) -> None:
+def test_is_dry_run_disabled_when_explicitly_off(monkeypatch: pytest.MonkeyPatch, val: str) -> None:
     monkeypatch.setenv("IC_PUBLISH_DRY_RUN", val)
     assert is_dry_run_enabled() is False
 
 
 @pytest.mark.parametrize("val", ["1", "true", "yes", "on", "anything-else", "", "  "])
-def test_is_dry_run_enabled_when_explicitly_on(
-    monkeypatch: pytest.MonkeyPatch, val: str
-) -> None:
+def test_is_dry_run_enabled_when_explicitly_on(monkeypatch: pytest.MonkeyPatch, val: str) -> None:
     monkeypatch.setenv("IC_PUBLISH_DRY_RUN", val)
     assert is_dry_run_enabled() is True
 
@@ -139,6 +133,7 @@ def test_instagram_is_connected_reads_env(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.delenv("IC_INSTAGRAM_USER_ID", raising=False)
     ig = InstagramConnector()
     import asyncio
+
     assert asyncio.run(ig.is_connected()) is False
 
     monkeypatch.setenv("IC_INSTAGRAM_ACCESS_TOKEN", "tok")
@@ -157,9 +152,7 @@ async def test_instagram_validation_rejects_non_public_visibility(
     f.write_bytes(b"\x00" * 100)
 
     ig = InstagramConnector()
-    result = await ig.validate_artifact(
-        f, PublishMetadata(title="X", visibility="private")
-    )
+    result = await ig.validate_artifact(f, PublishMetadata(title="X", visibility="private"))
     assert result.valid is False
     assert any("private" in issue for issue in result.issues)
 
@@ -232,10 +225,7 @@ async def test_instagram_full_flow_with_stub_transport(
     # Container creation must have included the constructed video URL.
     create_call = transport.posts[0]
     assert create_call[0].endswith("/media")
-    assert (
-        create_call[1]["video_url"]
-        == "https://example.test/api/snapshots/snapABC/render.mp4"
-    )
+    assert create_call[1]["video_url"] == "https://example.test/api/snapshots/snapABC/render.mp4"
 
 
 # ---- FacebookConnector ------------------------------------------------
@@ -246,6 +236,7 @@ def test_facebook_is_connected_reads_env(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.delenv("IC_FACEBOOK_PAGE_ID", raising=False)
     fb = FacebookConnector()
     import asyncio
+
     assert asyncio.run(fb.is_connected()) is False
 
     monkeypatch.setenv("IC_FACEBOOK_PAGE_ACCESS_TOKEN", "tok")
@@ -263,9 +254,7 @@ async def test_facebook_rejects_private_visibility(
     f.write_bytes(b"\x00" * 100)
 
     fb = FacebookConnector()
-    result = await fb.validate_artifact(
-        f, PublishMetadata(title="X", visibility="private")
-    )
+    result = await fb.validate_artifact(f, PublishMetadata(title="X", visibility="private"))
     assert result.valid is False
     assert any("private" in issue for issue in result.issues)
 
@@ -285,9 +274,7 @@ async def test_facebook_publish_with_stub_transport(
             self.calls: list[dict] = []
 
         async def upload_video(self, *, page_id: str, render_path: Path, fields: dict) -> dict:
-            self.calls.append(
-                {"page_id": page_id, "render_path": render_path, "fields": fields}
-            )
+            self.calls.append({"page_id": page_id, "render_path": render_path, "fields": fields})
             return {"id": "fbvid-42"}
 
     # The connector also fetches permalink_url after upload via _http_get
@@ -302,9 +289,7 @@ async def test_facebook_publish_with_stub_transport(
     fb = FacebookConnector(transport=transport)
     result = await fb.upload(
         f,
-        PublishMetadata(
-            title="Hello FB", description="World", visibility="unlisted"
-        ),
+        PublishMetadata(title="Hello FB", description="World", visibility="unlisted"),
     )
 
     assert result.external_id == "fbvid-42"
@@ -328,6 +313,7 @@ def test_youtube_env_path_detected_when_all_three_set(
 
     yt = YouTubeConnector()
     import asyncio
+
     assert asyncio.run(yt.is_connected()) is True
 
 
@@ -343,6 +329,7 @@ def test_youtube_env_path_requires_all_three(monkeypatch: pytest.MonkeyPatch) ->
     # but our test_quota.py + others run migrations as a fixture. We
     # don't depend on that here — just verify the env-path doesn't fire.
     from impact_crater.connectors.youtube import _has_env_credentials
+
     assert _has_env_credentials() is False
 
 

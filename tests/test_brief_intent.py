@@ -24,7 +24,12 @@ def test_to_intent_parses_destinations_and_chronological() -> None:
         "theme": "road trip",
         "chronological": True,
         "named_destinations": [
-            {"name": "Las Vegas", "aliases": ["Vegas", "Hoover Dam"], "kind": "place", "chronological_hint": 4},
+            {
+                "name": "Las Vegas",
+                "aliases": ["Vegas", "Hoover Dam"],
+                "kind": "place",
+                "chronological_hint": 4,
+            },
             {"name": "Zion", "aliases": []},
             {"name": "", "aliases": ["skip"]},  # dropped — no name
         ],
@@ -39,7 +44,9 @@ def test_to_intent_parses_destinations_and_chronological() -> None:
 
 
 async def test_parse_brief_ok() -> None:
-    router = _OkRouter({"named_destinations": [{"name": "Bryce", "aliases": []}], "chronological": False})
+    router = _OkRouter(
+        {"named_destinations": [{"name": "Bryce", "aliases": []}], "chronological": False}
+    )
     intent = await parse_brief(router, "a trip to bryce", media_count=10)
     assert [d.name for d in intent.named_destinations] == ["Bryce"]
 

@@ -15,8 +15,6 @@ stage6_plan.py, which imports this module.
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel, ConfigDict, Field
 
 from impact_crater.media.music import MusicAnalysis
@@ -169,7 +167,10 @@ def build_directive_from_music(
         m1 = sum(first) / len(first) if first else 0.0
         m2 = sum(second) / len(second) if second else 0.0
         overall = (m1 + m2) / 2 or 1.0
-        for lo, hi, mean, tag in ((0.0, 0.5, m1, "energy_half:first"), (0.5, 1.0, m2, "energy_half:second")):
+        for lo, hi, mean, tag in (
+            (0.0, 0.5, m1, "energy_half:first"),
+            (0.5, 1.0, m2, "energy_half:second"),
+        ):
             ratio = mean / overall if overall else 1.0
             # More energetic half → shorter clips, higher density.
             bands.append(
@@ -182,7 +183,9 @@ def build_directive_from_music(
                 )
             )
 
-    section_starts = sorted({int(s.start_ms) for s in analysis.sections if 0 < s.start_ms < target_ms})
+    section_starts = sorted(
+        {int(s.start_ms) for s in analysis.sections if 0 < s.start_ms < target_ms}
+    )
 
     return PlanDirective(
         tempo=TempoProfile(bands=bands, apply_density=False),

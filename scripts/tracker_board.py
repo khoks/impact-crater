@@ -122,10 +122,17 @@ def load_items() -> dict[str, Item]:
                     if m:
                         log.append((m.group(1), m.group(2)))
             item = Item(
-                id=fm["id"], title=fm.get("title", "").strip(), type=fm.get("type", level[:-1]),
-                status=fm.get("status", "?"), priority=fm.get("priority", "P3"), phase=fm.get("phase", "?"),
-                parent=fm.get("parent") or None, tags=parse_tags(fm.get("tags", "")),
-                updated=fm.get("updated", ""), path=path, log=log,
+                id=fm["id"],
+                title=fm.get("title", "").strip(),
+                type=fm.get("type", level[:-1]),
+                status=fm.get("status", "?"),
+                priority=fm.get("priority", "P3"),
+                phase=fm.get("phase", "?"),
+                parent=fm.get("parent") or None,
+                tags=parse_tags(fm.get("tags", "")),
+                updated=fm.get("updated", ""),
+                path=path,
+                log=log,
             )
             if item.id in items:
                 raise ValueError(f"duplicate id {item.id}: {path} and {items[item.id].path}")
@@ -155,38 +162,79 @@ def done_row(i: Item) -> list[str]:
 
 def render_sections(items: dict[str, Item]) -> str:
     by_id = items
-    in_progress = sorted((i for i in items.values() if i.status == "in-progress"), key=Item.sort_key)
+    in_progress = sorted(
+        (i for i in items.values() if i.status == "in-progress"), key=Item.sort_key
+    )
     up_next = sorted(
-        (i for i in items.values() if i.status == "todo"
-         and (i.phase in CURRENT_PHASES or i.plan_phases & {0, 1})),
+        (
+            i
+            for i in items.values()
+            if i.status == "todo" and (i.phase in CURRENT_PHASES or i.plan_phases & {0, 1})
+        ),
         key=Item.sort_key,
     )
     backlog = sorted(
-        (i for i in items.values() if i.type != "initiative" and (
-            i.status in {"backlog", "deferred", "blocked"}
-            or (i.status == "todo" and i.plan_phases & {2, 3} and i not in up_next))),
+        (
+            i
+            for i in items.values()
+            if i.type != "initiative"
+            and (
+                i.status in {"backlog", "deferred", "blocked"}
+                or (i.status == "todo" and i.plan_phases & {2, 3} and i not in up_next)
+            )
+        ),
         key=Item.sort_key,
     )
     surfaced = {i.id for i in in_progress} | {i.id for i in up_next} | {i.id for i in backlog}
-    future_open = [i for i in items.values() if i.status in {"todo", "backlog", "deferred", "blocked"}
-                   and i.id not in surfaced and i.type in {"story", "task"}]
+    future_open = [
+        i
+        for i in items.values()
+        if i.status in {"todo", "backlog", "deferred", "blocked"}
+        and i.id not in surfaced
+        and i.type in {"story", "task"}
+    ]
     future_by_epic: dict[str, list[Item]] = defaultdict(list)
     for i in future_open:
         future_by_epic[i.parent or "?"].append(i)
 
-    recent_done = sorted((i for i in items.values() if i.status == "done" and i.done_date >= RECENT_CUTOFF),
-                         key=lambda i: (i.done_date, TYPE_ORDER.get(i.type, 9), id_key(i.id)), reverse=True)
-    older_done_epics = sorted((i for i in items.values() if i.status == "done" and i.type == "epic"
-                               and i.done_date < RECENT_CUTOFF), key=lambda i: (i.done_date, id_key(i.id)), reverse=True)
-    canceled = sorted((i for i in items.values() if i.status == "canceled"), key=lambda i: id_key(i.id))
+    recent_done = sorted(
+        (i for i in items.values() if i.status == "done" and i.done_date >= RECENT_CUTOFF),
+        key=lambda i: (i.done_date, TYPE_ORDER.get(i.type, 9), id_key(i.id)),
+        reverse=True,
+    )
+    older_done_epics = sorted(
+        (
+            i
+            for i in items.values()
+            if i.status == "done" and i.type == "epic" and i.done_date < RECENT_CUTOFF
+        ),
+        key=lambda i: (i.done_date, id_key(i.id)),
+        reverse=True,
+    )
+    canceled = sorted(
+        (i for i in items.values() if i.status == "canceled"), key=lambda i: id_key(i.id)
+    )
 
     parts: list[str] = []
-    parts.append("## In Progress\n\n" + table([open_row(i) for i in in_progress],
-                 ["ID", "Title", "Type", "Priority", "Phase", "Status"]))
-    parts.append("## Up Next (Ready)\n\n" + table([open_row(i) for i in up_next],
-                 ["ID", "Title", "Type", "Priority", "Phase", "Status"]))
-    parts.append("## Backlog (queued)\n\n" + table([open_row(i) for i in backlog],
-                 ["ID", "Title", "Type", "Priority", "Phase", "Status"]))
+    parts.append(
+        "## In Progress\n\n"
+        + table(
+            [open_row(i) for i in in_progress],
+            ["ID", "Title", "Type", "Priority", "Phase", "Status"],
+        )
+    )
+    parts.append(
+        "## Up Next (Ready)\n\n"
+        + table(
+            [open_row(i) for i in up_next], ["ID", "Title", "Type", "Priority", "Phase", "Status"]
+        )
+    )
+    parts.append(
+        "## Backlog (queued)\n\n"
+        + table(
+            [open_row(i) for i in backlog], ["ID", "Title", "Type", "Priority", "Phase", "Status"]
+        )
+    )
 
     future_rows = []
     for epic_id in sorted(future_by_epic, key=id_key):
@@ -194,36 +242,71 @@ def render_sections(items: dict[str, Item]) -> str:
         epic = by_id.get(epic_id)
         counts = Counter(c.status for c in children)
         ids = ", ".join(c.id for c in sorted(children, key=lambda c: id_key(c.id)))
-        future_rows.append([
-            epic.link if epic else epic_id, epic.title if epic else "?", epic.phase if epic else "?",
-            epic.status if epic else "?", ", ".join(f"{n} {s}" for s, n in sorted(counts.items())), ids,
-        ])
-    parts.append("## Future phases (open, not yet scheduled)\n\n"
-                 "Placeholder stories backfilled on 2026-06-14 plus later filings whose restart-plan phase is 4 or later. "
-                 "They open when their epic opens.\n\n"
-                 + table(future_rows, ["Epic", "Title", "Phase", "Epic status", "Open children", "IDs"]))
+        future_rows.append(
+            [
+                epic.link if epic else epic_id,
+                epic.title if epic else "?",
+                epic.phase if epic else "?",
+                epic.status if epic else "?",
+                ", ".join(f"{n} {s}" for s, n in sorted(counts.items())),
+                ids,
+            ]
+        )
+    parts.append(
+        "## Future phases (open, not yet scheduled)\n\n"
+        "Placeholder stories backfilled on 2026-06-14 plus later filings whose restart-plan phase is 4 or later. "
+        "They open when their epic opens.\n\n"
+        + table(future_rows, ["Epic", "Title", "Phase", "Epic status", "Open children", "IDs"])
+    )
 
-    parts.append(f"## Recently Done (since {RECENT_CUTOFF})\n\n" + table([done_row(i) for i in recent_done],
-                 ["ID", "Title", "Type", "Done"]))
+    parts.append(
+        f"## Recently Done (since {RECENT_CUTOFF})\n\n"
+        + table([done_row(i) for i in recent_done], ["ID", "Title", "Type", "Done"])
+    )
 
     older_rows = []
     for e in older_done_epics:
-        kids = sorted((i for i in items.values() if i.parent == e.id and i.status == "done"), key=lambda i: id_key(i.id))
-        span = f"{kids[0].id}..{kids[-1].id.split('.')[-1]} ({len(kids)} stories)" if kids else "delivered epic-level, no stories"
+        kids = sorted(
+            (i for i in items.values() if i.parent == e.id and i.status == "done"),
+            key=lambda i: id_key(i.id),
+        )
+        span = (
+            f"{kids[0].id}..{kids[-1].id.split('.')[-1]} ({len(kids)} stories)"
+            if kids
+            else "delivered epic-level, no stories"
+        )
         older_rows.append([e.link, e.title, span, e.done_date])
     parts.append("## Previously Done\n\n" + table(older_rows, ["Epic", "Title", "Stories", "Done"]))
 
     if canceled:
-        parts.append("## Canceled\n\n" + table([[i.link, i.title, TYPE_LABEL.get(i.type, i.type), i.updated] for i in canceled],
-                     ["ID", "Title", "Type", "Canceled"]))
+        parts.append(
+            "## Canceled\n\n"
+            + table(
+                [[i.link, i.title, TYPE_LABEL.get(i.type, i.type), i.updated] for i in canceled],
+                ["ID", "Title", "Type", "Canceled"],
+            )
+        )
 
     init_rows = []
-    for init in sorted((i for i in items.values() if i.type == "initiative"), key=lambda i: id_key(i.id)):
-        epics = sorted((i for i in items.values() if i.parent == init.id), key=lambda i: id_key(i.id))
+    for init in sorted(
+        (i for i in items.values() if i.type == "initiative"), key=lambda i: id_key(i.id)
+    ):
+        epics = sorted(
+            (i for i in items.values() if i.parent == init.id), key=lambda i: id_key(i.id)
+        )
         counts = Counter(e.status for e in epics)
-        init_rows.append([init.link, init.title, init.status, init.phase,
-                          f"{len(epics)} epics: " + ", ".join(f"{n} {s}" for s, n in sorted(counts.items()))])
-    parts.append("## Initiative index\n\n" + table(init_rows, ["ID", "Title", "Status", "Phase", "Epics"]))
+        init_rows.append(
+            [
+                init.link,
+                init.title,
+                init.status,
+                init.phase,
+                f"{len(epics)} epics: " + ", ".join(f"{n} {s}" for s, n in sorted(counts.items())),
+            ]
+        )
+    parts.append(
+        "## Initiative index\n\n" + table(init_rows, ["ID", "Title", "Status", "Phase", "Epics"])
+    )
 
     tally = Counter((i.type, i.status) for i in items.values())
     statuses = sorted({s for _, s in tally})
@@ -232,10 +315,16 @@ def render_sections(items: dict[str, Item]) -> str:
         row = [TYPE_LABEL[t]] + [str(tally.get((t, s), 0)) for s in statuses]
         row.append(str(sum(tally.get((t, s), 0) for s in statuses)))
         tally_rows.append(row)
-    tally_rows.append(["**All**"] + [str(sum(tally.get((t, s), 0) for t in TYPE_ORDER)) for s in statuses] + [str(len(items))])
-    parts.append("## Status tally (from frontmatter)\n\nRegenerate with `python scripts/tracker_board.py`; "
-                 "`--check` fails when this file drifts from the item files.\n\n"
-                 + table(tally_rows, ["Type", *statuses, "Total"]))
+    tally_rows.append(
+        ["**All**"]
+        + [str(sum(tally.get((t, s), 0) for t in TYPE_ORDER)) for s in statuses]
+        + [str(len(items))]
+    )
+    parts.append(
+        "## Status tally (from frontmatter)\n\nRegenerate with `python scripts/tracker_board.py`; "
+        "`--check` fails when this file drifts from the item files.\n\n"
+        + table(tally_rows, ["Type", *statuses, "Total"])
+    )
     return "\n\n".join(parts) + "\n"
 
 

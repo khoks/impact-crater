@@ -19,7 +19,6 @@ from unittest.mock import AsyncMock
 import numpy as np
 import pytest
 import yaml
-
 from impact_crater.llm_clients import prompts
 from impact_crater.llm_clients.base import (
     ArcJudgment,
@@ -30,7 +29,6 @@ from impact_crater.llm_clients.base import (
 from impact_crater.llm_clients.exceptions import LLMOperationFailed
 from impact_crater.llm_clients.router import LLMRouter, OperationRoute
 from impact_crater.storage.migrations import run_pending_migrations
-
 
 # ---- Fixtures ----------------------------------------------------------
 
@@ -88,7 +86,12 @@ def prompts_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "prompts"
     for op, provider, model, body in [
         ("caption_image", "google", "gemini-2.5-flash", "Describe this image: {{ extra or '' }}"),
-        ("score_image", "google", "gemini-2.5-flash", "Score on {{ dimension }}. brief={{ brief or '' }}"),
+        (
+            "score_image",
+            "google",
+            "gemini-2.5-flash",
+            "Score on {{ dimension }}. brief={{ brief or '' }}",
+        ),
         (
             "extract_metadata_image",
             "anthropic",
@@ -189,7 +192,7 @@ def test_prompts_loader_versions_by_content_hash(prompts_dir: Path) -> None:
 def test_prompts_loader_renders_with_variables(prompts_dir: Path) -> None:
     p = prompts.load("caption_image", "google", "gemini-2.5-flash")
     out = prompts.render(p, extra="and be brief")
-    assert "Describe this image: and be brief" == out
+    assert out == "Describe this image: and be brief"
 
 
 def test_prompts_loader_missing_template_raises(prompts_dir: Path) -> None:
@@ -201,9 +204,7 @@ def test_prompts_loader_missing_template_raises(prompts_dir: Path) -> None:
 
 
 @pytest.mark.usefixtures("db_initialized")
-async def test_caption_cache_miss_then_hit(
-    routing_config: Path, prompts_dir: Path
-) -> None:
+async def test_caption_cache_miss_then_hit(routing_config: Path, prompts_dir: Path) -> None:
     google = _mock_client("google")
     google.caption_image = AsyncMock(return_value="A red apple on a table.")
     router = LLMRouter(clients={"google": google}, config_path=routing_config)
@@ -250,9 +251,7 @@ async def test_score_image_dimensions_do_not_share_cache(
     google.score_image = AsyncMock(side_effect=[0.9, 0.2])
     router = LLMRouter(clients={"google": google}, config_path=routing_config)
 
-    quality_1 = await router.score_image(
-        b"\x00img", content_hash="hash-A", dimension="quality"
-    )
+    quality_1 = await router.score_image(b"\x00img", content_hash="hash-A", dimension="quality")
     narrative_1 = await router.score_image(
         b"\x00img",
         content_hash="hash-A",
@@ -266,9 +265,7 @@ async def test_score_image_dimensions_do_not_share_cache(
 
     # Re-reads must hit the cache AND return the value for their own
     # dimension — not the other dimension's last write.
-    quality_2 = await router.score_image(
-        b"\x00img", content_hash="hash-A", dimension="quality"
-    )
+    quality_2 = await router.score_image(b"\x00img", content_hash="hash-A", dimension="quality")
     narrative_2 = await router.score_image(
         b"\x00img",
         content_hash="hash-A",
@@ -314,9 +311,7 @@ async def test_extract_metadata_schema_change_invalidates_cache(
     routing_config: Path, prompts_dir: Path
 ) -> None:
     anthropic = _mock_client("anthropic")
-    anthropic.extract_metadata_image = AsyncMock(
-        side_effect=[{"v": 1}, {"v": 2}]
-    )
+    anthropic.extract_metadata_image = AsyncMock(side_effect=[{"v": 1}, {"v": 2}])
     router = LLMRouter(clients={"anthropic": anthropic}, config_path=routing_config)
 
     schema_v1 = {"type": "object", "required": ["v"], "properties": {"v": {"type": "integer"}}}
@@ -436,9 +431,7 @@ async def test_judge_narrative_arc_different_brief_invalidates_cache(
 
 
 @pytest.mark.usefixtures("db_initialized")
-async def test_call_params_pass_through_correctly(
-    routing_config: Path, prompts_dir: Path
-) -> None:
+async def test_call_params_pass_through_correctly(routing_config: Path, prompts_dir: Path) -> None:
     google = _mock_client("google")
     google.caption_image = AsyncMock(return_value="ok")
     router = LLMRouter(clients={"google": google}, config_path=routing_config)
@@ -458,9 +451,7 @@ async def test_call_params_pass_through_correctly(
 
 
 @pytest.mark.usefixtures("db_initialized")
-async def test_cache_miss_bumps_daily_quota_spend(
-    routing_config: Path, prompts_dir: Path
-) -> None:
+async def test_cache_miss_bumps_daily_quota_spend(routing_config: Path, prompts_dir: Path) -> None:
     """Every successful non-cached LLM dispatch must record the cost into
     the quota_state table so Settings → 'Today's spend' reflects reality.
 

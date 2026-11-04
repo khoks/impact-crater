@@ -56,7 +56,7 @@ Frontend, inside `frontend/`:
 npm run typecheck && npm test
 ```
 
-Expectations: `pytest` and the frontend checks must be green. `ruff` and `mypy --strict` are configured but the tree still carries a known baseline of violations (tracked as S-3.11.6), so the rule until that sweep lands is: **a PR adds zero new violations in the files it touches, and formats the files it touches with `ruff format`.** Tests marked `integration` call the real Anthropic / Google APIs and cost money; they are skipped unless `--integration` is passed — do not run them without the maintainer's go-ahead.
+Expectations: all of these must be green — `pytest`, `ruff check`, `ruff format --check backend/impact_crater tests scripts`, `mypy --strict` and the frontend checks. A deliberate lint or type exception carries its rule code (`# noqa: <code>`, `# type: ignore[<code>]`) and a reason. Tests marked `integration` call the real Anthropic / Google APIs and cost money; they are skipped unless `--integration` is passed — do not run them without the maintainer's go-ahead.
 
 If you touch `project/`, run `python scripts/tracker_board.py` and then `python scripts/tracker_board.py --check` before opening the PR.
 

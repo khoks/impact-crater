@@ -1,10 +1,10 @@
 """Profile API per N-010 + ADR-0014.
 
-  GET  /api/profile/snapshot         — current Profile + JobSuggestions
-  POST /api/profile/derive           — re-run derivation against the feedback log
-  POST /api/profile/reset            — wipe profile + feedback log
-  POST /api/profile/feedback         — emit a FeedbackEvent (used by the UI to
-                                       record approve / refine / cancel etc.)
+GET  /api/profile/snapshot         — current Profile + JobSuggestions
+POST /api/profile/derive           — re-run derivation against the feedback log
+POST /api/profile/reset            — wipe profile + feedback log
+POST /api/profile/feedback         — emit a FeedbackEvent (used by the UI to
+                                     record approve / refine / cancel etc.)
 """
 
 from __future__ import annotations

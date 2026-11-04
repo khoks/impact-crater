@@ -13,6 +13,7 @@ prompt is ever sent to the image API, never the photos.
 from __future__ import annotations
 
 import collections
+import contextlib
 import io
 import logging
 from datetime import datetime
@@ -58,7 +59,11 @@ async def build_title_clip(
     try:
         media_by_hash = {m.content_hash: m for m in media}
         year = _derive_year(media)
-        title = (spec.title_text or "").strip() or await _title_from_brief(router, brief, year) or "Our Trip"
+        title = (
+            (spec.title_text or "").strip()
+            or await _title_from_brief(router, brief, year)
+            or "Our Trip"
+        )
 
         bg = _open_path(background_path) if background_path else None
         if bg is None:
@@ -109,10 +114,8 @@ def _derive_year(media: list[Any]) -> str:
     for m in media:
         ts = getattr(m, "capture_timestamp", None)
         if ts:
-            try:
+            with contextlib.suppress(TypeError, ValueError):
                 years.append(datetime.fromisoformat(ts).year)
-            except (TypeError, ValueError):
-                pass
     if not years:
         return ""
     return str(collections.Counter(years).most_common(1)[0][0])
@@ -133,8 +136,9 @@ async def _title_from_brief(router: Any, brief: str, year: str) -> str | None:
 
 # The bundled PIL default font lacks typographic glyphs (— " " …) — they render
 # as tofu boxes on the card. Map them to ASCII, then NFKD-fold the rest.
-_PUNCT_MAP = str.maketrans({"—": "-", "–": "-", "‒": "-", "“": '"', "”": '"',
-                            "‘": "'", "’": "'", "…": "..."})
+_PUNCT_MAP = str.maketrans(
+    {"—": "-", "–": "-", "‒": "-", "“": '"', "”": '"', "‘": "'", "’": "'", "…": "..."}  # noqa: RUF001
+)
 
 
 def _clean_title(title: str | None) -> str | None:
@@ -229,7 +233,9 @@ def _collect_faces(cast: Any, media_by_hash: dict[str, Any]) -> list[Image.Image
             rec = media_by_hash.get(ch)
             if rec is None:
                 continue
-            data = _read_bytes(getattr(rec, "thumb_1024_path", None) or getattr(rec, "source_path", None))
+            data = _read_bytes(
+                getattr(rec, "thumb_1024_path", None) or getattr(rec, "source_path", None)
+            )
             if data is None:
                 continue
             try:
@@ -259,7 +265,9 @@ def _paste_faces(canvas: Image.Image, faces: list[Image.Image]) -> None:
         thumb = _cover(face, _FACE_PX, _FACE_PX)
         ring = Image.new("RGBA", (_FACE_PX, _FACE_PX), (0, 0, 0, 0))
         ring.paste(thumb, (0, 0), mask)
-        ImageDraw.Draw(ring).ellipse([2, 2, _FACE_PX - 2, _FACE_PX - 2], outline=(255, 255, 255, 230), width=5)
+        ImageDraw.Draw(ring).ellipse(
+            [2, 2, _FACE_PX - 2, _FACE_PX - 2], outline=(255, 255, 255, 230), width=5
+        )
         canvas.paste(ring.convert("RGB"), (x, y), ring)
         x += _FACE_PX + gap
 
@@ -275,9 +283,14 @@ def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
 
 
 _NAMED_COLORS = {
-    "white": (255, 255, 255), "black": (0, 0, 0), "gold": (255, 215, 0),
-    "cream": (250, 240, 220), "red": (220, 60, 60), "blue": (70, 130, 220),
-    "green": (70, 190, 120), "amber": (255, 190, 90),
+    "white": (255, 255, 255),
+    "black": (0, 0, 0),
+    "gold": (255, 215, 0),
+    "cream": (250, 240, 220),
+    "red": (220, 60, 60),
+    "blue": (70, 130, 220),
+    "green": (70, 190, 120),
+    "amber": (255, 190, 90),
 }
 
 
@@ -330,14 +343,15 @@ def _fit_font(
     return _font(min_size)
 
 
-def _centered(d: ImageDraw.ImageDraw, text: str, font: Any, y: int, *, fill: tuple) -> None:
+def _centered(
+    d: ImageDraw.ImageDraw, text: str, font: Any, y: int, *, fill: tuple[int, ...]
+) -> None:
     try:
         bbox = d.textbbox((0, 0), text, font=font)
         w = bbox[2] - bbox[0]
     except Exception:
         w = len(text) * 20
-    d.text(((_W - w) // 2, y), text, font=font, fill=fill,
-           stroke_width=3, stroke_fill=(0, 0, 0))
+    d.text(((_W - w) // 2, y), text, font=font, fill=fill, stroke_width=3, stroke_fill=(0, 0, 0))
 
 
 # ---- IO helpers --------------------------------------------------------

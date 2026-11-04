@@ -103,9 +103,7 @@ async def post_feedback(req: FeedbackRequest) -> FeedbackResponse:
         await db.commit()
         new_id = cursor.lastrowid
         row = await (
-            await db.execute(
-                "SELECT created_at, status FROM feedback WHERE id = ?", (new_id,)
-            )
+            await db.execute("SELECT created_at, status FROM feedback WHERE id = ?", (new_id,))
         ).fetchone()
 
     created_at = row["created_at"] if row else ""
@@ -247,9 +245,7 @@ async def patch_feedback(feedback_id: int, patch: FeedbackPatch) -> FeedbackItem
         raise HTTPException(status_code=400, detail="nothing to update")
     params.append(feedback_id)
     async with connection() as db:
-        cur = await db.execute(
-            f"UPDATE feedback SET {', '.join(sets)} WHERE id = ?", params
-        )
+        cur = await db.execute(f"UPDATE feedback SET {', '.join(sets)} WHERE id = ?", params)
         await db.commit()
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail=f"feedback {feedback_id} not found")
@@ -269,9 +265,7 @@ async def get_feedback_screenshot(feedback_id: int) -> FileResponse:
     """Serve the page screenshot captured with a feedback item, if any."""
     async with connection() as db:
         row = await (
-            await db.execute(
-                "SELECT screenshot_path FROM feedback WHERE id = ?", (feedback_id,)
-            )
+            await db.execute("SELECT screenshot_path FROM feedback WHERE id = ?", (feedback_id,))
         ).fetchone()
     if row is None or not row["screenshot_path"]:
         raise HTTPException(status_code=404, detail="no screenshot for this feedback")

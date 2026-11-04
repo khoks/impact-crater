@@ -15,16 +15,16 @@ from impact_crater.storage.db import connection
 # errors / IDE warnings during development. Adding a new key elsewhere
 # in the codebase is allowed (the table is generic K/V); this is a
 # convenience registry, not an enforced enum.
-KEY_SETUP_COMPLETE = "setup_complete"               # "true" | "false"
-KEY_ANTHROPIC_API_KEY = "anthropic_api_key"          # encrypted
-KEY_GOOGLE_API_KEY = "google_api_key"                # encrypted
-KEY_TOTAL_CAP_USD = "spend_cap_total_usd"            # plain numeric string
-KEY_ANTHROPIC_CAP_USD = "spend_cap_anthropic_usd"    # plain numeric string (or "")
-KEY_GOOGLE_CAP_USD = "spend_cap_google_usd"          # plain numeric string (or "")
+KEY_SETUP_COMPLETE = "setup_complete"  # "true" | "false"
+KEY_ANTHROPIC_API_KEY = "anthropic_api_key"  # encrypted
+KEY_GOOGLE_API_KEY = "google_api_key"  # encrypted
+KEY_TOTAL_CAP_USD = "spend_cap_total_usd"  # plain numeric string
+KEY_ANTHROPIC_CAP_USD = "spend_cap_anthropic_usd"  # plain numeric string (or "")
+KEY_GOOGLE_CAP_USD = "spend_cap_google_usd"  # plain numeric string (or "")
 # A-018 auto trip cast. enabled = "true"|"false"; backend = "gemini" (cloud
 # default) | "insightface" (optional local upgrade for capable machines).
 KEY_CAST_ANALYSIS_ENABLED = "cast_analysis_enabled"  # "true" | "false"
-KEY_CAST_BACKEND = "cast_backend"                    # "gemini" | "insightface"
+KEY_CAST_BACKEND = "cast_backend"  # "gemini" | "insightface"
 # S-2.10.8 pluggable image embedder: "router" (default, caption-then-embed) |
 # "local_clip" (opt-in local CLIP/SigLIP; needs weights — stub until then).
 KEY_IMAGE_EMBED_BACKEND = "image_embed_backend"
@@ -49,9 +49,7 @@ async def set_value(key: str, value: str, *, encrypted: bool = False) -> None:
 async def get_value(key: str, *, default: str | None = None) -> str | None:
     """Return the decrypted setting value, or `default` if the key is unset."""
     async with connection() as db:
-        cursor = await db.execute(
-            "SELECT value, encrypted FROM settings WHERE key = ?", (key,)
-        )
+        cursor = await db.execute("SELECT value, encrypted FROM settings WHERE key = ?", (key,))
         row = await cursor.fetchone()
     if row is None:
         return default

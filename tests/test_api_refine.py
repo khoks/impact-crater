@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-
 from impact_crater import paths
 from impact_crater.app import create_app
 from impact_crater.pipeline import runner
@@ -28,17 +27,29 @@ async def setup_snapshot(tmp_path: Path):
     snap_dir = paths.projects_dir() / project_id / "snapshots" / snapshot_id
     snap_dir.mkdir(parents=True, exist_ok=True)
     plan = RenderPlan(
-        project_id=project_id, snapshot_id=snapshot_id, target_duration_ms=10_000, brief="a zion trip",
+        project_id=project_id,
+        snapshot_id=snapshot_id,
+        target_duration_ms=10_000,
+        brief="a zion trip",
         clips=[
-            RenderClip(candidate_ref="hash-a", kind="photo", source_path="/tmp/a.jpg",
-                       intended_duration_ms=5000, aspect_ratio_action="as_is", role="opener"),
+            RenderClip(
+                candidate_ref="hash-a",
+                kind="photo",
+                source_path="/tmp/a.jpg",
+                intended_duration_ms=5000,
+                aspect_ratio_action="as_is",
+                role="opener",
+            ),
         ],
-        arc_reasoning="warm to cool", arc_confidence=0.7,
+        arc_reasoning="warm to cool",
+        arc_confidence=0.7,
     )
     plan_path = snap_dir / "plan.json"
     plan_path.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
     async with connection() as db:
-        await db.execute("INSERT OR IGNORE INTO projects (id, name) VALUES (?, ?)", (project_id, project_id))
+        await db.execute(
+            "INSERT OR IGNORE INTO projects (id, name) VALUES (?, ?)", (project_id, project_id)
+        )
         await db.execute(
             "INSERT INTO snapshots (id, project_id, plan_path, render_status) VALUES (?, ?, ?, 'success')",
             (snapshot_id, project_id, str(plan_path)),
@@ -56,10 +67,16 @@ def _mock_router(outcome: dict) -> object:
 
 
 @pytest.fixture
-async def client_with_snapshot(monkeypatch, setup_snapshot) -> AsyncIterator[tuple[httpx.AsyncClient, str]]:
+async def client_with_snapshot(
+    monkeypatch, setup_snapshot
+) -> AsyncIterator[tuple[httpx.AsyncClient, str]]:
     _, snapshot_id, _ = setup_snapshot
-    fake = _mock_router({"interpretation": "shorten the intro",
-                         "directive_patch": {"positional_rules": [{"region": [0.0, 0.2], "multiplier": 0.7}]}})
+    fake = _mock_router(
+        {
+            "interpretation": "shorten the intro",
+            "directive_patch": {"positional_rules": [{"region": [0.0, 0.2], "multiplier": 0.7}]},
+        }
+    )
 
     async def fake_build() -> object:
         return fake
@@ -73,8 +90,9 @@ async def client_with_snapshot(monkeypatch, setup_snapshot) -> AsyncIterator[tup
 
 async def test_refine_endpoint_returns_interpretation(client_with_snapshot) -> None:
     client, snapshot_id = client_with_snapshot
-    r = await client.post(f"/api/snapshots/{snapshot_id}/refine",
-                          json={"refinement_message": "snappier intro"})
+    r = await client.post(
+        f"/api/snapshots/{snapshot_id}/refine", json={"refinement_message": "snappier intro"}
+    )
     assert r.status_code == 200
     body = r.json()
     assert body["interpretation"] == "shorten the intro"
@@ -95,7 +113,9 @@ async def test_refine_endpoint_explanation(monkeypatch, setup_snapshot) -> None:
     app = create_app()
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
-        r = await ac.post(f"/api/snapshots/{snapshot_id}/refine", json={"refinement_message": "add snow"})
+        r = await ac.post(
+            f"/api/snapshots/{snapshot_id}/refine", json={"refinement_message": "add snow"}
+        )
     assert r.status_code == 200
     body = r.json()
     assert "No snow" in body["explanation"]

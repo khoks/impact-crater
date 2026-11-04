@@ -12,12 +12,11 @@ import base64
 import io
 
 import numpy as np
-from PIL import Image
-
 from impact_crater.llm_clients.anthropic_client import (
     _fit_image_for_anthropic,
     _image_block,
 )
+from PIL import Image
 
 ANTHROPIC_BASE64_CAP = 5_242_880  # API hard limit, in base64 bytes
 

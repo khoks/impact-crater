@@ -11,11 +11,10 @@ from unittest.mock import AsyncMock
 
 import numpy as np
 import pytest
-from PIL import Image
-
 from impact_crater.pipeline import stage1_ingest, stage2_bulk_ops
 from impact_crater.pipeline.stage1_ingest import MediaRecord, SceneRecord
 from impact_crater.storage.migrations import run_pending_migrations
+from PIL import Image
 
 
 @pytest.fixture

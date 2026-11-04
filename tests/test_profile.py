@@ -7,8 +7,8 @@ from pathlib import Path
 
 import httpx
 import pytest
-
-from impact_crater import paths, profile as profile_mod
+from impact_crater import paths
+from impact_crater import profile as profile_mod
 from impact_crater.app import create_app
 from impact_crater.profile import FeedbackEvent, derive_profile, emit, reset
 

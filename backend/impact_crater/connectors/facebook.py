@@ -26,6 +26,7 @@ map our Visibility enum:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import email.generator
 import email.mime.application
 import email.mime.multipart
@@ -39,10 +40,9 @@ import urllib.parse
 import urllib.request
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from impact_crater.connectors.base import (
-    ConnectorAuthError,
     ConnectorError,
     ConnectorUploadResult,
     ConnectorValidationError,
@@ -78,9 +78,7 @@ class FacebookConnector:
         return _has_env_credentials()
 
     async def disconnect(self) -> None:  # pragma: no cover — symmetric
-        log.info(
-            "facebook_disconnect_noop (env-driven creds; unset env vars to disconnect)"
-        )
+        log.info("facebook_disconnect_noop (env-driven creds; unset env vars to disconnect)")
 
     async def refresh_credentials(self) -> None:
         return None
@@ -171,10 +169,8 @@ class FacebookConnector:
         )
 
         if on_progress is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await on_progress(0.1)
-            except Exception:  # pragma: no cover
-                pass
 
         if self._transport is not None:
             response = await self._transport.upload_video(
@@ -191,10 +187,8 @@ class FacebookConnector:
             )
 
         if on_progress is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await on_progress(1.0)
-            except Exception:  # pragma: no cover
-                pass
 
         # The Page Videos endpoint returns {"id": "<video_id>"}.
         video_id = str(response.get("id", ""))
@@ -220,9 +214,7 @@ class FacebookConnector:
             elif raw:
                 permalink = raw
         except Exception as exc:  # pragma: no cover — best-effort
-            log.warning(
-                "facebook_permalink_fetch_failed video_id=%s error=%r", video_id, exc
-            )
+            log.warning("facebook_permalink_fetch_failed video_id=%s error=%r", video_id, exc)
 
         log.info(
             "facebook_publish_succeeded video_id=%s permalink=%s published=%s",
@@ -244,10 +236,7 @@ class FacebookConnector:
 
 
 def _has_env_credentials() -> bool:
-    return all(
-        os.environ.get(name, "").strip()
-        for name in (_ENV_PAGE_ACCESS_TOKEN, _ENV_PAGE_ID)
-    )
+    return all(os.environ.get(name, "").strip() for name in (_ENV_PAGE_ACCESS_TOKEN, _ENV_PAGE_ID))
 
 
 def _upload_video_multipart(
@@ -266,18 +255,14 @@ def _upload_video_multipart(
     crlf = b"\r\n"
     for k, v in fields.items():
         body.write(b"--" + boundary.encode("ascii") + crlf)
-        body.write(
-            f'Content-Disposition: form-data; name="{k}"'.encode("ascii") + crlf
-        )
+        body.write(f'Content-Disposition: form-data; name="{k}"'.encode("ascii") + crlf)
         body.write(crlf)
         body.write(str(v).encode("utf-8"))
         body.write(crlf)
     # File part.
     body.write(b"--" + boundary.encode("ascii") + crlf)
     body.write(
-        f'Content-Disposition: form-data; name="source"; filename="{render_path.name}"'.encode(
-            "utf-8"
-        )
+        f'Content-Disposition: form-data; name="source"; filename="{render_path.name}"'.encode()
         + crlf
     )
     body.write(b"Content-Type: video/mp4" + crlf)
@@ -299,7 +284,7 @@ def _upload_video_multipart(
     )
     try:
         with urllib.request.urlopen(req, timeout=300) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            return cast("dict[str, Any]", json.loads(resp.read().decode("utf-8")))
     except urllib.error.HTTPError as exc:
         body_text = exc.read().decode("utf-8", errors="replace")
         raise ConnectorError(
@@ -312,7 +297,7 @@ def _http_get(url: str, params: dict[str, str]) -> dict[str, Any]:
     full = url + "?" + urllib.parse.urlencode(params)
     try:
         with urllib.request.urlopen(full, timeout=30) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            return cast("dict[str, Any]", json.loads(resp.read().decode("utf-8")))
     except urllib.error.HTTPError as exc:
         body_text = exc.read().decode("utf-8", errors="replace")
         raise ConnectorError(

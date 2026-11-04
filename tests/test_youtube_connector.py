@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from impact_crater import audit
 from impact_crater.connectors import (
     ConnectorAuthError,
@@ -32,7 +31,11 @@ class FakeTransport:
         self.upload_calls: list[dict] = []
 
     def refresh(self, creds: dict[str, Any]) -> dict[str, Any]:
-        return {**creds, "access_token": "rotated-access-token", "expires_at": int(time.time()) + 3600}
+        return {
+            **creds,
+            "access_token": "rotated-access-token",
+            "expires_at": int(time.time()) + 3600,
+        }
 
     async def upload(
         self,
@@ -97,9 +100,7 @@ async def test_validate_artifact_passes_for_good_input(tmp_path: Path) -> None:
 @pytest.mark.usefixtures("db_initialized")
 async def test_validate_rejects_missing_render(tmp_path: Path) -> None:
     metadata = PublishMetadata(title="x")
-    result = await YouTubeConnector().validate_artifact(
-        tmp_path / "nope.mp4", metadata
-    )
+    result = await YouTubeConnector().validate_artifact(tmp_path / "nope.mp4", metadata)
     assert result.valid is False
     assert any("not found" in i for i in result.issues)
 
@@ -158,9 +159,7 @@ async def test_upload_happy_path(connected, tmp_path: Path) -> None:
     p.write_bytes(b"\x00" * 2048)
     transport = FakeTransport(success=True)
     conn = YouTubeConnector(transport=transport)
-    result = await conn.upload(
-        p, PublishMetadata(title="Hike", visibility="unlisted")
-    )
+    result = await conn.upload(p, PublishMetadata(title="Hike", visibility="unlisted"))
     assert isinstance(result, ConnectorUploadResult)
     assert result.external_id == "vid-abc123"
     assert result.external_url.startswith("https://youtube.com/")
@@ -171,9 +170,7 @@ async def test_upload_happy_path(connected, tmp_path: Path) -> None:
     assert body["snippet"]["title"] == "Hike"
 
 
-async def test_upload_progress_callback_invoked(
-    connected, tmp_path: Path
-) -> None:
+async def test_upload_progress_callback_invoked(connected, tmp_path: Path) -> None:
     p = tmp_path / "render.mp4"
     p.write_bytes(b"\x00" * 2048)
     progress: list[float] = []
@@ -187,15 +184,11 @@ async def test_upload_progress_callback_invoked(
     assert progress == [0.25, 0.5, 0.75, 1.0]
 
 
-async def test_upload_raises_validation_error_on_bad_metadata(
-    connected, tmp_path: Path
-) -> None:
+async def test_upload_raises_validation_error_on_bad_metadata(connected, tmp_path: Path) -> None:
     p = tmp_path / "render.mp4"
     p.write_bytes(b"\x00" * 1024)
     with pytest.raises(ConnectorValidationError):
-        await YouTubeConnector(transport=FakeTransport()).upload(
-            p, PublishMetadata(title="")
-        )
+        await YouTubeConnector(transport=FakeTransport()).upload(p, PublishMetadata(title=""))
 
 
 @pytest.mark.usefixtures("db_initialized")
@@ -203,9 +196,7 @@ async def test_upload_raises_auth_error_when_not_connected(tmp_path: Path) -> No
     p = tmp_path / "render.mp4"
     p.write_bytes(b"\x00" * 1024)
     with pytest.raises(ConnectorAuthError):
-        await YouTubeConnector(transport=FakeTransport()).upload(
-            p, PublishMetadata(title="x")
-        )
+        await YouTubeConnector(transport=FakeTransport()).upload(p, PublishMetadata(title="x"))
 
 
 # ---- Refresh ----------------------------------------------------------
@@ -234,9 +225,7 @@ async def test_audit_write_appends_jsonl_and_db(connected) -> None:
     from impact_crater.storage.db import connection
 
     async with connection() as db:
-        await db.execute(
-            "INSERT INTO projects (id, name) VALUES (?, ?)", ("proj-1", "p1")
-        )
+        await db.execute("INSERT INTO projects (id, name) VALUES (?, ?)", ("proj-1", "p1"))
         await db.execute(
             "INSERT INTO snapshots (id, project_id, plan_path, render_status) "
             "VALUES (?, ?, '/tmp/plan.json', 'success')",

@@ -19,7 +19,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Literal
 
@@ -27,12 +27,10 @@ log = logging.getLogger(__name__)
 
 
 JobState = Literal["queued", "running", "succeeded", "failed", "cancelled"]
-TERMINAL_STATES: frozenset[JobState] = frozenset(
-    {"succeeded", "failed", "cancelled"}
-)
+TERMINAL_STATES: frozenset[JobState] = frozenset({"succeeded", "failed", "cancelled"})
 
 
-class StageId(str, Enum):
+class StageId(str, Enum):  # noqa: UP042 - StrEnum changes str()/format() output
     """The 7 ADR-0011 pipeline stages exposed to the UI."""
 
     INGEST = "stage_1_ingest"
@@ -45,7 +43,7 @@ class StageId(str, Enum):
 
 
 def _iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 @dataclass
@@ -264,9 +262,7 @@ class JobRegistry:
         )
 
     async def emit_log(self, job_id: str, message: str) -> None:
-        await self._emit(
-            JobProgressEvent(type="log", job_id=job_id, payload={"message": message})
-        )
+        await self._emit(JobProgressEvent(type="log", job_id=job_id, payload={"message": message}))
 
     async def emit_diagnostics(self, job_id: str, phase_doc: dict[str, Any]) -> None:
         """Push one phase's diagnostics to subscribers as the phase finishes,
@@ -342,9 +338,7 @@ class JobRegistry:
                 await queue.put(None)  # close marker
         return queue
 
-    async def unsubscribe(
-        self, job_id: str, queue: asyncio.Queue[JobProgressEvent | None]
-    ) -> None:
+    async def unsubscribe(self, job_id: str, queue: asyncio.Queue[JobProgressEvent | None]) -> None:
         async with self._lock:
             subs = self._subscribers.get(job_id, [])
             if queue in subs:

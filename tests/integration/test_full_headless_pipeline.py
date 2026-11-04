@@ -13,8 +13,6 @@ import os
 from pathlib import Path
 
 import pytest
-from PIL import Image
-
 from impact_crater.llm_clients.anthropic_client import AnthropicLLMClient
 from impact_crater.llm_clients.base import ArcJudgment
 from impact_crater.llm_clients.google_client import GoogleLLMClient
@@ -22,6 +20,7 @@ from impact_crater.llm_clients.router import LLMRouter
 from impact_crater.pipeline.runner import HeadlessJobConfig, run_headless_pipeline
 from impact_crater.storage import settings as settings_store
 from impact_crater.storage.migrations import run_pending_migrations
+from PIL import Image
 
 pytestmark = pytest.mark.integration
 
@@ -52,9 +51,7 @@ async def test_full_headless_pipeline_real_apis(
     media_dir = tmp_path / "media"
     media_dir.mkdir()
     paths: list[Path] = []
-    for i, color in enumerate(
-        [(200, 80, 30), (40, 200, 100), (60, 60, 220), (220, 220, 40)]
-    ):
+    for i, color in enumerate([(200, 80, 30), (40, 200, 100), (60, 60, 220), (220, 220, 40)]):
         p = media_dir / f"photo-{i}.jpg"
         p.write_bytes(_tiny_jpeg(color))
         paths.append(p)

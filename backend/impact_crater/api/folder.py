@@ -12,6 +12,7 @@ what's actually inside the folder the user typed.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -104,7 +105,7 @@ async def scan(path: str) -> FolderScanResponse:
     )
 
 
-def _walk_supported(root: Path):
+def _walk_supported(root: Path) -> Iterator[Path]:
     """Yield files under `root` whose suffix is photo/video."""
     yield from (
         e

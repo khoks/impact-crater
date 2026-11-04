@@ -15,13 +15,12 @@ from unittest.mock import AsyncMock
 import httpx
 import numpy as np
 import pytest
-from PIL import Image
-
 from impact_crater.app import create_app
 from impact_crater.llm_clients.base import ArcJudgment, SelectedItem
 from impact_crater.pipeline import runner
 from impact_crater.storage import settings as settings_store
 from impact_crater.storage.migrations import run_pending_migrations
+from PIL import Image
 
 
 def _photo(tmp_path: Path, name: str, color: tuple[int, int, int]) -> Path:

@@ -45,8 +45,14 @@ def test_named_place_with_no_media_is_basis_none() -> None:
 
 
 def test_reservation_set_merge_prefers_destination_reason() -> None:
-    a = ReservationSet(keys=frozenset({"x"}), reason_by_key={"x": "dest:Zion"}, source="destination")
-    b = ReservationSet(keys=frozenset({"x", "y"}), reason_by_key={"x": "refine", "y": "refine:more"}, source="refinement")
+    a = ReservationSet(
+        keys=frozenset({"x"}), reason_by_key={"x": "dest:Zion"}, source="destination"
+    )
+    b = ReservationSet(
+        keys=frozenset({"x", "y"}),
+        reason_by_key={"x": "refine", "y": "refine:more"},
+        source="refinement",
+    )
     merged = a.merged_with(b)
     assert merged.keys == frozenset({"x", "y"})
     assert merged.reason_by_key["x"] == "dest:Zion"  # self (destination) wins
@@ -55,5 +61,7 @@ def test_reservation_set_merge_prefers_destination_reason() -> None:
 
 def test_scene_keys_are_preserved() -> None:
     assets = [_FakeAsset("h#2", caption="las vegas strip at night")]
-    _, res = map_destinations(assets, [NamedDestination(name="Las Vegas", aliases=["vegas"])], per_dest=2)
+    _, res = map_destinations(
+        assets, [NamedDestination(name="Las Vegas", aliases=["vegas"])], per_dest=2
+    )
     assert "h#2" in res.keys

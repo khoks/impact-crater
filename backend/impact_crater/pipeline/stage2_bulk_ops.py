@@ -123,9 +123,7 @@ async def _run_for_asset(
     # by the router (cache hits become near-instant; misses go to the
     # provider in parallel).
     caption_task = router.caption_image(image_bytes, content_hash=cache_hash)
-    quality_task = router.score_image(
-        image_bytes, content_hash=cache_hash, dimension="quality"
-    )
+    quality_task = router.score_image(image_bytes, content_hash=cache_hash, dimension="quality")
     narrative_task = router.score_image(
         image_bytes,
         content_hash=cache_hash,
@@ -139,7 +137,10 @@ async def _run_for_asset(
     )
 
     results = await asyncio.gather(
-        caption_task, quality_task, narrative_task, embed_task,
+        caption_task,
+        quality_task,
+        narrative_task,
+        embed_task,
         return_exceptions=True,
     )
     # Surface the first real exception with its identity intact (avoid the
@@ -147,6 +148,7 @@ async def _run_for_asset(
     for label, value in zip(
         ("caption_image", "score_image[quality]", "score_image[narrative]", "embed_image"),
         results,
+        strict=True,
     ):
         if isinstance(value, BaseException):
             log.error("stage2 %s failed for %s: %s", label, asset.cache_hash, value)

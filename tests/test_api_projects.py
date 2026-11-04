@@ -21,9 +21,7 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
         yield ac
 
 
-async def _seed_project(
-    project_id: str, *, name: str, brief: str | None, created_at: str
-) -> None:
+async def _seed_project(project_id: str, *, name: str, brief: str | None, created_at: str) -> None:
     async with connection() as db:
         await db.execute(
             "INSERT INTO projects (id, name, brief, created_at) VALUES (?, ?, ?, ?)",
@@ -61,19 +59,30 @@ async def test_projects_listed_newest_first_with_snapshots(
     render = tmp_path / "render.mp4"
     render.write_bytes(b"\x00fakevideo")
 
-    await _seed_project("proj-old", name="Zion trip", brief="canyon hike", created_at="2026-06-01 10:00:00")
+    await _seed_project(
+        "proj-old", name="Zion trip", brief="canyon hike", created_at="2026-06-01 10:00:00"
+    )
     await _seed_project("proj-new", name="proj-new", brief=None, created_at="2026-06-10 10:00:00")
     await _seed_snapshot(
-        "snap-ok", "proj-old",
-        render_status="success", render_path=str(render), created_at="2026-06-01 11:00:00",
+        "snap-ok",
+        "proj-old",
+        render_status="success",
+        render_path=str(render),
+        created_at="2026-06-01 11:00:00",
     )
     await _seed_snapshot(
-        "snap-gone", "proj-old",
-        render_status="success", render_path=str(tmp_path / "deleted.mp4"), created_at="2026-06-01 12:00:00",
+        "snap-gone",
+        "proj-old",
+        render_status="success",
+        render_path=str(tmp_path / "deleted.mp4"),
+        created_at="2026-06-01 12:00:00",
     )
     await _seed_snapshot(
-        "snap-pending", "proj-new",
-        render_status="pending", render_path=None, created_at="2026-06-10 11:00:00",
+        "snap-pending",
+        "proj-new",
+        render_status="pending",
+        render_path=None,
+        created_at="2026-06-10 11:00:00",
     )
 
     r = await client.get("/api/projects")

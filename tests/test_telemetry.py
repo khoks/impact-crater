@@ -6,12 +6,13 @@ import json
 from pathlib import Path
 
 import pytest
-
 from impact_crater import telemetry
 
 
 def _read_lines(path: Path) -> list[dict]:
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
 
 
 def test_emit_writes_one_line(isolated_home: Path) -> None:
