@@ -1,5 +1,7 @@
 // Fetch wrappers around /api/projects (persistent) and /api/jobs (session).
 
+import { apiFetch } from "./client";
+
 import type { JobSnapshot } from "./jobs";
 
 export interface SnapshotSummary {
@@ -19,7 +21,7 @@ export interface ProjectSummary {
 }
 
 export async function listProjects(): Promise<ProjectSummary[]> {
-  const r = await fetch("/api/projects");
+  const r = await apiFetch("/api/projects");
   if (!r.ok) {
     throw new Error(`GET /api/projects → ${r.status}`);
   }
@@ -28,7 +30,7 @@ export async function listProjects(): Promise<ProjectSummary[]> {
 }
 
 export async function listJobs(): Promise<JobSnapshot[]> {
-  const r = await fetch("/api/jobs");
+  const r = await apiFetch("/api/jobs");
   if (!r.ok) {
     throw new Error(`GET /api/jobs → ${r.status}`);
   }

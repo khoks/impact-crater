@@ -1,5 +1,7 @@
 // Wrappers around /api/jobs/*.
 
+import { apiFetch } from "./client";
+
 export interface SubmitJobRequest {
   media_paths: string[];
   brief: string;
@@ -58,7 +60,7 @@ export interface CancelJobResponse {
 }
 
 export async function cancelJob(jobId: string): Promise<CancelJobResponse> {
-  const r = await fetch(`/api/jobs/${jobId}/cancel`, { method: "POST" });
+  const r = await apiFetch(`/api/jobs/${jobId}/cancel`, { method: "POST" });
   if (!r.ok) {
     const detail = await safeDetail(r);
     throw new Error(detail || `Cancel failed: ${r.status}`);
@@ -128,7 +130,7 @@ export type JobProgressEvent =
 
 
 export async function submitJob(req: SubmitJobRequest): Promise<SubmitJobResponse> {
-  const r = await fetch("/api/jobs/submit", {
+  const r = await apiFetch("/api/jobs/submit", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(req),
@@ -141,7 +143,7 @@ export async function submitJob(req: SubmitJobRequest): Promise<SubmitJobRespons
 }
 
 export async function getJob(jobId: string): Promise<JobSnapshot> {
-  const r = await fetch(`/api/jobs/${jobId}`);
+  const r = await apiFetch(`/api/jobs/${jobId}`);
   if (!r.ok) {
     throw new Error(`GET /api/jobs/${jobId} → ${r.status}`);
   }
@@ -168,7 +170,7 @@ export interface CostPreviewResponse {
 export async function fetchCostPreview(
   req: CostPreviewRequest
 ): Promise<CostPreviewResponse> {
-  const r = await fetch("/api/cost-preview", {
+  const r = await apiFetch("/api/cost-preview", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(req),
@@ -200,7 +202,7 @@ export interface EffortLevelsResponse {
 }
 
 export async function fetchEffortLevels(): Promise<EffortLevelsResponse> {
-  const r = await fetch("/api/effort-levels");
+  const r = await apiFetch("/api/effort-levels");
   if (!r.ok) {
     throw new Error(`GET /api/effort-levels → ${r.status}`);
   }
@@ -235,7 +237,7 @@ export async function postRefine(
   snapshotId: string,
   message: string
 ): Promise<RefineResponse> {
-  const r = await fetch(`/api/snapshots/${snapshotId}/refine`, {
+  const r = await apiFetch(`/api/snapshots/${snapshotId}/refine`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ refinement_message: message }),

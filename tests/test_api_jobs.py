@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock
 import httpx
 import numpy as np
 import pytest
+from impact_crater import api_auth
 from impact_crater.app import create_app
 from impact_crater.llm_clients.base import ArcJudgment, SelectedItem
 from impact_crater.pipeline import runner
@@ -89,7 +90,9 @@ async def client(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[httpx.AsyncCl
 
     app = create_app()
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://127.0.0.1", headers=api_auth.auth_header()
+    ) as ac:
         yield ac
 
 
@@ -181,7 +184,9 @@ async def test_headless_endpoint_412_when_no_keys(
     app = create_app()
     transport = httpx.ASGITransport(app=app)
     paths = [str(_photo(tmp_path, "p1.jpg", (200, 80, 30)))]
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://127.0.0.1", headers=api_auth.auth_header()
+    ) as ac:
         r = await ac.post(
             "/api/jobs/headless",
             json={

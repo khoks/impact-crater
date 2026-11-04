@@ -1,5 +1,7 @@
 // Wrappers around /api/persons/*.
 
+import { apiFetch } from "./client";
+
 export interface Person {
   id: string;
   display_name: string;
@@ -15,13 +17,13 @@ export interface FacePhoto {
 }
 
 export async function listPersons(): Promise<Person[]> {
-  const r = await fetch("/api/persons");
+  const r = await apiFetch("/api/persons");
   if (!r.ok) throw new Error(`GET /api/persons → ${r.status}`);
   return (await r.json()) as Person[];
 }
 
 export async function createPerson(displayName: string): Promise<Person> {
-  const r = await fetch("/api/persons", {
+  const r = await apiFetch("/api/persons", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ display_name: displayName }),
@@ -33,12 +35,12 @@ export async function createPerson(displayName: string): Promise<Person> {
 }
 
 export async function deletePerson(id: string): Promise<void> {
-  const r = await fetch(`/api/persons/${id}`, { method: "DELETE" });
+  const r = await apiFetch(`/api/persons/${id}`, { method: "DELETE" });
   if (!r.ok) throw new Error(`DELETE /api/persons/${id} → ${r.status}`);
 }
 
 export async function listFacePhotos(personId: string): Promise<FacePhoto[]> {
-  const r = await fetch(`/api/persons/${personId}/face-photos`);
+  const r = await apiFetch(`/api/persons/${personId}/face-photos`);
   if (!r.ok) throw new Error(`GET /api/persons/${personId}/face-photos → ${r.status}`);
   return (await r.json()) as FacePhoto[];
 }
@@ -49,7 +51,7 @@ export async function addFacePhoto(
   bbox: [number, number, number, number] = [0, 0, 1, 1],
   isPrimary = false
 ): Promise<FacePhoto> {
-  const r = await fetch(`/api/persons/${personId}/face-photos`, {
+  const r = await apiFetch(`/api/persons/${personId}/face-photos`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({

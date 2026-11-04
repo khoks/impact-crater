@@ -2,6 +2,8 @@
 //   feedback tracker  → /api/feedback (list / detail / patch)
 //   workplan tracker  → /api/workplan (tree / patch override / overrides)
 
+import { apiFetch } from "./client";
+
 export type Verdict = "correct" | "incorrect" | "different";
 export type FeedbackStatus = "new" | "triaged" | "addressed" | "dismissed";
 export type Priority = "P0" | "P1" | "P2" | "P3";
@@ -30,14 +32,14 @@ export interface FeedbackDetail extends FeedbackItem {
 
 export async function listFeedback(statusFilter?: string): Promise<FeedbackItem[]> {
   const qs = statusFilter ? `?status_filter=${encodeURIComponent(statusFilter)}` : "";
-  const r = await fetch(`/api/feedback${qs}`);
+  const r = await apiFetch(`/api/feedback${qs}`);
   if (!r.ok) throw new Error(`GET /api/feedback → ${r.status}`);
   const data: unknown = await r.json();
   return Array.isArray(data) ? (data as FeedbackItem[]) : [];
 }
 
 export async function getFeedbackDetail(id: number): Promise<FeedbackDetail> {
-  const r = await fetch(`/api/feedback/${id}`);
+  const r = await apiFetch(`/api/feedback/${id}`);
   if (!r.ok) throw new Error(`GET /api/feedback/${id} → ${r.status}`);
   return (await r.json()) as FeedbackDetail;
 }
@@ -46,7 +48,7 @@ export async function patchFeedback(
   id: number,
   patch: { status?: FeedbackStatus; priority?: Priority }
 ): Promise<FeedbackItem> {
-  const r = await fetch(`/api/feedback/${id}`, {
+  const r = await apiFetch(`/api/feedback/${id}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(patch),
@@ -80,7 +82,7 @@ export interface Workplan {
 }
 
 export async function fetchWorkplan(): Promise<Workplan> {
-  const r = await fetch("/api/workplan");
+  const r = await apiFetch("/api/workplan");
   if (!r.ok) throw new Error(`GET /api/workplan → ${r.status}`);
   return (await r.json()) as Workplan;
 }
@@ -89,7 +91,7 @@ export async function patchWorkplanItem(
   itemId: string,
   patch: { priority?: Priority; note?: string }
 ): Promise<void> {
-  const r = await fetch(`/api/workplan/${encodeURIComponent(itemId)}`, {
+  const r = await apiFetch(`/api/workplan/${encodeURIComponent(itemId)}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(patch),

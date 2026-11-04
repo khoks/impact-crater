@@ -1,5 +1,7 @@
 // Wrappers around /api/settings/*.
 
+import { apiFetch } from "./client";
+
 export interface SettingsSnapshot {
   has_anthropic_key: boolean;
   has_google_key: boolean;
@@ -19,7 +21,7 @@ export interface SettingsUpdate {
 }
 
 export async function fetchSettingsSnapshot(): Promise<SettingsSnapshot> {
-  const r = await fetch("/api/settings/snapshot");
+  const r = await apiFetch("/api/settings/snapshot");
   if (!r.ok) {
     throw new Error(`GET /api/settings/snapshot → ${r.status}`);
   }
@@ -27,7 +29,7 @@ export async function fetchSettingsSnapshot(): Promise<SettingsSnapshot> {
 }
 
 export async function updateSettings(update: SettingsUpdate): Promise<void> {
-  const r = await fetch("/api/settings/update", {
+  const r = await apiFetch("/api/settings/update", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(update),

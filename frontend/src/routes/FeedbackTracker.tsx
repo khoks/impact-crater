@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { apiFetch } from "../api/client";
 
 import {
   getFeedbackDetail,
@@ -179,7 +180,7 @@ function FeedbackDetailView({ id }: { id: number }) {
         // Pull the phase's full decision set (the media + decisions for the
         // step) from the snapshot diagnostics, when available.
         if (d.diagnostics_url) {
-          fetch(d.diagnostics_url)
+          apiFetch(d.diagnostics_url)
             .then((r) => (r.ok ? r.json() : null))
             .then((diag) => {
               if (cancelled || !diag) return;

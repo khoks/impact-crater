@@ -43,6 +43,10 @@ def fernet_key_path() -> Path:
     return db_dir() / ".fernet-key"
 
 
+def api_token_path() -> Path:
+    return home() / ".api-token"
+
+
 def projects_dir() -> Path:
     p = home() / "projects"
     p.mkdir(parents=True, exist_ok=True)

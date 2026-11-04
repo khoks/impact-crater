@@ -21,6 +21,7 @@ import {
   type StageProgress,
 } from "../api/jobs";
 import { DiagnosticsView } from "../components/DiagnosticsPanel";
+import { apiToken } from "../api/client";
 import type { DiagnosticPhase } from "../api/diagnostics";
 
 // Human, outcome-first phase names. The user never operates these — they just
@@ -174,6 +175,14 @@ export default function JobInProgress() {
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(`${proto}//${window.location.host}/api/jobs/ws/${job_id}`);
     wsRef.current = ws;
+    // The server closes the socket unless the first message carries the API token.
+    ws.onopen = () => {
+      apiToken()
+        .then((token) => ws.send(JSON.stringify({ type: "auth", token })))
+        .catch((err) => {
+          if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+        });
+    };
 
     ws.onmessage = (msg) => {
       let event: JobProgressEvent;

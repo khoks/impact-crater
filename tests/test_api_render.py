@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock
 import httpx
 import numpy as np
 import pytest
+from impact_crater import api_auth
 from impact_crater.app import create_app
 from impact_crater.llm_clients.base import ArcJudgment, SelectedItem
 from impact_crater.media import ffmpeg as ff
@@ -133,7 +134,9 @@ async def client(
     # Stash the prepared paths on the client so tests can read them.
     app = create_app()
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://127.0.0.1", headers=api_auth.auth_header()
+    ) as ac:
         ac._test_photo_paths = photo_paths  # type: ignore[attr-defined]
         ac._test_hashes = hashes  # type: ignore[attr-defined]
         yield ac

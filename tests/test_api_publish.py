@@ -8,6 +8,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from impact_crater import api_auth
 from impact_crater.api import publish
 from impact_crater.app import create_app
 from impact_crater.connectors import ConnectorUploadResult
@@ -78,7 +79,9 @@ async def client_with_setup(setup_publish) -> AsyncIterator[tuple[httpx.AsyncCli
     publish.set_connector_factory(lambda: YouTubeConnector(transport=FakeTransport()))
     app = create_app()
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://127.0.0.1", headers=api_auth.auth_header()
+    ) as ac:
         yield (ac, project_id, snapshot_id)
     publish.set_connector_factory(lambda: YouTubeConnector())
 
@@ -136,7 +139,9 @@ async def test_publish_500_path_when_connector_errors(setup_publish, monkeypatch
     publish.set_connector_factory(lambda: YouTubeConnector(transport=FakeTransport(fail=True)))
     app = create_app()
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://127.0.0.1", headers=api_auth.auth_header()
+    ) as ac:
         r = await ac.post(
             f"/api/snapshots/{snapshot_id}/publish",
             json={"title": "x"},

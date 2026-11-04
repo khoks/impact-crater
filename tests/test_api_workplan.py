@@ -7,6 +7,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from impact_crater import api_auth
 from impact_crater.app import create_app
 from impact_crater.storage.migrations import run_pending_migrations
 
@@ -46,7 +47,9 @@ async def client(
 
     app = create_app()
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://127.0.0.1", headers=api_auth.auth_header()
+    ) as ac:
         yield ac
 
 
@@ -93,7 +96,9 @@ async def test_workplan_empty_when_no_project_dir(
     monkeypatch.setenv("IMPACT_CRATER_PROJECT_DIR", str(tmp_path / "does-not-exist"))
     app = create_app()
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://127.0.0.1", headers=api_auth.auth_header()
+    ) as ac:
         body = (await ac.get("/api/workplan")).json()
     assert body["available"] is False
     assert body["items"] == []

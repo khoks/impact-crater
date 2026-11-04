@@ -1,6 +1,8 @@
 // Wrappers around the publish API. M7 shipped YouTube only (ADR-0013);
 // v1 adds Instagram + Facebook via the multi-platform connector framework.
 
+import { apiFetch } from "./client";
+
 export type Visibility = "private" | "unlisted" | "public";
 export type Platform = "youtube" | "instagram" | "facebook";
 
@@ -45,7 +47,7 @@ export interface PublishResponse {
 }
 
 export async function fetchYouTubeStatus(): Promise<YouTubeStatusResponse> {
-  const r = await fetch("/api/connectors/youtube/status");
+  const r = await apiFetch("/api/connectors/youtube/status");
   if (!r.ok) {
     throw new Error(`GET /api/connectors/youtube/status → ${r.status}`);
   }
@@ -53,7 +55,7 @@ export async function fetchYouTubeStatus(): Promise<YouTubeStatusResponse> {
 }
 
 export async function fetchAllConnectorsStatus(): Promise<AllConnectorsStatus> {
-  const r = await fetch("/api/connectors/status");
+  const r = await apiFetch("/api/connectors/status");
   if (!r.ok) {
     throw new Error(`GET /api/connectors/status → ${r.status}`);
   }
@@ -64,7 +66,7 @@ export async function publishSnapshot(
   snapshotId: string,
   req: PublishRequest
 ): Promise<PublishResponse> {
-  const r = await fetch(`/api/snapshots/${snapshotId}/publish`, {
+  const r = await apiFetch(`/api/snapshots/${snapshotId}/publish`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(req),

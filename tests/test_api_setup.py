@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 
 import httpx
 import pytest
+from impact_crater import api_auth
 from impact_crater.api import setup as setup_mod
 from impact_crater.app import create_app
 from impact_crater.llm_clients.exceptions import LLMOperationFailed
@@ -18,7 +19,9 @@ from impact_crater.storage.migrations import run_pending_migrations
 async def client() -> AsyncIterator[httpx.AsyncClient]:
     app = create_app()
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://127.0.0.1", headers=api_auth.auth_header()
+    ) as ac:
         yield ac
 
 

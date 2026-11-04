@@ -22,6 +22,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field
 
+from impact_crater import api_auth
 from impact_crater.jobs import get_registry
 from impact_crater.jobs.runner_glue import submit_full_pipeline_job
 from impact_crater.llm_clients.base import MusicSpec
@@ -39,6 +40,8 @@ from impact_crater.storage import settings as settings_store
 from impact_crater.storage.db import connection
 
 log = logging.getLogger(__name__)
+
+_WS_AUTH_TIMEOUT_S = 10.0
 
 router = APIRouter()
 
@@ -401,9 +404,31 @@ async def ws_job_progress(websocket: WebSocket, job_id: str) -> None:
     """Stream JobProgressEvent messages until the job terminates.
 
     The registry replays the current state on subscribe so late joiners
-    don't miss the transitions that already happened.
+    don't miss the transitions that already happened. The first client message must be
+    `{"type": "auth", "token": ...}` (S-3.11.3); a foreign Origin is refused at the handshake.
     """
+    if not api_auth.origin_allowed(websocket.headers.get("origin"), websocket.headers.get("host")):
+        log.warning(
+            "ws_rejected_origin job_id=%s origin=%s", job_id, websocket.headers.get("origin")
+        )
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
     await websocket.accept()
+    try:
+        hello = await asyncio.wait_for(websocket.receive_json(), timeout=_WS_AUTH_TIMEOUT_S)
+    except WebSocketDisconnect:
+        return  # the page closed the socket first (e.g. React StrictMode's double mount)
+    except Exception:
+        hello = None
+    if not (
+        isinstance(hello, dict)
+        and hello.get("type") == "auth"
+        and api_auth.token_matches(hello.get("token"), websocket.app.state.api_token)
+    ):
+        log.warning("ws_rejected_token job_id=%s", job_id)
+        with contextlib.suppress(Exception):
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
     registry = get_registry()
     if registry.get(job_id) is None:
         log.warning("ws_unknown_job job_id=%s", job_id)

@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-from impact_crater import paths
+from impact_crater import api_auth, paths
 from impact_crater.app import create_app
 from impact_crater.pipeline import runner
 from impact_crater.pipeline.stage6_plan import RenderClip, RenderPlan
@@ -84,7 +84,9 @@ async def client_with_snapshot(
     monkeypatch.setattr(runner, "build_router_from_settings", fake_build)
     app = create_app()
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://127.0.0.1", headers=api_auth.auth_header()
+    ) as ac:
         yield (ac, snapshot_id)
 
 
@@ -112,7 +114,9 @@ async def test_refine_endpoint_explanation(monkeypatch, setup_snapshot) -> None:
     monkeypatch.setattr(runner, "build_router_from_settings", fake_build)
     app = create_app()
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://127.0.0.1", headers=api_auth.auth_header()
+    ) as ac:
         r = await ac.post(
             f"/api/snapshots/{snapshot_id}/refine", json={"refinement_message": "add snow"}
         )
@@ -139,7 +143,9 @@ async def test_refine_endpoint_404_for_unknown_snapshot(monkeypatch) -> None:
     monkeypatch.setattr(runner, "build_router_from_settings", fake_build)
     app = create_app()
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://127.0.0.1", headers=api_auth.auth_header()
+    ) as ac:
         r = await ac.post("/api/snapshots/nonexistent/refine", json={"refinement_message": "x"})
     assert r.status_code == 404
 

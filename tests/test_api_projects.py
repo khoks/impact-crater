@@ -7,6 +7,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from impact_crater import api_auth
 from impact_crater.app import create_app
 from impact_crater.storage.db import connection
 from impact_crater.storage.migrations import run_pending_migrations
@@ -17,7 +18,9 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
     await run_pending_migrations()
     app = create_app()
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://127.0.0.1", headers=api_auth.auth_header()
+    ) as ac:
         yield ac
 
 

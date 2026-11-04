@@ -1,5 +1,7 @@
 // Wrappers around /api/folder/*.
 
+import { apiFetch } from "./client";
+
 export interface FolderScanItem {
   path: string;
   media_type: "photo" | "video";
@@ -16,7 +18,7 @@ export interface FolderScanResponse {
 }
 
 export async function scanFolder(path: string): Promise<FolderScanResponse> {
-  const r = await fetch(
+  const r = await apiFetch(
     `/api/folder/scan?path=${encodeURIComponent(path)}`
   );
   if (!r.ok) {
