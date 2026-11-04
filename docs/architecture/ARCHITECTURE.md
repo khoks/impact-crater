@@ -172,6 +172,18 @@ The sections above are the E-1.3 design as locked on 2026-05-03 and are kept ver
 - **2026-07-01 — Current model pins** (`config/llm-routing.yaml`, since PR #72): `claude-sonnet-4-6` (Tier-M — `extract_metadata_image` / `_video_scene`, `parse_user_brief`; the Stage 6.5 second-guess and the Stage 9 planner both ride `parse_user_brief`), `claude-opus-4-8` (Tier-L `judge_narrative_arc`, `max_tokens` 8192; `temperature` is omitted because the model rejects it), `gemini-2.5-flash` (Tier-S `caption_image`, `score_image`, `generate_title_text`), `gemini-2.5-flash-image` (`generate_title_background`), `gemini-embedding-001` (`embed_image` / `embed_text`). `prompts/` holds seven Jinja2 templates named after these models. These replace ADR-0009's Sonnet 4.7 / Opus 4.7 / `text-embedding-004`; S-2.10.9 bumps them again with pinned `model_version` tokens.
 - **2026-10-25 — Phase 1 model lineup (S-2.10.9, D-061).** `config/llm-routing.yaml` now pins `claude-haiku-5-5` (Tier-S captions / scores / title text and Tier-M metadata / brief / second-guess / Stage 9 planner, `effort: low`; Tier-M A/B-gated with `claude-sonnet-5-5` as the hedge), `claude-opus-5-5` (Tier-L judge, `effort: high`, `max_tokens` 20000), `gemini-embedding-2` (embeds the image bytes — the caption-then-embed workaround is gone; the 0.93 cosine dedup threshold is re-tuned on the Zion fixture, S-3.10.1) and `gemini-3.1-flash-lite-image` (title-card background, 16:9 at 1K), each with a release-date `model_version` that selects the rate card and the cache namespace. The clients send no `temperature` to Anthropic, pass `effort` through (`output_config.effort` / `thinking_config.thinking_level`), keep `submit_score` strict (the metadata schema exceeds the strict limits, so `submit_metadata` relies on the prompt, one retry and the pydantic parse), and raise readable failures on `refusal` / `model_context_window_exceeded` / `max_tokens`. `LLMRouter.verify_routes` resolves every pin with the stored keys (unbilled) inside `build_router_from_settings`, so a retired ID fails at submit (412) instead of after the Stage 2 spend — the opt-in title-card model only warns; the wizard's Test-key button runs the same ping per provider. Gemini image / thinking tokens are metered from `usage_metadata`; the Opus rate cards were 3× too high ($15 / $75 vs $5 / $25) from 2026-06-01 to 2026-10-25. Every client call goes through the router's `_dispatch`, which meters a call the provider billed even when it then fails, and an exhausted retry surfaces as `LLMOperationFailed` (D-063). Stage 3 recovers Haiku 5.5's tool-use XML leaks in the metadata model itself (D-062).
 
+- **2026-11-03 — Local API guard (ADR-0022, D-067) and test CI (D-065).**
+  - `api_auth.py` adds a per-install token at `~/.impact-crater/.api-token`, required on every `/api` request except the tag-loaded media files, health and the docs.
+  - `is_local` means a loopback client, a loopback Host and no forwarding hop. It gates the exemptions, `GET /api/session` and the token meta tag on the served `index.html`.
+  - `HostGuardMiddleware` refuses foreign Host headers unless `--allow-remote` is passed.
+  - The job WebSocket checks Origin and wants `{type: auth, token}` as its first message.
+  - The SPA fallback is contained to the dist folder.
+  - `.github/workflows/ci.yml` runs lint, types and tests on Ubuntu and Windows on every PR. It is not yet a required check.
+- **2026-11-03 — Publishing: a dry-run switch in Settings and the render hash on audit rows (D-068).**
+  - `connectors/dry_run.is_dry_run_enabled` reads an explicit `IC_PUBLISH_DRY_RUN` first, then the `publish_dry_run` setting loaded at startup, defaulting to dry-run.
+  - `api/publish.py` writes the approved render's SHA-256 to `audit_log.render_content_hash`.
+  - `GET /api/snapshots/{id}/publish-defaults` pre-fills the panel from `TitleCardSpec.resolved_title`, else the project name, else the brief.
+
 ---
 
 ## Accepted ADRs (E-1.3 complete, 2026-05-03)
@@ -214,5 +226,7 @@ The sections above are the E-1.3 design as locked on 2026-05-03 and are kept ver
 **Restart truth (ADR-0021; E-2.13, 2026-10-25):**
 
 - [ADR-0021-deterministic-stage-runner.md](./ADR-0021-deterministic-stage-runner.md) — The harness that shipped: a deterministic 9-stage runner (`pipeline/runner.py`) with single-shot structured LLM calls through `LLMRouter`, progress over the job WebSocket; N-009 realised as the single-call `RefinementOutcome` planner (D-056); the agentic loop deferred to E-4.2 / E-4.3; the orphaned `tool_call` / `stream_chat` / `OrchestratorTurnEvent` / `orchestrator_reasoning` plumbing deleted (S-2.13.7). Supersedes ADR-0014's harness sections. Accepted 2026-10-25.
+
+- [ADR-0022-local-api-token-and-loopback-guard.md](./ADR-0022-local-api-token-and-loopback-guard.md) — Per-install API token on every `/api` request bar tag-loaded media; `is_local` (loopback client + loopback Host + no forwarding hop) gates the token hand-out; Host guard; WebSocket first-message auth + Origin check; `--allow-remote`. Amends ADR-0005. Accepted 2026-11-03 (S-3.11.3).
 
 **No pending ADRs.** E-1.3 closed 2026-05-03; the restart truth bundle (S-2.13.5, 2026-10-25) added ADR-0021 and dated amendments to ADR-0006 / 0007 / 0009 / 0010 / 0012 / 0013 / 0014 / 0018 / 0020 (plus inline pointers in ADR-0011 and N-009).

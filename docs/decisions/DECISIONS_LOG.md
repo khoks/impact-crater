@@ -1282,3 +1282,80 @@ Reserved by D-057 for the measurable single-video quality gate (restart Phase 2 
 - **Alternatives considered:** let a "slower" refine overrun the target duration — rejected, the user set the length and the music is fitted to it; raise the photo band globally — rejected, it brings back the 5–7 s photo holds S-2.11.1 removed.
 - **Consequences:** S-3.11.8 changes the planner prompt and adds a clip-count lever plus a plan-diff reply; the S-3.10.1 harness gets a "slower raises the mean photo hold" assertion. MVP gate #8 stays ticked (the June refines changed content and pacing), but a pacing refine could report success while doing the opposite until S-3.11.8 lands.
 - **Linked ADRs / items:** ADR-0019, ADR-0021, S-2.12.2, S-2.11.1, S-2.9.21, S-3.11.8, S-3.10.1.
+### D-065 — Lint and types are enforced, not aspirational; CI runs on Ubuntu and Windows
+- **Status:** accepted
+- **Date:** 2026-11-03
+- **Context:** The restart audit assumed ruff and `mypy --strict` were enforced. On 2026-11-03 the tree had 160 ruff violations, 66 unformatted files and 60 strict-mypy errors in 22 files. There was no test CI, and the suite had only ever run on the owner's Windows machine (S-3.11.6, S-3.11.2).
+- **Decision:**
+  - **Clean the whole tree in one behaviour-preserving PR (#117), then enforce it.** The configuration choices:
+    - `N818` is ignored, because renaming `LLMOperationFailed`, `JobCancelled` and the rest is churn with no behavioural gain.
+    - `allowed-confusables` admits the typographic `×` `–` `α` `γ` the docstrings use on purpose.
+    - `StageId` keeps `(str, Enum)` under `# noqa: UP042`, because `StrEnum` changes `str()` / `format()` output.
+    - `zip(strict=False)` where truncation was already tolerated, `strict=True` where the lengths are guaranteed.
+  - **CI (PR #118):**
+    - Backend: ruff, ruff format, mypy and the non-integration pytest on `ubuntu-latest` and `windows-latest`, installed from `requirements-lock.txt` with ffmpeg. The coverage floor is 80 %, under the 82 % measured on both OSes.
+    - Frontend on Node 24: `npm ci`, typecheck, vitest and build.
+    - Docs: `mkdocs build --strict`, with mkdocs 1.6.1 and mkdocs-material 9.7.6 pinned in `ci.yml` and `pages.yml`. MkDocs 2.0 drops the plugin system Material needs.
+- **Alternatives considered:**
+  - Pin an older ruff to avoid the churn — rejected; the lock already pins 0.17.1.
+  - Keep the "no new violations in touched files" rule — rejected, because CI cannot gate on a red baseline.
+  - Make CI required on master at once — deferred, because branch protection and the ADR-0004 `--admin` → `--auto` switch change repo settings and the merge flow, so they wait for the owner's go-ahead.
+- **Consequences:**
+  - CLAUDE.md and CONTRIBUTING.md now say lint and types must be clean.
+  - The first Linux run passed: 525 passed, 12 skipped, 82 %.
+  - ADR-0004's "CI gate" revisit trigger is available but not yet fired.
+  - The sweep found a real bug (D-066).
+- **Linked ADRs / items:** ADR-0004, S-3.11.6, S-3.11.2, PR #117, PR #118.
+
+### D-066 — Bug: a quota-denied background job crashed inside its own exception handler
+- **Status:** accepted (fixed)
+- **Date:** 2026-11-03
+- **Context:** `jobs/runner_glue._run_and_capture` maps pipeline exceptions to terminal job states. `mypy --strict` flagged `attr-defined` on its `except QuotaDeniedError` branch during the S-3.11.6 sweep.
+- **Root cause:**
+  - The handler logged `exc.quota_snapshot`, but the exception's attribute is `snapshot`.
+  - An exception raised inside an `except` block is not caught by that `try`'s sibling handlers. So the `AttributeError` escaped, the task died, and the job stayed `running` forever with no failure reason.
+  - No test covered it. The submit API's own 402 pre-check usually refuses first, so the path runs only when the runner's check denies a job the API already accepted.
+- **Decision:** Read `exc.snapshot`, and add `tests/test_runner_glue_failures.py`, which fails with the `AttributeError` before the fix.
+- **Alternatives considered:** Rename the attribute to `quota_snapshot` — rejected, since other callers use `snapshot`.
+- **Consequences:** Strict typing pays for itself on untested error paths, which is one more reason CI enforces it (D-065).
+- **Linked ADRs / items:** S-3.11.6, PR #117.
+
+### D-067 — The local API needs a per-install token, and "local" means more than a loopback client address
+- **Status:** accepted
+- **Date:** 2026-11-03
+- **Context:** No route and not the job WebSocket checked who was calling. A DNS-rebinding page could reach every route, and `--host 0.0.0.0` exposed the API with no warning. S-3.3.5 (in-app YouTube OAuth) and any Instagram public URL would widen that exposure (S-3.11.3).
+- **Decision:** ADR-0022, as revised before merge:
+  - A per-install bearer token on every `/api` request. Exempt: the media files that `<img>` / `<video>` tags load (thumbnails, `render.mp4`, feedback screenshots), health and the docs.
+  - Those exemptions, the `/api/session` bootstrap and the token meta tag apply only to a **local** request: a loopback client, a loopback Host, and no forwarding hop.
+  - A Host guard that also parses IPv6.
+  - WebSocket auth in the first message, plus an Origin check.
+  - `--allow-remote` is required for a non-loopback `--host`.
+- **Root causes found by the independent pre-merge review of the first version:**
+  - **Client IP alone is not "local".** With `--allow-remote` the Host check was lifted, so a rebinding page connecting from 127.0.0.1 was handed the token by `/api/session`. A tunnel or `vite --host` also forwards remote callers from 127.0.0.1. The fix requires a loopback Host and no non-loopback `X-Forwarded-For` / `Forwarded`, and the Vite proxy sets `xfwd`.
+  - **Pre-existing path traversal:** the SPA fallback served `dist_dir / full_path` for any decoded path, including `/%2e%2e/.api-token`, the Fernet key and the database. It is now contained to the dist folder.
+  - **Tokenless reads had side effects:** `GET /api/folder/scan` let any page block the event loop with a large `rglob`, or make Windows open an SMB session (offering NTLM) to a UNC host. The fix is a token by default, UNC paths refused, and the walk run in a thread.
+- **Alternatives considered:**
+  - Token on mutating routes only — rejected after the review; reads leak personal data and have side effects.
+  - Token in the WebSocket URL — rejected, because query strings land in logs.
+  - Starlette's `TrustedHostMiddleware` — replaced, because it mis-parses `[::1]`.
+- **Consequences:**
+  - The UI stays loopback-only even with `--allow-remote`, since no remote browser gets the token.
+  - The Instagram guide's ngrok tunnel is refused by design until a single expiring signed media URL exists (planned with the Instagram public-URL work in Phase 4).
+  - Test clients use `127.0.0.1` plus `api_auth.auth_header()`.
+- **Linked ADRs / items:** ADR-0022, ADR-0005, ADR-0013, S-3.11.3, S-3.3.5, PR #120.
+
+### D-068 — Dry-run is a Settings switch, and an explicit `IC_PUBLISH_DRY_RUN` overrides it
+- **Status:** accepted
+- **Date:** 2026-11-03
+- **Context:** Restart plan Phase 1 item 5 (S-3.3.8). Switching dry-run meant editing an env var and restarting. The first dry-runs also showed the publish panel contradicting the connectors on caption, visibility, defaults and dry-run wording, and the audit row did not record which render was approved.
+- **Decision:**
+  - **Precedence:** a non-empty `IC_PUBLISH_DRY_RUN` wins and locks the switch (`0` / `false` / `no` / `off` = live, any other value = dry-run). Otherwise the Settings → Publishing switch decides; it is stored as `publish_dry_run`, loaded at startup and applied on save. With neither set, dry-run stays on. D-060 still holds: unset or empty never means live.
+  - **Audit row:** carries the approved render's SHA-256.
+  - **Panel:** offers only each platform's visibilities, with `private` first. It pre-fills the title card's text (recorded as `TitleCardSpec.resolved_title`), else the project's own name, else the brief's first sentence, with the brief as the description.
+- **Alternatives considered:**
+  - Settings overrides the env — rejected, because a launcher that pins dry-run on must stay safe.
+  - Drop the env var — rejected, because it is the documented path and the test harness uses it.
+- **Consequences:**
+  - The real private YouTube upload (S-2.9.21) needs the credentials plus one switch, with no restart.
+  - The audit-log viewer (Phase 1 item 8) can tie each post to its file.
+- **Linked ADRs / items:** D-060, ADR-0013, S-3.3.8, S-2.9.21, PR #121.
