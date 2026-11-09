@@ -1,20 +1,17 @@
 # Board
 
-> **Last updated:** 2026-11-03 — **Phase 1 hardening day.**
+> **Last updated:** 2026-11-08 — **Phase 1 finished on Claude's side; Phase 2 started.**
 >
-> - **First publish dry-runs (S-2.9.21, PRs #115 / #116):**
->   - A YouTube dry-run at `private` wrote audit row 1. Instagram and Facebook refuse without credentials, so their half moved to E-3.3.
->   - A pacing refine showed the target fit cancelling "slower" (S-3.11.8, D-064).
->   - The owner then **parked the real private upload** for a few days.
-> - **Shipped next:**
->   - **S-3.11.6** (PR #117): whole-tree ruff / format / `mypy --strict` clean. It found a quota-denied job that crashed in its own handler (D-066).
->   - **S-3.11.2, first half** (PR #118): CI on Ubuntu + Windows, frontend, strict docs build. The first Linux run passed 525 / 12. Making it a required check waits for the owner (D-065).
->   - **S-3.11.3** (PR #120, ADR-0022, D-067): per-install API token, `is_local`, Host guard, WebSocket auth, `--allow-remote`. A pre-merge review found seven issues, all fixed.
->   - **S-3.3.8** (PR #121, D-068): an honest publish panel, a dry-run switch in Settings, the render hash on audit rows. Verified on a $0 cached Zion re-run (audit row 2).
-> - **Filed:** S-3.3.9 (audit-log viewer, plan item 8).
-> - **Owner actions:** YouTube credentials for the private upload; dependabot #111 / #112 / #114 / #119 (#119 repeats the tenacity / google-genai conflict); Google billing; CI as a required check; GitHub private vulnerability reporting.
-> - **Next:** S-3.5.5 (publish / refine from any snapshot), S-3.3.9, then Phase 2 (S-2.9.19).
+> - **Shipped:**
+>   - **S-3.5.5, first half** (PR #124, D-069): publish and refine from any snapshot's Inspect page, the refine chain on the Dashboard, `refined_from.json` on new children.
+>   - **S-3.3.9** (PR #125): the Publish log page, built on `GET /api/audit`, with a check of each render on disk against the approved hash.
+>   - **S-2.9.19** (PR #126, D-070): jobs survive a server restart, and a job a restart cut off is marked interrupted. Verified with two $0 cached Zion runs and restarts.
+>   - **S-3.11.1** (PR #127, D-071, ADR-0015 amendment): a cap check before every paid call, a halt on a reached cap or exhausted credit, and a UTC quota day. Verified with a $0 refusal.
+> - **CI:** the owner said "not yet" to making it required (D-072). PR #126's CI failed on a librosa cold start inside a 30 s test budget; the fix landed in PR #127.
+> - **Owner actions:** YouTube credentials for the private upload (S-2.9.21); the OAuth decision (plan item 3c) and a Google OAuth client (S-3.3.5); dependabot #111 / #112 / #114 / #119; Google billing; private vulnerability reporting.
+> - **Next:** S-3.10.1 (the $0 eval harness), then the D-058 quality gate, S-2.9.18 (token-aware estimate) and S-3.5.5's refine-as-a-job half.
 > - Status page for mobile: https://claude.ai/artifact/72YYfsypkH22pfeauz5APA
+> **Earlier (2026-11-03):** **Phase 1 hardening day.** First publish dry-runs (S-2.9.21; the owner then parked the real upload); S-3.11.6 lint/type sweep (PR #117, D-066); S-3.11.2 CI on Ubuntu + Windows (PR #118, D-065); S-3.11.3 local API guard (PR #120, ADR-0022, D-067); S-3.3.8 honest publish panel and dry-run switch (PR #121, D-068); S-3.3.9 filed.
 > **Earlier (2026-10-25):** **Phase 0 session 2: ADR truth bundle (S-2.13.5, PR #85) + dead-code sweep (S-2.13.7, PR #99) + post-merge review (PR #100).** ADR-0021 records the deterministic 9-stage runner with single-shot structured calls and supersedes ADR-0014's harness sections; dated, code-verified amendments on ADR-0006 / 0007 / 0009 / 0010 / 0012 / 0013 / 0014 / 0018 / 0020 (ADR-0013: env-var credentials + dry-run default layered beside the dormant OAuth / Fernet path, UI visibility private-first with S-3.3.5, key management); D-059 (third-party ML asset licensing — insightface stays opt-in) with D-058 left reserved for the quality gate; D-060 (an empty `IC_PUBLISH_DRY_RUN` switched live posting on — fixed with a test); `NOTICE.md`, `CONTRIBUTING.md` (DCO), `SECURITY.md`, `CODE_OF_CONDUCT.md`, `.github/dependabot.yml` (its first sweep opened PRs #86–#98 — owner to decide). Code: `api/ws.py` gone, `config/llm-routing.yaml` 15 → 9 ops each with a router method and a tier-table guard test, `OrchestratorTurnEvent` / `tool_call` / `stream_chat` / the never-implemented video-scene methods deleted, stale docstrings swept; 478 tests / 7 skipped, frontend 38, Pages still green on the 2026-10-24 stamp. **7 of 8 E-2.13 stories done**; only S-2.13.8 (the owner's model IDs → S-2.10.9) stays in-progress, so Phase 1 opens as soon as they arrive. Owner actions: enable GitHub private vulnerability reporting; decide the 13 dependabot PRs. Housekeeping: knowledge-curator PR #103 (PIPELINE_DATAFLOW stamp, ADR-0004 merge-race note), work-tracker PR #104 (this header, pointer refresh).
 > **Earlier (2026-10-24):** **Phase 0 session 1: hygiene (S-2.13.6, PR #77) + tracker reconciliation (S-2.13.1).** Every table below is now **generated from frontmatter** by `scripts/tracker_board.py` (`--check` fails on drift; the status tally sits at the bottom). What changed: E-2.10 closed (2026-07-01, PR #72) once S-2.10.8 moved to E-3.1 and S-2.10.4 / S-2.10.9 to the new **E-3.11** (restart Phases 1–2 hardening + release engineering); **E-3.10** (quality eval harness + golden set, A-029) and **E-4.6** (AI crowd removal, hosting S-2.9.7) filed; 20 new stories groomed for the restart plan (S-3.3.4–7, S-3.5.5–7, S-3.2.5, S-3.1.4–5, S-3.8.3, S-3.9.3–4, S-3.10.1–3, S-3.11.1–5); I-2 Children = E-2.1..E-2.13; E-2.9 lists all 17 remaining children; E-2.5/E-2.6 Children filled, E-2.7/E-2.8 marked delivered epic-level, E-2.6 relabelled done-at-MVP-scope; S-3.3.1 (Instagram) and S-3.3.2 (Facebook) done — env-var credentials, dry-run only, never live-tested — and E-3.3 → in-progress, so **I-3 → in-progress** (hardening only; the v1 feature epics open on the Phase 4 D-NNN per D-057); S-2.6.4 canceled (→ S-3.1.3), S-2.6.2 re-homed to E-3.1 with its false ticks removed; S-2.9.17 re-scoped to the HTTP Range check; S-2.9.19 promoted to mvp-hardening P1; S-2.9.4 → E-3.6, S-2.9.15 → E-3.9. **Vocabulary now defined in `project/README.md`:** `deferred`, `backlog` (initiatives only), `ready` is not a status, the `mvp-hardening` phase (E-2.10/11/12 and their stories retagged, per D-057), child-inherits-epic-phase, `plan-phase-N` tags, and the four acceptance-box annotations (every unchecked box on a done item now says `verified by` / `deferred →` / `superseded by` / `unverified`). Feedback triage (S-2.13.3), D-057 + MVP.md (S-2.13.2) and the public-trust docs pass (S-2.13.4) follow in this session; the ADR truth bundle (S-2.13.5) and dead-code sweep (S-2.13.7) are queued for session 2.
 > **Earlier (2026-10-24, restart audit):** **Restart audit + 7-phase plan (docs/roadmap/LANDSCAPE-AND-PLAN-2026-10-24.md).** First session after a ~4-month pause. An 8-dimension audit (tracker, hygiene, code-vs-claims, vision/future, decisions, testing, usability, done-inventory), each adversarially verified, found: the single-video journey is wired end to end and the curate→preview half of D-014 stands (1,663 assets; 60 min warm resume after a 2h55m cold run that died on credit exhaustion; ~$50 total), but **no publish has ever executed** (audit 0 rows; in-app OAuth never built; dry-run default), the profile / person library / privacy toggles / effort levels / second-guess are **built but inert**, the job registry is in-memory (three 900+ media jobs lost on 2026-06-30), routing pins **Claude 4.x IDs** that may be retired, `~/.impact-crater/projects` is **92 GB** from per-project scene caches, 11 feedback items are still `new`, and the tracker/docs overstate delivery. Backend 476 pass / 7 skipped, frontend 38 vitest + tsc green today. **Filed:** E-2.13 (Phase 0: honest close-out + hygiene, 8 stories) and S-2.10.9 (model-lineup bump, first Phase 1 story). **Known drift left for S-2.13.1 on purpose (one reconciliation PR):** E-2.10 frontmatter in-progress vs the Recently Done row below; I-2/E-2.9 Children lists stale; S-2.6.2/S-2.6.4 false ticks; S-3.3.1/S-3.3.2 todo though IG/FB connectors landed in PR #34; S-2.9.17 premise false. The rows below were corrected only where frontmatter already contradicted them (S-2.10.5/6/7 removed from Up Next / Backlog; duplicate S-2.10.8 row removed). **Knowledge swept:** A-027, A-028, A-029; landscape doc merged in PR #75.
@@ -38,6 +35,7 @@
 | [S-3.11.2](./stories/S-3.11.2-test-ci.md) | Test CI — ruff / mypy / pytest / vitest / build / mkdocs on ubuntu and windows; branch protection; ADR-0004 --admin → --auto (plan-phase-1) | Story | P0 | mvp-hardening | in-progress |
 | [I-3](./initiatives/I-3-v1-local-first-live-job-multi-platform-style-polish.md) | v1 — Local-first + live job + multi-platform + style + polish | Initiative | P1 | v1 | in-progress |
 | [E-3.3](./epics/E-3.3-multi-platform-connectors-instagram-facebook-x.md) | Multi-platform connectors — Instagram + Facebook + X (plan-phase-1, plan-phase-4) | Epic | P1 | v1 | in-progress |
+| [E-3.5](./epics/E-3.5-power-user-polish-bundle.md) | Power-user + polish bundle (plan-phase-1, plan-phase-2, plan-phase-3) | Epic | P1 | v1 | in-progress |
 | [S-3.5.5](./stories/S-3.5.5-refine-as-job-and-publish-from-any-snapshot.md) | Refine as a job + publish from any snapshot (SnapshotInspect canonical preview) (plan-phase-1, plan-phase-2) | Story | P1 | v1 | in-progress |
 
 ## Up Next (Ready)
@@ -47,7 +45,6 @@
 | [E-3.10](./epics/E-3.10-quality-eval-harness-and-golden-set.md) | Quality eval harness + golden set (plan-phase-2) | Epic | P0 | mvp-hardening | todo |
 | [S-3.3.5](./stories/S-3.3.5-connect-youtube-in-settings.md) | Connect YouTube in Settings (loopback OAuth → connector_credentials) (plan-phase-1) | Story | P0 | v1 | todo |
 | [S-3.10.1](./stories/S-3.10.1-eval-plan-script-and-thresholds.md) | scripts/eval_plan.py + D-058 thresholds on frozen SW-US and Zion fixtures (pytest -m eval) (plan-phase-2) | Story | P0 | mvp-hardening | todo |
-| [E-3.5](./epics/E-3.5-power-user-polish-bundle.md) | Power-user + polish bundle (plan-phase-1, plan-phase-2, plan-phase-3) | Epic | P1 | v1 | todo |
 | [S-3.10.2](./stories/S-3.10.2-golden-set-from-feedback.md) | Golden set — export the owner's decision-level feedback verdicts; harness reports agreement (plan-phase-2) | Story | P1 | mvp-hardening | todo |
 | [S-2.9.18](./stories/S-2.9.18-token-aware-pre-job-cost-estimate.md) | Token-aware pre-job cost estimate (align the preview with the now-accurate meter) (plan-phase-2) | Story | P2 | mvp-hardening | todo |
 | [S-2.10.4](./stories/S-2.10.4-trip-cast-group-crowd-tightening.md) | Trip-cast group/crowd tightening (appearance/day gate + merge + detection) (plan-phase-2) | Story | P2 | mvp-hardening | todo |
@@ -88,7 +85,7 @@ Placeholder stories backfilled on 2026-06-14 plus later filings whose restart-pl
 | [E-3.2](./epics/E-3.2-live-job-continuous-ingest-multi-output-orchestration.md) | Live job — continuous ingest + multi-output orchestration | v1 | todo | 5 todo | S-3.2.1, S-3.2.2, S-3.2.3, S-3.2.4, S-3.2.5 |
 | [E-3.3](./epics/E-3.3-multi-platform-connectors-instagram-facebook-x.md) | Multi-platform connectors — Instagram + Facebook + X | v1 | in-progress | 4 todo | S-3.3.3, S-3.3.4, S-3.3.6, S-3.3.7 |
 | [E-3.4](./epics/E-3.4-reference-media-style-learning.md) | Reference-media style learning | v1 | todo | 2 todo | S-3.4.1, S-3.4.2 |
-| [E-3.5](./epics/E-3.5-power-user-polish-bundle.md) | Power-user + polish bundle | v1 | todo | 4 todo | S-3.5.1, S-3.5.2, S-3.5.3, S-3.5.4 |
+| [E-3.5](./epics/E-3.5-power-user-polish-bundle.md) | Power-user + polish bundle | v1 | in-progress | 4 todo | S-3.5.1, S-3.5.2, S-3.5.3, S-3.5.4 |
 | [E-3.6](./epics/E-3.6-auto-photo-video-editing.md) | Auto photo / video editing | v1 | todo | 1 todo | S-3.6.1 |
 | [E-3.7](./epics/E-3.7-music-sourcing-expansion.md) | Music sourcing expansion | v1 | todo | 2 todo | S-3.7.1, S-3.7.2 |
 | [E-3.8](./epics/E-3.8-llm-driven-profile-re-derivation.md) | LLM-driven profile re-derivation | v1 | todo | 2 todo | S-3.8.1, S-3.8.2 |
@@ -196,7 +193,7 @@ Placeholder stories backfilled on 2026-06-14 plus later filings whose restart-pl
 |---|---|---|---|---|
 | [I-1](./initiatives/I-1-project-foundation.md) | Project foundation | done | scaffolding | 5 epics: 5 done |
 | [I-2](./initiatives/I-2-mvp.md) | MVP — Story Video to YouTube | in-progress | mvp | 13 epics: 12 done, 1 in-progress |
-| [I-3](./initiatives/I-3-v1-local-first-live-job-multi-platform-style-polish.md) | v1 — Local-first + live job + multi-platform + style + polish | in-progress | v1 | 11 epics: 2 in-progress, 9 todo |
+| [I-3](./initiatives/I-3-v1-local-first-live-job-multi-platform-style-polish.md) | v1 — Local-first + live job + multi-platform + style + polish | in-progress | v1 | 11 epics: 3 in-progress, 8 todo |
 | [I-4](./initiatives/I-4-v2-mobile-multi-agent-conversational-generated-music-trip-pa.md) | v2 — Mobile + multi-agent + conversational + generated music + Trip Package | backlog | v2 | 6 epics: 6 todo |
 | [I-5](./initiatives/I-5-v3-hosted-multi-tenant-saas.md) | v3 — Hosted multi-tenant SaaS | backlog | v3 | 3 epics: 3 todo |
 
@@ -207,7 +204,7 @@ Regenerate with `python scripts/tracker_board.py`; `--check` fails when this fil
 | Type | backlog | canceled | deferred | done | in-progress | todo | Total |
 |---|---|---|---|---|---|---|---|
 | Initiative | 2 | 0 | 0 | 1 | 2 | 0 | 5 |
-| Epic | 0 | 0 | 0 | 17 | 3 | 18 | 38 |
+| Epic | 0 | 0 | 0 | 17 | 4 | 17 | 38 |
 | Story | 0 | 1 | 1 | 85 | 3 | 60 | 150 |
 | Task | 0 | 0 | 0 | 30 | 0 | 0 | 30 |
-| **All** | 2 | 1 | 1 | 133 | 8 | 78 | 223 |
+| **All** | 2 | 1 | 1 | 133 | 9 | 77 | 223 |
