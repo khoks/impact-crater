@@ -4,6 +4,7 @@
   POST /api/connectors/youtube/disconnect — revoke + clear creds
   GET  /api/connectors/youtube/status     — connected state + handle
   GET  /api/projects/{id}/audit           — last N publishes for a project
+  GET  /api/audit                         — every publish attempt, paged (S-3.3.9)
 
 OAuth init/callback intentionally NOT here — they need a real OAuth
 client config the user provides. The callback handler will land alongside
@@ -20,9 +21,9 @@ import re
 import secrets
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from impact_crater import audit
@@ -376,3 +377,90 @@ async def all_connectors_status() -> dict[str, Any]:
 @router.get("/projects/{project_id}/audit")
 async def project_audit(project_id: str, limit: int = 50) -> list[dict[str, Any]]:
     return await audit.list_for_project(project_id, limit=limit)
+
+
+RenderCheck = Literal["match", "changed", "missing", "unrecorded"]
+
+
+class AuditRow(BaseModel):
+    id: int
+    published_at: str
+    project_id: str
+    project_name: str
+    snapshot_id: str
+    platform: str
+    dry_run: bool
+    visibility: str
+    external_id: str
+    external_url: str
+    response_code: int | None
+    approval_token: str
+    render_content_hash: str
+    # Whether the snapshot's render on disk is still the file this row approved.
+    render_check: RenderCheck
+
+
+class AuditPage(BaseModel):
+    items: list[AuditRow]
+    total: int
+    limit: int
+    offset: int
+
+
+# (path, mtime_ns, size) → sha256, so paging through the log hashes each
+# render once rather than once per row per request.
+_render_hashes: dict[tuple[str, int, int], str] = {}
+
+
+async def _current_render_hash(render_path: str | None) -> str | None:
+    if not render_path:
+        return None
+    path = Path(render_path)
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    key = (str(path), st.st_mtime_ns, st.st_size)
+    if key not in _render_hashes:
+        _render_hashes[key] = await asyncio.to_thread(_sha256_file, path)
+    return _render_hashes[key]
+
+
+@router.get("/audit", response_model=AuditPage)
+async def all_audit(
+    limit: int = Query(25, ge=1, le=200), offset: int = Query(0, ge=0)
+) -> AuditPage:
+    """Every publish attempt across projects, newest first, dry-runs marked."""
+    rows, total = await audit.list_page(limit, offset)
+    items = []
+    for r in rows:
+        platform, dry_run = audit.split_platform(r["platform"])
+        recorded = r["render_content_hash"] or ""
+        current = await _current_render_hash(r["render_path"])
+        check: RenderCheck
+        if not recorded:
+            check = "unrecorded"
+        elif current is None:
+            check = "missing"
+        else:
+            check = "match" if current == recorded else "changed"
+        metadata = json.loads(r["publish_metadata"] or "{}")
+        items.append(
+            AuditRow(
+                id=r["id"],
+                published_at=r["published_at"],
+                project_id=r["project_id"],
+                project_name=r["project_name"] or r["project_id"],
+                snapshot_id=r["snapshot_id"],
+                platform=platform,
+                dry_run=dry_run,
+                visibility=str(metadata.get("visibility", "")),
+                external_id=r["external_id"] or "",
+                external_url=r["external_url"] or "",
+                response_code=r["response_code"],
+                approval_token=r["user_approval_token"] or "",
+                render_content_hash=recorded,
+                render_check=check,
+            )
+        )
+    return AuditPage(items=items, total=total, limit=limit, offset=offset)
