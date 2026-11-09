@@ -21,6 +21,7 @@ from impact_crater.app import create_app
 from impact_crater.jobs.registry import StageId
 from impact_crater.llm_clients.base import ArcJudgment, SelectedItem
 from impact_crater.media import ffmpeg as ff
+from impact_crater.media.music import LibrosaMusicAnalyzer
 from impact_crater.pipeline import runner
 from impact_crater.storage import settings as settings_store
 from impact_crater.storage.migrations import run_pending_migrations
@@ -106,6 +107,16 @@ def _mock_router(photo_paths: list[Path]) -> object:
         )
     )
     return router
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _warm_music_analysis(tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Every job here analyses its song before Stage 1. The first librosa import
+    and numba compile in a process take seconds (tens on a cold CI runner), which
+    would otherwise land inside one test's 30 s poll budget, so pay it once here."""
+    song = tmp_path_factory.mktemp("warm") / "song.wav"
+    _wav(song)
+    LibrosaMusicAnalyzer()._analyze_sync(song)
 
 
 @pytest.fixture

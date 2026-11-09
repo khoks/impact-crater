@@ -14,11 +14,18 @@ keyed on a deterministic hash of their input arguments.
 Per-call telemetry: every dispatch (cache hit or miss) emits an
 `LLMCallEvent` so `JobCostSummary` can aggregate cost. The router can
 also be given a `ProgressSink` (the M3 JobRegistry) for live UI updates.
+
+Mid-job spend guard (S-3.11.1): every paid call goes through `_dispatch`. With
+`enable_quota_guard()` (routers built for real jobs and refines) it checks the
+daily caps against the call's rate-card estimate first. A denied check or a
+provider's out-of-credit error halts the router: that call and every later one
+raise the same `JobHalted` without reaching the provider.
 """
 
 from __future__ import annotations
 
 import hashlib
+import inspect
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -37,7 +44,12 @@ from impact_crater.llm_clients.base import (
     LLMClient,
     MusicSpec,
 )
-from impact_crater.llm_clients.exceptions import LLMOperationFailed
+from impact_crater.llm_clients.exceptions import (
+    JobHalted,
+    LLMOperationFailed,
+    ProviderCreditExhausted,
+    QuotaExceededMidJob,
+)
 
 log = logging.getLogger(__name__)
 
@@ -97,6 +109,12 @@ class LLMRouter:
             "snapshot_id": None,
             "correlation_id": "",
         }
+        self._quota_guard = False
+        self._halted: JobHalted | None = None
+
+    def enable_quota_guard(self) -> None:
+        """Check the daily caps before every paid call (S-3.11.1)."""
+        self._quota_guard = True
 
     def set_progress_sink(self, sink: ProgressSink | None) -> None:
         """Attach (or detach) a per-call progress callback."""
@@ -783,13 +801,63 @@ class LLMRouter:
         """Await a client call; when it fails after the provider billed it (usage is
         on `params`), meter that spend before re-raising so quota and telemetry see it.
         Any exception counts — a judge reply that fails `SelectedItem(**...)` raises a
-        TypeError after the tokens were billed."""
+        TypeError after the tokens were billed.
+
+        Before the call: refuse it if the router is halted or the spend guard denies
+        it. An out-of-credit error halts the router."""
+        try:
+            await self._preflight(route)
+        except JobHalted:
+            if inspect.iscoroutine(call):
+                call.close()  # never sent; close it so it isn't reported as un-awaited
+            raise
         try:
             return await call
-        except Exception:
+        except Exception as exc:
             if params.usage_input_tokens or params.usage_output_tokens or params.usage_image_tokens:
                 await self._record_call(route, cache_hit=False, params=params)
+            if _is_credit_exhausted(exc):
+                self._halted = ProviderCreditExhausted(
+                    provider=route.provider, detail=str(exc)[:300]
+                )
+                log.error(
+                    "job_halted_credit_exhausted provider=%s operation=%s",
+                    route.provider,
+                    route.operation,
+                )
+                raise self._halted from exc
             raise
+
+    async def _preflight(self, route: OperationRoute) -> None:
+        if self._halted is not None:
+            raise self._halted
+        if not self._quota_guard:
+            return
+        estimate = _ballpark_cost(route)
+        check = await quota.check_quota({route.provider: estimate})
+        if check.allowed:
+            return
+        provider_cap = (check.cap_per_provider_usd or {}).get(route.provider)
+        on_provider = check.reason.startswith(route.provider)
+        self._halted = QuotaExceededMidJob(
+            reason=check.reason,
+            provider=route.provider,
+            spent_usd=(
+                (check.today_per_provider_spent_usd or {}).get(route.provider, 0.0)
+                if on_provider
+                else check.today_total_spent_usd
+            ),
+            cap_usd=provider_cap if on_provider else check.cap_total_usd,
+            estimate_usd=estimate,
+        )
+        log.warning(
+            "job_halted_quota reason=%s provider=%s operation=%s estimate_usd=%.4f",
+            check.reason,
+            route.provider,
+            route.operation,
+            estimate,
+        )
+        raise self._halted
 
     def _client_for(self, route: OperationRoute) -> LLMClient:
         if route.provider not in self._clients:
@@ -875,6 +943,18 @@ _TIER_COST_FALLBACK = {
     "L": 0.50,
     "embedding": 0.0001,
 }
+
+
+def _is_credit_exhausted(exc: Exception) -> bool:
+    """A provider's "no credit left" refusal (Anthropic's 400 "credit balance is too
+    low"; an OpenAI-style `insufficient_quota`). Retrying or moving to the next asset
+    cannot succeed, unlike a rate limit."""
+    text = str(exc).lower()
+    return (
+        "credit balance is too low" in text
+        or "insufficient_quota" in text
+        or ("insufficient" in text and "credit" in text)
+    )
 
 
 def _ballpark_cost(route: OperationRoute) -> float:

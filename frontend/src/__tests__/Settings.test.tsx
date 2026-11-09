@@ -70,6 +70,35 @@ describe("Settings", () => {
     expect(totalCapInput).toHaveValue(50);
   });
 
+  it("shows today's spend against each cap and marks a reached cap", async () => {
+    mockFetchSequence([
+      {
+        ok: true,
+        status: 200,
+        body: {
+          ...SNAPSHOT_KEYS_SET,
+          today_total_spent_usd: 31.2,
+          today_per_provider_spent_usd: { anthropic: 30.5, google: 0.7 },
+        },
+      },
+    ]);
+    render(
+      <MemoryRouter initialEntries={["/settings"]}>
+        <Routes>
+          <Route path="/settings" element={<Settings />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    const usage = await screen.findByTestId("spend-today");
+    const lines = Array.from(usage.querySelectorAll("li")).map((li) => li.textContent);
+    expect(lines).toEqual([
+      "Total: $31.20 today of $50.00",
+      "Anthropic: $30.50 today of $30.00cap reached",
+      "Google: $0.70 today · no separate cap",
+    ]);
+    expect(screen.getByText(/caps reset at midnight UTC/)).toBeInTheDocument();
+  });
+
   it("renders empty state and helpful placeholders when no keys are set", async () => {
     mockFetchSequence([{ ok: true, status: 200, body: SNAPSHOT_KEYS_UNSET }]);
     render(

@@ -12,6 +12,7 @@ import pytest
 from impact_crater import api_auth, paths
 from impact_crater.api import snapshots as snapshots_api
 from impact_crater.app import create_app
+from impact_crater.llm_clients.exceptions import QuotaExceededMidJob
 from impact_crater.pipeline import runner
 from impact_crater.pipeline.stage6_plan import RenderClip, RenderPlan
 from impact_crater.pipeline.stage9_refine import RefinementOutcome, RefinementResult
@@ -220,3 +221,36 @@ async def test_snapshot_detail_404(client_with_snapshot) -> None:
     client, _ = client_with_snapshot
     r = await client.get("/api/snapshots/nope")
     assert r.status_code == 404
+
+
+async def test_refine_stopped_by_the_spend_cap_is_a_402_with_the_reason(
+    monkeypatch, setup_snapshot
+) -> None:
+    _, snapshot_id, _ = setup_snapshot
+
+    async def fake_build() -> object:
+        return object()
+
+    async def halted(*_args, **_kwargs):
+        raise QuotaExceededMidJob(
+            reason="total_cap_would_be_exceeded",
+            provider="anthropic",
+            spent_usd=4.9,
+            cap_usd=5.0,
+            estimate_usd=0.5,
+        )
+
+    monkeypatch.setattr(runner, "build_router_from_settings", fake_build)
+    monkeypatch.setattr(snapshots_api, "execute_refinement", halted)
+    app = create_app()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://127.0.0.1", headers=api_auth.auth_header()
+    ) as ac:
+        r = await ac.post(
+            f"/api/snapshots/{snapshot_id}/refine", json={"refinement_message": "re-judge it"}
+        )
+    assert r.status_code == 402
+    assert r.json()["detail"].startswith(
+        "Stopped at your daily spend cap: $4.90 of your $5.00 total"
+    )

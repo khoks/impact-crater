@@ -124,8 +124,26 @@ export default function Settings() {
           <section className="mt-6 rounded border border-slate-200 bg-white p-6">
             <h2 className="text-sm font-semibold text-slate-700">Spend caps</h2>
             <p className="mt-1 text-xs text-slate-500">
-              Today's spend: ${snapshot.today_total_spent_usd.toFixed(2)} total
+              Jobs and refines check these before every paid AI call and stop at a cap.
+              The day is the UTC day: caps reset at midnight UTC.
             </p>
+            <ul className="mt-2 space-y-0.5 text-xs text-slate-600" data-testid="spend-today">
+              <CapUsage
+                label="Total"
+                spent={snapshot.today_total_spent_usd}
+                cap={snapshot.spend_cap_total_usd}
+              />
+              <CapUsage
+                label="Anthropic"
+                spent={snapshot.today_per_provider_spent_usd.anthropic ?? 0}
+                cap={snapshot.spend_cap_anthropic_usd}
+              />
+              <CapUsage
+                label="Google"
+                spent={snapshot.today_per_provider_spent_usd.google ?? 0}
+                cap={snapshot.spend_cap_google_usd}
+              />
+            </ul>
             <div className="mt-4 grid gap-4 sm:grid-cols-3">
               <CapField
                 label="Total daily"
@@ -274,5 +292,24 @@ function CapField({
         placeholder={placeholder}
       />
     </div>
+  );
+}
+
+function CapUsage({ label, spent, cap }: { label: string; spent: number; cap: number | null }) {
+  const reached = cap !== null && spent >= cap;
+  return (
+    <li>
+      {label}: ${spent.toFixed(2)} today
+      {cap === null ? (
+        <span className="text-slate-400"> · no separate cap</span>
+      ) : (
+        <> of ${cap.toFixed(2)}</>
+      )}
+      {reached && (
+        <span className="ml-2 rounded bg-rose-100 px-1.5 py-0.5 font-medium text-rose-800">
+          cap reached
+        </span>
+      )}
+    </li>
   );
 }

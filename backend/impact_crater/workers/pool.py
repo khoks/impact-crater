@@ -26,6 +26,8 @@ import os
 from collections.abc import Awaitable, Callable, Iterable
 from typing import Any, Literal, TypeVar
 
+from impact_crater.llm_clients.exceptions import JobHalted
+
 WorkerClass = Literal["cpu", "ffmpeg", "network"]
 
 T = TypeVar("T")
@@ -145,7 +147,9 @@ class WorkerPool:
     ) -> list[T | None]:
         """Like `submit_many` but a failing task yields `None` instead of
         propagating. CancelledError still propagates (so user-cancellation
-        works); JobCancelled still propagates (so pool shutdown works).
+        works); JobCancelled still propagates (so pool shutdown works);
+        JobHalted still propagates (a spent cap or exhausted credit fails every
+        asset the same way, S-3.11.1).
 
         Per-asset failure tolerance for Stage 2 + Stage 3: one bad image
         used to kill a 545-asset job. Now it's logged via `on_error` and
@@ -160,8 +164,8 @@ class WorkerPool:
         async def _one(idx: int, item: Any) -> T | None:
             try:
                 return await self.submit(worker_class, lambda: coro_factory(item))
-            except (asyncio.CancelledError, JobCancelled):
-                raise  # never swallow cancellation
+            except (asyncio.CancelledError, JobCancelled, JobHalted):
+                raise  # never swallow cancellation or a halted job
             except BaseException as exc:
                 if on_error is not None:
                     with contextlib.suppress(

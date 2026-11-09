@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from impact_crater import audit
+from impact_crater.llm_clients.exceptions import JobHalted
 from impact_crater.pipeline import runner, stage6_plan
 from impact_crater.pipeline.stage9_refine import execute_refinement
 from impact_crater.storage.db import connection
@@ -248,12 +249,17 @@ async def post_refine(snapshot_id: str, req: RefineRequest) -> RefineResponse:
             status_code=status.HTTP_412_PRECONDITION_FAILED, detail=str(exc)
         ) from exc
 
-    result = await execute_refinement(
-        llm_router,
-        project_id=project_id,
-        prior_plan=prior_plan,
-        refinement_message=req.refinement_message,
-    )
+    try:
+        result = await execute_refinement(
+            llm_router,
+            project_id=project_id,
+            prior_plan=prior_plan,
+            refinement_message=req.refinement_message,
+        )
+    except JobHalted as exc:
+        # The spend guard runs before each paid call, so a re-judge is checked
+        # against its Tier-L estimate before it is sent (S-3.11.1).
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(exc)) from exc
 
     # The parent keeps the latest refine asked of it; the child records the one
     # that produced it, so a child stays self-describing when it is refined in turn.

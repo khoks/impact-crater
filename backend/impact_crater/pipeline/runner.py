@@ -23,7 +23,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 from impact_crater import quota, telemetry
 from impact_crater.llm_clients.anthropic_client import AnthropicLLMClient
 from impact_crater.llm_clients.base import ArcJudgment, MusicSpec
-from impact_crater.llm_clients.exceptions import LLMOperationFailed
+from impact_crater.llm_clients.exceptions import JobHalted, LLMOperationFailed
 from impact_crater.llm_clients.google_client import GoogleLLMClient
 from impact_crater.llm_clients.router import LLMRouter
 from impact_crater.media import ffmpeg as ff
@@ -250,6 +250,8 @@ async def run_headless_pipeline(
                 )
                 _persist_cast(project_id, cast_inventory)
                 await _emit_phase_diag(reporter, diagnostics.phase_cast, cast_inventory)
+            except JobHalted:
+                raise
             except Exception as exc:
                 log.warning(
                     "cast_analysis_failed project_id=%s error=%r — proceeding without cast",
@@ -268,6 +270,8 @@ async def run_headless_pipeline(
                 media_count=len(media),
                 target_duration_seconds=config.target_duration_seconds,
             )
+        except JobHalted:
+            raise
         except Exception as exc:
             log.warning("brief_intent_failed error=%r — proceeding without", str(exc)[:200])
             brief_intent = brief_intent_mod.BriefIntent()
@@ -524,6 +528,8 @@ async def run_full_pipeline(
             music_spec=music_spec_for_judge,
             brief=config.brief,
         )
+    except JobHalted:
+        raise
     except Exception as exc:
         log.warning(
             "second_guess_failed project_id=%s snapshot_id=%s correlation_id=%s "
@@ -576,6 +582,8 @@ async def run_full_pipeline(
                 (
                     stage6_plan.snapshot_dir(headless.project_id, plan.snapshot_id) / "plan.json"
                 ).write_text(plan.model_dump_json(indent=2), encoding="utf-8")
+        except JobHalted:
+            raise
         except Exception as exc:
             log.warning("title_card_step_failed (proceeding without): %r", str(exc)[:200])
         await reporter.stage_completed("stage_6_title_card")
@@ -809,4 +817,5 @@ async def build_router_from_settings() -> LLMRouter:
         await router.verify_routes()
     except LLMOperationFailed as exc:
         raise RuntimeError(f"AI model pre-flight failed: {exc.last_error}") from exc
+    router.enable_quota_guard()
     return router
