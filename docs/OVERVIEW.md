@@ -249,7 +249,12 @@ flowchart TD
     in dry-run mode by default: the request is validated and written to the
     audit log, together with a fingerprint of the exact video you approved, but
     nothing is posted until the owner supplies credentials and switches dry-run
-    off in Settings (see §7).
+    off in Settings (see §7). Both actions are on every saved version's own
+    page too, so any version — the original or a refined one — can be refined
+    again or approved and published, and that page still works after a restart.
+    A **Publish log** page lists every publish attempt across projects, marks
+    dry runs apart from real posts, and says whether the video on disk is still
+    the exact file each attempt approved.
 
 11. **Refine.** Tell it what to change in plain language — anything, not from a
     fixed menu: "insert more photos of Las Vegas," "don't drop Las Vegas even if
@@ -260,12 +265,14 @@ flowchart TD
     the same clips (pacing/emphasis, no re-judge — fast), **guarantee coverage**
     of a place it under-showed, **re-tell** the story with a new emphasis, or
     adjust the title card — and renders a new version as its own snapshot, which
-    opens in the inspect view (without its own per-decision diagnostics or cost summary yet — only the original has those) while the original stays
-    untouched. It explains what it did, or why a request isn't possible with
-    your media. Re-runs reuse cached analysis, so refinement is fast and cheap.
-    Today you wait on the refinement as a single request, and the refined
-    version can be viewed and inspected but not itself refined again or
-    published from the interface; a side-by-side comparison is on the roadmap.
+    opens in its own page (without its own per-decision diagnostics or cost summary yet — only the original has those) while the original stays
+    untouched. The new version records the request that produced it, and the
+    dashboard shows each refined version under the one it came from, with a
+    badge where a version was published or dry-run. It explains what it did, or
+    why a request isn't possible with your media. Re-runs reuse cached analysis,
+    so refinement is fast and cheap. Today you wait on the refinement as a
+    single request, with no progress bar or cancel; running it as a background
+    job, and a side-by-side comparison, are on the roadmap.
 
 12. **Feedback.** At any point you can open per-phase diagnostics (live while a
     job runs, or afterward) and mark any individual decision — a kept/dropped
@@ -406,12 +413,13 @@ flowchart TB
   failures, records cost, and serves the cache. Hardware and privacy constraints
   are design slots in this layer, not enforced rules today.
 - **Render engine** — runs the actual video assembly as managed subprocesses
-  through the worker pool, cancellable mid-render. A job interrupted by a
-  server restart is lost (its finished videos and cached analysis are not —
-  see §10).
+  through the worker pool, cancellable mid-render.
+- **Job store** — every job's progress is saved as it moves from stage to
+  stage, so a job's pages survive a server restart, and a job a restart cut
+  off is reported as interrupted (see §10).
 - **Cost accounting & budgets** — records what each operation costs, summarizes
-  per-job spend, and enforces the daily caps you configure by checking them
-  before a job starts.
+  per-job spend, and enforces the daily caps you configure: once before a job
+  starts, and again before every paid AI call (see §12).
 - **Diagnostics & feedback store** — persists every phase's decisions with each
   version and captures your decision-level feedback (with screenshots) for the
   maintainer. The cross-project taste profile has its storage and endpoints
@@ -440,7 +448,7 @@ sequenceDiagram
     participant Platform
 
     User->>App: Point at media folder, brief, music, length; submit
-    App->>App: Check daily spend cap; ingest, fingerprint, timeline, scenes
+    App->>App: Check daily spend cap (again before every AI call); ingest, fingerprint, timeline, scenes
     App->>AI: Analyze each asset (small/medium models)
     App->>App: Build trip cast; smart pre-filter
     App->>AI: Decide the story (single high-reasoning pass)
@@ -530,10 +538,11 @@ flowchart LR
   fast and cheap.
 - Because results are cached by content and model version, **re-running a job
   reuses the same answers and reproduces the same cut** (the optional AI title-card image is generated fresh each time).
-- **Live jobs are held in memory.** If the server restarts mid-job, that job is
-  lost — its finished videos, diagnostics and cached analysis are not, and
-  finished versions can always be re-opened from the dashboard and inspected.
-  Durable jobs that survive a restart are on the roadmap.
+- **Jobs survive a restart.** Each job's progress is saved as it goes, so a
+  finished job's progress and preview pages still open after the server
+  restarts, and the dashboard keeps the recent jobs. A job that was running
+  when the server stopped is marked as interrupted, with a note that re-running
+  it resumes cheaply from the cache; it is not resumed automatically.
 
 ---
 
@@ -578,10 +587,14 @@ flowchart LR
 ## 12. Cost transparency and control
 
 - **Spending caps you set up front** — a total daily limit, plus optional
-  per-provider limits (Anthropic, Google), all hard. They are checked before a
-  job starts: a job whose pessimistic estimate would breach a cap is refused.
-  There is no mid-job cut-off yet; spend is recorded live as each call
-  completes.
+  per-provider limits (Anthropic, Google), all hard, counted per UTC day (they
+  reset at midnight UTC). They are checked before a job starts — a job whose
+  pessimistic estimate would breach a cap is refused — and again before every
+  paid AI call in a job or a refinement. When the next call would cross a cap,
+  or a provider reports that the account is out of credit, the job stops at
+  once with a plain explanation instead of failing photo by photo; what was
+  already analysed stays cached, so a re-run is cheap. Settings shows today's
+  spend against each cap and marks a cap that has been reached.
 - **A ballpark estimate before you start** — you pick an effort level (a size envelope that drives the cost estimate; today it does not change what the job processes — the whole folder is analysed) and see a low-to-high dollar range
   for it and whether it fits today's remaining budget.
 - **Live spend** is shown while a job runs, broken down by kind of work (quick
@@ -598,11 +611,13 @@ flowchart LR
 
 **Available now** — the local application; the full prepare-plan-produce
 pipeline; Story Videos (standard and music-video) rendered at 1080p landscape,
-with the optional title card; the preview-then-approve gate; daily spending
-caps and the pre-job estimate; the auto-derived trip cast; plain-language
-refinement; the in-app diagnostics-and-feedback system; and YouTube, Instagram
-Reels and Facebook Page video connectors that run in dry-run mode until the
-owner supplies credentials and switches live posting on.
+with the optional title card; the preview-then-approve gate, on every saved
+version; daily spending caps checked before a job and before every AI call, and
+the pre-job estimate; jobs that survive a server restart; the auto-derived trip
+cast; plain-language refinement, repeatable on refined versions; the in-app
+diagnostics-and-feedback system; a publish log; and YouTube, Instagram Reels and
+Facebook Page video connectors that run in dry-run mode until the owner supplies
+credentials and switches live posting on.
 
 **Validated on a real trip (June 2026).** The curate-and-preview half ran end
 to end on a 1,663-item trip (1,481 photos and 182 videos, about 2,000 shots
@@ -626,8 +641,6 @@ the roadmap.
   instead of environment variables.
 - **A quality-evaluation harness** — measure curation quality against real
   trips so changes can be judged, not eyeballed.
-- **Durable jobs** — a live job survives a server restart (today it does not;
-  finished videos do).
 - **Per-location reels and photo albums / collages**, with 9:16 and 1:1
   formatting for Instagram and Facebook, and an X connector.
 - **AI-written titles and captions** for each post.
@@ -635,9 +648,12 @@ the roadmap.
   profile that shapes defaults.
 - **Working privacy controls** — strip metadata, blur faces, per-project
   settings — and a way to delete a project's derived data.
-- **Power-user polish** — side-by-side version comparison, refining and
-  publishing a refined version directly, the self-check's suggestions as a
-  review step, richer cost dashboards, and more music-sourcing options.
+- **Refinement as a background job** — progress, cancel and a cost check for
+  a refinement, and a refined version saved with its own diagnostics and cost
+  summary.
+- **Power-user polish** — side-by-side version comparison, the self-check's
+  suggestions as a review step, richer cost dashboards, and more
+  music-sourcing options.
 - **On-device models, later in this list** — an on-device model runtime behind
   the existing router slot, then hardware-aware routing and keeping
   face-related work local.

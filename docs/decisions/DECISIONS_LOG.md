@@ -1359,3 +1359,65 @@ Reserved by D-057 for the measurable single-video quality gate (restart Phase 2 
   - The real private YouTube upload (S-2.9.21) needs the credentials plus one switch, with no restart.
   - The audit-log viewer (Phase 1 item 8) can tie each post to its file.
 - **Linked ADRs / items:** D-060, ADR-0013, S-3.3.8, S-2.9.21, PR #121.
+
+### D-069 — Every saved snapshot is a full preview; a refined child records how it was made
+- **Status:** accepted
+- **Date:** 2026-11-08
+- **Context:** Restart plan Phase 1 items 7 and 8 (S-3.5.5's first half, S-3.3.9). Approve & publish and Refine lived only on the job's preview page, which needed the in-memory job. A refined child could be watched but not refined again or published. Nothing showed which snapshot came from which, or what had been sent where.
+- **Decision:**
+  - The Refine and Approve & publish panels move into one shared component used by both the job preview and the snapshot Inspect page. The Inspect page loads everything from the snapshot id and becomes the canonical preview; the job preview keeps only its job-specific cost line.
+  - A refine writes one record (`parent_snapshot_id`, the user's `refinement_message`, the `RefinementResult`) twice: to the parent's `refinement_plan.json`, meaning "the latest refine asked of this snapshot", and to the child's new `refined_from.json`, meaning "the refine that produced me".
+  - The Dashboard nests children under their parent. Publish badges come from the audit log: a live post (linked) wins over dry-runs, so a dry-run is never shown as a post.
+  - The cross-project publish log checks each row's recorded render hash against the file on disk: `match`, `changed`, `missing`, or `unrecorded` (rows from before the hash existed). Each render is hashed once per (path, mtime, size).
+- **Alternatives considered:**
+  - Copy `refinement_plan.json` into the child under the same name, as the story first suggested — rejected: the child's copy would be overwritten the first time the child was itself refined.
+  - Redirect the job preview to the Inspect page — rejected for now: sharing the component keeps the job's live cost line and its tests.
+- **Consequences:**
+  - Children made before 2026-11-08 have no `refined_from.json`, so their Inspect page shows the parent link without the request text.
+  - The second half of S-3.5.5 (refine as a 202 job with progress, cancel and a cost check; complete child artifacts; child costs in the project total) stays open.
+- **Linked ADRs / items:** ADR-0011 (Stage 9), D-068, S-3.5.5, S-3.3.9, PRs #124, #125.
+
+### D-070 — Jobs are saved as whole snapshots; a restart marks cut-off jobs interrupted, it does not resume them
+- **Status:** accepted
+- **Date:** 2026-11-08
+- **Context:** S-2.9.19, restart plan Phase 2 item 3. `JobRegistry` was in memory only, so a restart 404'd every job page and silently dropped running jobs; three 900+ file runs from June 2026 have a `started` telemetry event and no end.
+- **Decision:**
+  - A `jobs` table (migration 008) holds each `JobSnapshot` as JSON, written on registration, every state change and every stage change. Cost counters, which move on every AI call, are saved at the next stage or state change rather than per call.
+  - Reads use `get_or_load` (memory first, then the table); `GET /api/jobs` lists the 20 most recent saved jobs.
+  - At startup no job can still be running, so every saved `queued` / `running` job becomes `failed` with a reason saying a re-run resumes cheaply from the cache, and its running stage is marked "interrupted by a server restart". The existing `failed` state is reused rather than adding an `interrupted` state that the UI would have to learn.
+- **Alternatives considered:**
+  - Rebuild finished jobs from the `snapshots` table — rejected: a snapshot does not carry the job's id, stages, costs or failure reason, and interrupted jobs have no snapshot.
+  - Per-stage checkpoints for a true mid-stage resume — deferred: the content-hash LLM cache already makes a re-run cheap.
+  - Save on every AI call — rejected: hundreds of writes per job for a number that is exact at the next stage boundary anyway.
+- **Consequences:**
+  - Restarting the server is now a supported way to stop a job; the June orphans predate the table and stay invisible to it.
+  - **Bug root cause found on the way (test-only):** `test_full_async_flow_succeeds` timed out on both CI runners in PR #126. Every job analyses its song before Stage 1, and the first librosa import plus numba compile in a process costs ~6 s locally and far more on a cold runner. An earlier test's background job had always paid that by accident. The extra awaits before a durable job's task starts meant it no longer got that far before its test ended, so the cost landed inside the next test's 30 s poll budget. Fixed by warming music analysis once per test module. Lesson: a wall-clock budget in a test must not depend on what earlier tests happened to warm.
+- **Linked ADRs / items:** ADR-0006 (storage), ADR-0010 (worker pool), A-025, S-2.9.19, S-2.9.16, PRs #126, #127.
+
+### D-071 — The spend cap is checked before every paid call and stops the job; a reached cap or exhausted credit halts the router
+- **Status:** accepted
+- **Date:** 2026-11-08
+- **Context:** S-3.11.1, restart plan Phase 2 item 5. Caps were checked once, before a job, from a rough size estimate; refines and title cards had no check. Days followed local time while telemetry and YouTube use UTC. Root cause of the 2026-06-17 run that died after 2 h 55 m on exhausted Anthropic credit: `WorkerPool.submit_many_tolerant` swallows every per-asset exception (so one bad photo cannot kill a 545-asset job), so the "credit balance is too low" refusal was skipped once per remaining asset instead of stopping the job.
+- **Decision:**
+  - All paid calls already go through `LLMRouter._dispatch`. Routers built for real work (`build_router_from_settings`) turn on a guard there that calls `check_quota({provider: estimate})` with the call's rate-card estimate before sending.
+  - A denial (`QuotaExceededMidJob`) or a provider out-of-credit error (`ProviderCreditExhausted`) is a `JobHalted`. It latches the router: every later call raises the same error without reaching the provider. The tolerant pool batch and the runner's optional steps re-raise it.
+  - The job ends `failed` with the exception's readable message; refine and the synchronous run endpoints answer HTTP 402. Quota days are UTC.
+- **Alternatives considered:**
+  - The ADR's original pause-and-prompt at the cap — rejected for now: a stop plus a cheap cached re-run gives the same protection with no new UI state.
+  - Guard on for every router — rejected: test routers built directly would need caps configured. Guarded construction is the production path.
+  - Classify credit exhaustion in each stage — rejected: the router is the one place every paid call passes.
+- **Consequences:**
+  - Overshoot is bounded by the calls already in flight (8 network workers × the per-call estimate). The estimate stays ballpark until S-2.9.18.
+  - The optional title-card module still swallows its own errors, so a cap reached only there ends with a video without a card, but no further spend.
+- **Linked ADRs / items:** ADR-0015 (Amendment 2026-11-08), D-063, S-3.11.1, S-2.9.18, PR #127.
+
+### D-072 — CI stays advisory for now; merges keep `--admin` after the local checks
+- **Status:** accepted
+- **Date:** 2026-11-08
+- **Context:** S-3.11.2 put lint, types, tests and the docs build on every PR (D-065). The plan's next step was to make CI a required check on master and switch ADR-0004 merges from `--admin` to `--auto`, which needs the owner because it changes branch protection.
+- **Decision:** The owner answered "not yet" on 2026-11-08. CI keeps running on every PR and on master. Merges stay `gh pr merge --squash --delete-branch --admin` once the local `pytest`, `ruff`, `mypy`, `npm run typecheck` and `npm test` pass. The desktop app's Auto-fix watches open PRs for CI failures.
+- **Alternatives considered:** Require CI now — deferred by the owner.
+- **Consequences:**
+  - A PR can merge before its CI finishes. That happened with PR #126, whose CI run then failed on a timing-dependent test (see D-070). The fix rode in the next PR.
+  - The question goes back to the owner whenever they want it; S-3.11.2 stays in progress until then.
+- **Linked ADRs / items:** ADR-0004, D-065, S-3.11.2.

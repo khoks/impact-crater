@@ -660,3 +660,11 @@ Recorded here rather than edited in place, so the audit above stays the dated sn
   - **S-3.11.3:** the local API guard (ADR-0022, D-067, PR #120). An independent review found seven issues before merge, including path traversal and DNS rebinding under `--allow-remote`. All were fixed. A side effect: the Instagram guide's tunnel is refused until the signed media URL exists.
   - **S-3.3.8:** an honest publish panel, a dry-run switch in Settings, and the render's SHA-256 on audit rows (D-068, PR #121). All of it was verified on a fully cached Zion re-run ($0.00), which wrote audit row 2.
   - Remaining in Phase 1: item 3c (OAuth ops decision, owner), item 6 (S-3.3.5, needs the owner's Google OAuth client), item 7 (S-3.5.5, next), item 8 (audit-log viewer), item 4's real upload and item 9 (close I-2, v0.1.0).
+- **Phase 1 items 7 and 8, then Phase 2 items 3 and 5 (2026-11-08):**
+  - The owner answered "not yet" to making CI required (D-072). Merges keep `--admin` after the local checks.
+  - **S-3.5.5, first half:** publish and refine from any snapshot's Inspect page, the refine chain on the Dashboard, and `refined_from.json` on new children (D-069, PR #124). Verified with a dry-run from an existing refined child.
+  - **S-3.3.9:** the Publish log page, built on `GET /api/audit`, checks each row's render hash against the file on disk (PR #125).
+  - Phase 1 now waits only on the owner: the real upload (item 4), the OAuth decision (3c), the Google OAuth client (item 6), then closing I-2 (item 9).
+  - **S-2.9.19:** jobs survive a restart; one cut off by a restart is marked interrupted (D-070, PR #126). Verified with two $0 cached Zion runs and server restarts. Its PR's CI failed on a timing-dependent test, root-caused to librosa's cold start; the fix rode in PR #127.
+  - **S-3.11.1:** the spend caps are checked before every paid call. A reached cap or exhausted credit halts the job, and quota days are UTC (D-071, ADR-0015 amendment, PR #127). Verified with a refusal at $0.
+  - Next in Phase 2: S-3.10.1 (the $0 eval harness), then the D-058 quality gate, the token-aware estimate (S-2.9.18) and refine as a job (S-3.5.5, second half).
