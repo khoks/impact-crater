@@ -48,7 +48,6 @@
 | [S-3.3.5](./stories/S-3.3.5-connect-youtube-in-settings.md) | Connect YouTube in Settings (loopback OAuth → connector_credentials) (plan-phase-1) | Story | P0 | v1 | todo |
 | [S-3.10.1](./stories/S-3.10.1-eval-plan-script-and-thresholds.md) | scripts/eval_plan.py + D-058 thresholds on frozen SW-US and Zion fixtures (pytest -m eval) (plan-phase-2) | Story | P0 | mvp-hardening | todo |
 | [E-3.5](./epics/E-3.5-power-user-polish-bundle.md) | Power-user + polish bundle (plan-phase-1, plan-phase-2, plan-phase-3) | Epic | P1 | v1 | todo |
-| [S-2.9.19](./stories/S-2.9.19-persist-job-registry-survive-restart.md) | Persist the job registry so live/preview views survive a restart (plan-phase-2) | Story | P1 | mvp-hardening | todo |
 | [S-3.10.2](./stories/S-3.10.2-golden-set-from-feedback.md) | Golden set — export the owner's decision-level feedback verdicts; harness reports agreement (plan-phase-2) | Story | P1 | mvp-hardening | todo |
 | [S-3.11.1](./stories/S-3.11.1-mid-job-quota-guard.md) | Mid-job quota guard — check before every paid call (total + per-provider), refinement and title card included, UTC day boundary (plan-phase-2) | Story | P1 | mvp-hardening | todo |
 | [S-2.9.18](./stories/S-2.9.18-token-aware-pre-job-cost-estimate.md) | Token-aware pre-job cost estimate (align the preview with the now-accurate meter) (plan-phase-2) | Story | P2 | mvp-hardening | todo |
@@ -110,6 +109,7 @@ Placeholder stories backfilled on 2026-06-14 plus later filings whose restart-pl
 | ID | Title | Type | Done |
 |---|---|---|---|
 | [S-3.3.9](./stories/S-3.3.9-audit-log-viewer.md) | Audit-log viewer — every publish attempt and dry-run, with the file it approved | Story | 2026-11-08 |
+| [S-2.9.19](./stories/S-2.9.19-persist-job-registry-survive-restart.md) | Persist the job registry so live/preview views survive a restart | Story | 2026-11-08 |
 | [S-3.11.6](./stories/S-3.11.6-clear-ruff-mypy-baseline-debt.md) | Clear the ruff / mypy baseline debt so CI can enforce them | Story | 2026-11-03 |
 | [S-3.11.3](./stories/S-3.11.3-local-api-hardening.md) | Local API hardening — per-install bearer token, WS origin check, refuse non-loopback --host without --allow-remote, SECURITY.md | Story | 2026-11-03 |
 | [S-3.3.8](./stories/S-3.3.8-publish-ux-honesty.md) | Publish UX honesty — caption, visibility, defaults and dry-run wording match what the connector will actually do | Story | 2026-11-03 |
@@ -208,6 +208,6 @@ Regenerate with `python scripts/tracker_board.py`; `--check` fails when this fil
 |---|---|---|---|---|---|---|---|
 | Initiative | 2 | 0 | 0 | 1 | 2 | 0 | 5 |
 | Epic | 0 | 0 | 0 | 17 | 3 | 18 | 38 |
-| Story | 0 | 1 | 1 | 83 | 3 | 62 | 150 |
+| Story | 0 | 1 | 1 | 84 | 3 | 61 | 150 |
 | Task | 0 | 0 | 0 | 30 | 0 | 0 | 30 |
-| **All** | 2 | 1 | 1 | 131 | 8 | 80 | 223 |
+| **All** | 2 | 1 | 1 | 132 | 8 | 79 | 223 |
