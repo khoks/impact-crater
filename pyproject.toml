@@ -150,6 +150,7 @@ addopts = [
 ]
 markers = [
     "integration: hits real Anthropic / Google APIs; gated behind --integration",
+    "eval: $0 plan-quality eval harness over frozen fixtures (S-3.10.1)",
 ]
 
 [tool.coverage.run]

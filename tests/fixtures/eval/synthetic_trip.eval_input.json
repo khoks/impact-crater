@@ -1,0 +1,17 @@
+{
+  "schema": "eval_input/1",
+  "snapshot_id": "synthetic-trip",
+  "core_cast": ["P1", "P2", "P3"],
+  "destinations_named": ["Zion", "Angels Landing", "Emerald Pools", "The Narrows"],
+  "destinations_without_media": ["The Narrows"],
+  "clips": [
+    {"position": 0, "ref": "__title__", "kind": "title_card", "role": "title", "duration_ms": 3000},
+    {"position": 1, "ref": "a1", "kind": "photo", "role": "opener", "duration_ms": 4000, "capture_time": "2026-04-03T09:00:00", "viewpoint": "37.2,-112.95", "people_count": 0, "cast": [], "safety": "safe", "destinations": ["Zion"]},
+    {"position": 2, "ref": "a2", "kind": "photo", "role": "scene_set", "duration_ms": 3000, "capture_time": "2026-04-03T10:00:00", "viewpoint": "37.2,-112.95", "people_count": 2, "cast": ["P1"], "safety": "safe", "destinations": []},
+    {"position": 3, "ref": "v1#0", "kind": "video_scene", "role": "peak", "duration_ms": 3500, "capture_time": "2026-04-03T11:00:00", "viewpoint": null, "people_count": 0, "cast": [], "safety": "safe", "destinations": []},
+    {"position": 4, "ref": "v1#1", "kind": "video_scene", "role": "peak", "duration_ms": 3500, "capture_time": "2026-04-03T11:00:00", "viewpoint": null, "people_count": 0, "cast": [], "safety": "safe", "destinations": []},
+    {"position": 5, "ref": "a3", "kind": "photo", "role": "peak", "duration_ms": 3000, "capture_time": "2026-04-03T08:00:00", "viewpoint": "37.2,-112.95", "people_count": 1, "cast": ["P2"], "safety": "safe", "destinations": []},
+    {"position": 6, "ref": "a4", "kind": "photo", "role": "callback", "duration_ms": 3000, "capture_time": "2026-04-03T07:00:00", "viewpoint": "37.27,-112.94", "people_count": 0, "cast": [], "safety": "safe", "destinations": ["Angels Landing"]},
+    {"position": 7, "ref": "a5", "kind": "photo", "role": "closer", "duration_ms": 5000, "capture_time": "2026-04-04T18:00:00", "viewpoint": "37.27,-112.94", "people_count": 3, "cast": ["P1"], "safety": "explicit", "destinations": []}
+  ]
+}
