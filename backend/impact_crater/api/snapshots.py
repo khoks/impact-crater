@@ -1,5 +1,6 @@
 """Snapshot artifact serving + refine endpoint.
 
+  GET  /api/snapshots/{id}                      (S-3.5.5 — chain, publishes)
   GET  /api/snapshots/{id}/render.mp4
   GET  /api/snapshots/{id}/cost_summary.json
   GET  /api/snapshots/{id}/plan.json
@@ -15,16 +16,87 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
+from impact_crater import audit
 from impact_crater.pipeline import runner, stage6_plan
 from impact_crater.pipeline.stage9_refine import execute_refinement
 from impact_crater.storage.db import connection
 
 router = APIRouter()
+
+REFINED_FROM_FILE = "refined_from.json"
+
+
+class SnapshotPublish(BaseModel):
+    platform: str
+    dry_run: bool
+    external_url: str
+    published_at: str
+
+
+class SnapshotDetail(BaseModel):
+    id: str
+    project_id: str
+    project_name: str
+    parent_snapshot_id: str | None
+    children: list[str]
+    created_at: str
+    render_status: str
+    has_render: bool
+    refinement_message: str | None
+    refinement_interpretation: str | None
+    publishes: list[SnapshotPublish]
+
+
+@router.get("/{snapshot_id}", response_model=SnapshotDetail)
+async def get_snapshot(snapshot_id: str) -> SnapshotDetail:
+    """One snapshot with its place in the refine chain and its publish history,
+    so the Inspect page works from the snapshot id alone."""
+    async with connection() as db:
+        cursor = await db.execute(
+            "SELECT s.id, s.project_id, s.parent_snapshot_id, s.created_at, s.render_status, "
+            "s.render_path, s.plan_path, p.name AS project_name "
+            "FROM snapshots s JOIN projects p ON p.id = s.project_id WHERE s.id = ?",
+            (snapshot_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"snapshot {snapshot_id!r} not found",
+            )
+        cursor = await db.execute(
+            "SELECT id FROM snapshots WHERE parent_snapshot_id = ? ORDER BY created_at DESC",
+            (snapshot_id,),
+        )
+        children = [r["id"] for r in await cursor.fetchall()]
+
+    refined_from: dict[str, Any] = {}
+    if row["plan_path"]:
+        candidate = Path(row["plan_path"]).parent / REFINED_FROM_FILE
+        if candidate.is_file():
+            refined_from = json.loads(candidate.read_text(encoding="utf-8"))
+    render_path = row["render_path"]
+    return SnapshotDetail(
+        id=row["id"],
+        project_id=row["project_id"],
+        project_name=row["project_name"] or row["project_id"],
+        parent_snapshot_id=row["parent_snapshot_id"],
+        children=children,
+        created_at=row["created_at"],
+        render_status=row["render_status"],
+        has_render=bool(
+            row["render_status"] == "success" and render_path and Path(render_path).is_file()
+        ),
+        refinement_message=refined_from.get("refinement_message"),
+        refinement_interpretation=refined_from.get("outcome", {}).get("interpretation"),
+        publishes=[SnapshotPublish(**p) for p in await audit.list_publishes(snapshot_id)],
+    )
 
 
 @router.get("/{snapshot_id}/render.mp4")
@@ -183,10 +255,21 @@ async def post_refine(snapshot_id: str, req: RefineRequest) -> RefineResponse:
         refinement_message=req.refinement_message,
     )
 
-    snap_dir = await _resolve_snapshot_dir(snapshot_id)
-    (snap_dir / "refinement_plan.json").write_text(
-        result.model_dump_json(indent=2), encoding="utf-8"
+    # The parent keeps the latest refine asked of it; the child records the one
+    # that produced it, so a child stays self-describing when it is refined in turn.
+    record = json.dumps(
+        {
+            "parent_snapshot_id": snapshot_id,
+            "refinement_message": req.refinement_message,
+            **result.model_dump(mode="json"),
+        },
+        indent=2,
     )
+    snap_dir = await _resolve_snapshot_dir(snapshot_id)
+    (snap_dir / "refinement_plan.json").write_text(record, encoding="utf-8")
+    if result.new_snapshot_id:
+        child_dir = stage6_plan.snapshot_dir(project_id, result.new_snapshot_id)
+        (child_dir / REFINED_FROM_FILE).write_text(record, encoding="utf-8")
 
     o = result.outcome
     return RefineResponse(

@@ -3,12 +3,15 @@
 import { apiFetch } from "./client";
 
 import type { JobSnapshot } from "./jobs";
+import type { SnapshotPublish } from "./snapshots";
 
 export interface SnapshotSummary {
   id: string;
+  parent_snapshot_id: string | null;
   created_at: string;
   render_status: "pending" | "in_progress" | "success" | "failure" | "cancelled";
   has_render: boolean;
+  publishes: SnapshotPublish[];
 }
 
 export interface ProjectSummary {

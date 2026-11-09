@@ -38,6 +38,7 @@
 | [S-3.11.2](./stories/S-3.11.2-test-ci.md) | Test CI — ruff / mypy / pytest / vitest / build / mkdocs on ubuntu and windows; branch protection; ADR-0004 --admin → --auto (plan-phase-1) | Story | P0 | mvp-hardening | in-progress |
 | [I-3](./initiatives/I-3-v1-local-first-live-job-multi-platform-style-polish.md) | v1 — Local-first + live job + multi-platform + style + polish | Initiative | P1 | v1 | in-progress |
 | [E-3.3](./epics/E-3.3-multi-platform-connectors-instagram-facebook-x.md) | Multi-platform connectors — Instagram + Facebook + X (plan-phase-1, plan-phase-4) | Epic | P1 | v1 | in-progress |
+| [S-3.5.5](./stories/S-3.5.5-refine-as-job-and-publish-from-any-snapshot.md) | Refine as a job + publish from any snapshot (SnapshotInspect canonical preview) (plan-phase-1, plan-phase-2) | Story | P1 | v1 | in-progress |
 
 ## Up Next (Ready)
 
@@ -48,7 +49,6 @@
 | [S-3.10.1](./stories/S-3.10.1-eval-plan-script-and-thresholds.md) | scripts/eval_plan.py + D-058 thresholds on frozen SW-US and Zion fixtures (pytest -m eval) (plan-phase-2) | Story | P0 | mvp-hardening | todo |
 | [E-3.5](./epics/E-3.5-power-user-polish-bundle.md) | Power-user + polish bundle (plan-phase-1, plan-phase-2, plan-phase-3) | Epic | P1 | v1 | todo |
 | [S-2.9.19](./stories/S-2.9.19-persist-job-registry-survive-restart.md) | Persist the job registry so live/preview views survive a restart (plan-phase-2) | Story | P1 | mvp-hardening | todo |
-| [S-3.5.5](./stories/S-3.5.5-refine-as-job-and-publish-from-any-snapshot.md) | Refine as a job + publish from any snapshot (SnapshotInspect canonical preview) (plan-phase-1, plan-phase-2) | Story | P1 | v1 | todo |
 | [S-3.10.2](./stories/S-3.10.2-golden-set-from-feedback.md) | Golden set — export the owner's decision-level feedback verdicts; harness reports agreement (plan-phase-2) | Story | P1 | mvp-hardening | todo |
 | [S-3.11.1](./stories/S-3.11.1-mid-job-quota-guard.md) | Mid-job quota guard — check before every paid call (total + per-provider), refinement and title card included, UTC day boundary (plan-phase-2) | Story | P1 | mvp-hardening | todo |
 | [S-2.9.18](./stories/S-2.9.18-token-aware-pre-job-cost-estimate.md) | Token-aware pre-job cost estimate (align the preview with the now-accurate meter) (plan-phase-2) | Story | P2 | mvp-hardening | todo |
@@ -208,6 +208,6 @@ Regenerate with `python scripts/tracker_board.py`; `--check` fails when this fil
 |---|---|---|---|---|---|---|---|
 | Initiative | 2 | 0 | 0 | 1 | 2 | 0 | 5 |
 | Epic | 0 | 0 | 0 | 17 | 3 | 18 | 38 |
-| Story | 0 | 1 | 1 | 82 | 2 | 64 | 150 |
+| Story | 0 | 1 | 1 | 82 | 3 | 63 | 150 |
 | Task | 0 | 0 | 0 | 30 | 0 | 0 | 30 |
-| **All** | 2 | 1 | 1 | 130 | 7 | 82 | 223 |
+| **All** | 2 | 1 | 1 | 130 | 8 | 81 | 223 |

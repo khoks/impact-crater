@@ -23,6 +23,17 @@ from impact_crater.storage.db import connection
 
 _LOCK = threading.Lock()
 
+# Dry-run rows carry this suffix on `platform` so a dry-run can never be read
+# as a real post.
+DRY_RUN_SUFFIX = " (dry-run)"
+
+
+def split_platform(raw: str) -> tuple[str, bool]:
+    """`"youtube (dry-run)"` → `("youtube", True)`; `"youtube"` → `("youtube", False)`."""
+    if raw.endswith(DRY_RUN_SUFFIX):
+        return raw.removesuffix(DRY_RUN_SUFFIX), True
+    return raw, False
+
 
 def _iso_now() -> str:
     return datetime.now(UTC).isoformat()
@@ -97,3 +108,29 @@ async def list_for_project(project_id: str, limit: int = 50) -> list[dict[str, A
         )
         rows = await cur.fetchall()
     return [dict(r) for r in rows]
+
+
+async def list_publishes(snapshot_id: str | None = None) -> list[dict[str, Any]]:
+    """Publish attempts, newest first — every snapshot's, or one snapshot's —
+    with the platform split from its dry-run marker."""
+    where, params = ("WHERE snapshot_id = ?", (snapshot_id,)) if snapshot_id else ("", ())
+    async with connection() as db:
+        cur = await db.execute(
+            "SELECT snapshot_id, platform, external_url, published_at FROM audit "
+            f"{where} ORDER BY published_at DESC, id DESC",
+            params,
+        )
+        rows = await cur.fetchall()
+    out = []
+    for r in rows:
+        platform, dry_run = split_platform(r["platform"])
+        out.append(
+            {
+                "snapshot_id": r["snapshot_id"],
+                "platform": platform,
+                "dry_run": dry_run,
+                "external_url": r["external_url"] or "",
+                "published_at": r["published_at"],
+            }
+        )
+    return out

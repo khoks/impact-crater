@@ -14,6 +14,7 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from impact_crater import audit
 from impact_crater.storage.db import connection
 
 router = APIRouter()
@@ -25,6 +26,9 @@ async def list_projects() -> list[dict[str, Any]]:
 
     `has_render` is true only when the render finished AND the file still
     exists on disk — a stale snapshots row must not produce a dead link.
+    `parent_snapshot_id` links a refined snapshot to the one it was refined
+    from; `publishes` lists every audit row for the snapshot, newest first,
+    with dry-runs marked.
     """
     async with connection() as db:
         cursor = await db.execute(
@@ -32,10 +36,14 @@ async def list_projects() -> list[dict[str, Any]]:
         )
         project_rows = await cursor.fetchall()
         cursor = await db.execute(
-            "SELECT id, project_id, created_at, render_status, render_path "
+            "SELECT id, project_id, parent_snapshot_id, created_at, render_status, render_path "
             "FROM snapshots ORDER BY created_at DESC"
         )
         snapshot_rows = await cursor.fetchall()
+
+    publishes_by_snapshot: dict[str, list[dict[str, Any]]] = {}
+    for pub in await audit.list_publishes():
+        publishes_by_snapshot.setdefault(pub.pop("snapshot_id"), []).append(pub)
 
     snaps_by_project: dict[str, list[dict[str, Any]]] = {}
     for s in snapshot_rows:
@@ -46,9 +54,11 @@ async def list_projects() -> list[dict[str, Any]]:
         snaps_by_project.setdefault(s["project_id"], []).append(
             {
                 "id": s["id"],
+                "parent_snapshot_id": s["parent_snapshot_id"],
                 "created_at": s["created_at"],
                 "render_status": s["render_status"],
                 "has_render": has_render,
+                "publishes": publishes_by_snapshot.get(s["id"], []),
             }
         )
 
