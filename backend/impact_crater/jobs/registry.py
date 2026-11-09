@@ -11,23 +11,35 @@ WS subscriber. Producers (the pipeline runner) call `update_state` /
 `emit_event` to advance the state and push a structured event to every
 subscriber. Subscribers iterate `subscribe(job_id)` to consume events
 in order; the iterator terminates after the job's terminal event.
+
+S-2.9.19: every registration, state change and stage change also saves the
+snapshot to the `jobs` table. A job not in memory (the server restarted) is
+loaded back from there, and at startup `recover_interrupted` marks jobs a
+restart cut off as failed with a re-run hint instead of leaving them running.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
-import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Literal
+
+from impact_crater.storage.db import connection
 
 log = logging.getLogger(__name__)
 
 
 JobState = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 TERMINAL_STATES: frozenset[JobState] = frozenset({"succeeded", "failed", "cancelled"})
+
+INTERRUPTED_REASON = (
+    "Interrupted: the server stopped while this job was running. Re-run it with the "
+    "same media and brief; the analysis already done is cached, so it resumes cheaply."
+)
 
 
 class StageId(str, Enum):  # noqa: UP042 - StrEnum changes str()/format() output
@@ -100,6 +112,12 @@ class JobSnapshot:
     media_count: int = 0
     target_duration_seconds: int = 0
 
+    @classmethod
+    def from_json(cls, raw: str) -> JobSnapshot:
+        data = json.loads(raw)
+        data["stages"] = [StageProgress(**s) for s in data.get("stages", [])]
+        return cls(**data)
+
 
 class JobRegistry:
     """Process-wide job registry. Singleton via `get_registry()`."""
@@ -112,11 +130,12 @@ class JobRegistry:
 
     # ---- Lifecycle ----
 
-    def register(self, snapshot: JobSnapshot) -> None:
+    async def register(self, snapshot: JobSnapshot) -> None:
         self._jobs[snapshot.job_id] = snapshot
         self._subscribers.setdefault(snapshot.job_id, [])
         # Pre-populate the 7 stages as `pending`.
         snapshot.stages = [StageProgress(stage=s.value) for s in StageId]
+        await self._persist(snapshot)
 
     def attach_task(self, job_id: str, task: asyncio.Task[Any]) -> None:
         self._tasks[job_id] = task
@@ -124,8 +143,56 @@ class JobRegistry:
     def get(self, job_id: str) -> JobSnapshot | None:
         return self._jobs.get(job_id)
 
-    def all(self) -> list[JobSnapshot]:
-        return list(self._jobs.values())
+    async def get_or_load(self, job_id: str) -> JobSnapshot | None:
+        """The live job, or one saved by an earlier server process."""
+        snap = self._jobs.get(job_id)
+        if snap is not None:
+            return snap
+        async with connection() as db:
+            cur = await db.execute("SELECT snapshot_json FROM jobs WHERE job_id = ?", (job_id,))
+            row = await cur.fetchone()
+        if row is None:
+            return None
+        snap = JobSnapshot.from_json(row["snapshot_json"])
+        self._jobs[job_id] = snap
+        return snap
+
+    async def recent(self, limit: int) -> list[JobSnapshot]:
+        """The most recently submitted jobs, live ones from memory (their cost
+        counters are newer than the last save), the rest from the table."""
+        async with connection() as db:
+            cur = await db.execute(
+                "SELECT job_id, snapshot_json FROM jobs ORDER BY submitted_at DESC LIMIT ?",
+                (limit,),
+            )
+            rows = await cur.fetchall()
+        return [
+            self._jobs.get(r["job_id"]) or JobSnapshot.from_json(r["snapshot_json"]) for r in rows
+        ]
+
+    async def recover_interrupted(self) -> list[str]:
+        """At startup: no job can still be running, so any saved as queued or
+        running was cut off by a restart. Mark each failed with a re-run hint."""
+        async with connection() as db:
+            cur = await db.execute(
+                "SELECT snapshot_json FROM jobs WHERE state IN ('queued', 'running')"
+            )
+            rows = await cur.fetchall()
+        recovered = []
+        for row in rows:
+            snap = JobSnapshot.from_json(row["snapshot_json"])
+            snap.state = "failed"
+            snap.failure_reason = INTERRUPTED_REASON
+            snap.completed_at = _iso_now()
+            for stage in snap.stages:
+                if stage.state == "running":
+                    stage.state = "failed"
+                    stage.detail = "interrupted by a server restart"
+            self._jobs[snap.job_id] = snap
+            await self._persist(snap)
+            log.warning("job_interrupted_by_restart job_id=%s", snap.job_id)
+            recovered.append(snap.job_id)
+        return recovered
 
     # ---- State transitions ----
 
@@ -152,6 +219,7 @@ class JobRegistry:
             snap.failure_reason = failure_reason
         if render_path is not None:
             snap.render_path = render_path
+        await self._persist(snap)
         await self._emit(
             JobProgressEvent(
                 type="state",
@@ -188,6 +256,7 @@ class JobRegistry:
             target.completed_at = _iso_now()
         if detail:
             target.detail = detail
+        await self._persist(snap)
         await self._emit(
             JobProgressEvent(
                 type="stage",
@@ -346,6 +415,28 @@ class JobRegistry:
 
     # ---- Internal ----
 
+    async def _persist(self, snap: JobSnapshot) -> None:
+        async with connection() as db:
+            await db.execute(
+                """
+                INSERT INTO jobs (job_id, project_id, state, snapshot_json, submitted_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(job_id) DO UPDATE SET
+                    state = excluded.state,
+                    snapshot_json = excluded.snapshot_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    snap.job_id,
+                    snap.project_id,
+                    snap.state,
+                    json.dumps(asdict(snap)),
+                    snap.submitted_at,
+                    _iso_now(),
+                ),
+            )
+            await db.commit()
+
     async def _emit(self, event: JobProgressEvent) -> None:
         async with self._lock:
             subs = list(self._subscribers.get(event.job_id, []))
@@ -376,7 +467,3 @@ def reset_registry_for_tests() -> None:
     """Drop the singleton — only use in pytest fixtures."""
     global _REGISTRY
     _REGISTRY = None
-
-
-# Re-export imports kept silent for ruff:
-_ = (time, log)

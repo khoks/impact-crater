@@ -9,6 +9,7 @@ import pytest
 from impact_crater.jobs import runner_glue
 from impact_crater.jobs.registry import JobRegistry, JobSnapshot
 from impact_crater.pipeline.runner import FullJobConfig, QuotaDeniedError
+from impact_crater.storage.migrations import run_pending_migrations
 
 
 class _Router:
@@ -23,8 +24,9 @@ async def test_quota_denied_job_fails_with_the_quota_reason(
         raise QuotaDeniedError("daily_cap_reached", {"estimate_usd": 1.5})
 
     monkeypatch.setattr(runner_glue, "run_full_pipeline", _deny)
+    await run_pending_migrations()
     registry = JobRegistry()
-    registry.register(JobSnapshot(job_id="j1", project_id="p1"))
+    await registry.register(JobSnapshot(job_id="j1", project_id="p1"))
     config = FullJobConfig(
         media_paths=[],
         brief="b",

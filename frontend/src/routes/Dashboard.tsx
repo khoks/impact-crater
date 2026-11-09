@@ -1,8 +1,8 @@
 // Dashboard — landing page after the first-time-setup wizard.
 //
 // Three surfaces (S-2.9.2):
-//   - "Jobs this session" — the in-memory registry (running/queued first);
-//     links into the live JobInProgress page. Lost on server restart.
+//   - "Recent jobs" — the last 20 jobs, kept across restarts (S-2.9.19;
+//     running/queued first); links into the JobInProgress page.
 //   - "Projects" — persistent rows from SQLite with their snapshots;
 //     finished renders play inline via /api/snapshots/{id}/render.mp4.
 //     Refined snapshots sit under the one they came from (S-3.5.5), with
@@ -150,10 +150,11 @@ export default function Dashboard() {
       {jobs.length > 0 && (
         <section className="mt-10">
           <h2 className="text-lg font-semibold text-slate-900">
-            Jobs this session
+            Recent jobs
           </h2>
           <p className="mt-1 text-xs text-slate-400">
-            Live progress for jobs submitted since the server started.
+            Live progress while a job runs. Jobs are kept across restarts; one a
+            restart cut off shows as failed and re-runs cheaply from cache.
           </p>
           <ul className="mt-3 space-y-2">
             {jobs.map((job) => (

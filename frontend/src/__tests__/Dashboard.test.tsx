@@ -121,7 +121,7 @@ describe("Dashboard", () => {
       </MemoryRouter>
     );
     await waitFor(() => {
-      expect(screen.getByText(/Jobs this session/i)).toBeInTheDocument();
+      expect(screen.getByText(/Recent jobs/i)).toBeInTheDocument();
     });
     expect(screen.getByText("running")).toBeInTheDocument();
     const link = screen.getByRole("link", { name: /Zion trip/i });

@@ -155,7 +155,7 @@ def _make_router_sink(
     return _sink
 
 
-def submit_full_pipeline_job(
+async def submit_full_pipeline_job(
     *,
     media_paths: list[Path],
     brief: str,
@@ -172,6 +172,8 @@ def submit_full_pipeline_job(
     title_text: str | None = None,
 ) -> JobSnapshot:
     """Register a new job + spawn the background task. Returns immediately."""
+    if mode not in ("standard", "music_video"):
+        raise ValueError(f"unsupported mode {mode!r}")
     registry = get_registry()
     job_id = uuid.uuid4().hex
     final_project_id = project_id or f"project-{uuid.uuid4().hex[:12]}"
@@ -183,10 +185,7 @@ def submit_full_pipeline_job(
         media_count=len(media_paths),
         target_duration_seconds=target_duration_seconds,
     )
-    registry.register(snap)
-
-    if mode not in ("standard", "music_video"):
-        raise ValueError(f"unsupported mode {mode!r}")
+    await registry.register(snap)
 
     config = FullJobConfig(
         media_paths=media_paths,
