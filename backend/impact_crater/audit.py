@@ -134,3 +134,27 @@ async def list_publishes(snapshot_id: str | None = None) -> list[dict[str, Any]]
             }
         )
     return out
+
+
+async def list_page(limit: int, offset: int) -> tuple[list[dict[str, Any]], int]:
+    """One page of every project's publish attempts, newest first, with the
+    project name and the snapshot's current render path; plus the total count."""
+    async with connection() as db:
+        cur = await db.execute(
+            """
+            SELECT a.id, a.published_at, a.project_id, p.name AS project_name,
+                   a.snapshot_id, a.platform, a.external_id, a.external_url,
+                   a.response_code, a.user_approval_token, a.render_content_hash,
+                   a.publish_metadata, s.render_path
+            FROM audit a
+            LEFT JOIN projects p ON p.id = a.project_id
+            LEFT JOIN snapshots s ON s.id = a.snapshot_id
+            ORDER BY a.published_at DESC, a.id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        )
+        rows = [dict(r) for r in await cur.fetchall()]
+        cur = await db.execute("SELECT COUNT(*) FROM audit")
+        total_row = await cur.fetchone()
+    return rows, int(total_row[0]) if total_row else 0

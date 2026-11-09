@@ -115,6 +115,9 @@ export default function Dashboard() {
           <Link to="/people" className="hover:text-slate-900">
             People
           </Link>
+          <Link to="/publish-log" className="hover:text-slate-900">
+            Publish log
+          </Link>
           <Link to="/settings" className="hover:text-slate-900">
             Settings
           </Link>
