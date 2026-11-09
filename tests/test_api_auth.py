@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -144,6 +145,7 @@ _WS_URL = "ws://127.0.0.1/api/jobs/ws/no-such-job"
 
 
 def _ws_client() -> TestClient:
+    asyncio.run(run_pending_migrations())
     return TestClient(create_app(), base_url="http://127.0.0.1")
 
 

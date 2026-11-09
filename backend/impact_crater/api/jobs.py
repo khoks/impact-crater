@@ -327,7 +327,7 @@ async def post_submit_job(req: SubmitJobRequest) -> SubmitJobResponse:
         ) from exc
 
     enable_cast, cast_backend = await _resolve_cast_settings()
-    snap = submit_full_pipeline_job(
+    snap = await submit_full_pipeline_job(
         media_paths=[Path(p) for p in req.media_paths],
         brief=req.brief,
         target_duration_seconds=req.target_duration,
@@ -353,14 +353,14 @@ async def post_submit_job(req: SubmitJobRequest) -> SubmitJobResponse:
 
 
 _STATE_SORT_ORDER = {"running": 0, "queued": 1, "succeeded": 2, "failed": 3, "cancelled": 4}
+_RECENT_JOBS = 20
 
 
 @router.get("")
 async def list_jobs() -> list[dict[str, Any]]:
-    """All jobs known to this server process (the registry is in-memory,
-    so this is session history, not durable history — that's
-    `GET /api/projects`). Running jobs first, then newest-submitted."""
-    jobs = get_registry().all()
+    """The most recently submitted jobs, kept across restarts (S-2.9.19).
+    Running jobs first, then newest-submitted."""
+    jobs = await get_registry().recent(_RECENT_JOBS)
     # Stable two-pass sort: newest first, then bucket by state so
     # running/queued float to the top with their recency preserved.
     jobs.sort(key=lambda s: s.submitted_at, reverse=True)
@@ -371,7 +371,7 @@ async def list_jobs() -> list[dict[str, Any]]:
 @router.get("/{job_id}")
 async def get_job(job_id: str) -> dict[str, Any]:
     """Snapshot of the job's current state for polling fallbacks."""
-    snap = get_registry().get(job_id)
+    snap = await get_registry().get_or_load(job_id)
     if snap is None:
         raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
     return asdict(snap)
@@ -384,7 +384,7 @@ async def post_cancel_job(job_id: str) -> dict[str, Any]:
     to "cancelled". Returns 404 if the job doesn't exist; 409 if it's
     already in a terminal state."""
     registry = get_registry()
-    snap = registry.get(job_id)
+    snap = await registry.get_or_load(job_id)
     if snap is None:
         raise HTTPException(status_code=404, detail=f"job {job_id!r} not found")
     if snap.state in ("succeeded", "failed", "cancelled"):
@@ -430,7 +430,7 @@ async def ws_job_progress(websocket: WebSocket, job_id: str) -> None:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
     registry = get_registry()
-    if registry.get(job_id) is None:
+    if await registry.get_or_load(job_id) is None:
         log.warning("ws_unknown_job job_id=%s", job_id)
         await websocket.send_json({"type": "error", "detail": "unknown job"})
         await websocket.close(code=4404)
