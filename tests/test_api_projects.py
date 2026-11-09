@@ -7,7 +7,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from impact_crater import api_auth
+from impact_crater import api_auth, audit
 from impact_crater.app import create_app
 from impact_crater.storage.db import connection
 from impact_crater.storage.migrations import run_pending_migrations
@@ -107,3 +107,55 @@ async def test_projects_listed_newest_first_with_snapshots(
     by_id = {s["id"]: s for s in old_proj["snapshots"]}
     assert by_id["snap-ok"]["has_render"] is True
     assert by_id["snap-gone"]["has_render"] is False
+
+
+async def test_snapshots_carry_parent_and_publishes(client: httpx.AsyncClient) -> None:
+    await _seed_project("proj-chain", name="Chain", brief=None, created_at="2026-06-01 10:00:00")
+    await _seed_snapshot(
+        "snap-parent",
+        "proj-chain",
+        render_status="success",
+        render_path=None,
+        created_at="2026-06-01 11:00:00",
+    )
+    async with connection() as db:
+        await db.execute(
+            "INSERT INTO snapshots (id, project_id, parent_snapshot_id, render_status, created_at) "
+            "VALUES ('snap-child', 'proj-chain', 'snap-parent', 'success', '2026-06-01 12:00:00')"
+        )
+        await db.commit()
+    for platform, url, at in [
+        ("youtube (dry-run)", "https://dry.example/1", "2026-06-02T10:00:00+00:00"),
+        ("youtube", "https://youtu.be/abc", "2026-06-03T10:00:00+00:00"),
+    ]:
+        await audit.write(
+            audit.AuditEntry(
+                project_id="proj-chain",
+                snapshot_id="snap-child",
+                platform=platform,
+                external_id="x",
+                external_url=url,
+                user_approval_token="tok",
+                timestamp=at,
+            )
+        )
+
+    body = (await client.get("/api/projects")).json()
+    by_id = {s["id"]: s for s in body[0]["snapshots"]}
+    assert by_id["snap-parent"]["parent_snapshot_id"] is None
+    assert by_id["snap-parent"]["publishes"] == []
+    assert by_id["snap-child"]["parent_snapshot_id"] == "snap-parent"
+    assert by_id["snap-child"]["publishes"] == [
+        {
+            "platform": "youtube",
+            "dry_run": False,
+            "external_url": "https://youtu.be/abc",
+            "published_at": "2026-06-03T10:00:00+00:00",
+        },
+        {
+            "platform": "youtube",
+            "dry_run": True,
+            "external_url": "https://dry.example/1",
+            "published_at": "2026-06-02T10:00:00+00:00",
+        },
+    ]

@@ -5,13 +5,21 @@
 //     links into the live JobInProgress page. Lost on server restart.
 //   - "Projects" — persistent rows from SQLite with their snapshots;
 //     finished renders play inline via /api/snapshots/{id}/render.mp4.
+//     Refined snapshots sit under the one they came from (S-3.5.5), with
+//     publish / dry-run badges from the audit log.
 //   - "New Project" primary action → /projects/new
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import type { JobSnapshot } from "../api/jobs";
-import { listJobs, listProjects, type ProjectSummary } from "../api/projects";
+import {
+  listJobs,
+  listProjects,
+  type ProjectSummary,
+  type SnapshotSummary,
+} from "../api/projects";
+import PublishBadges from "../components/PublishBadges";
 
 const JOB_STATE_STYLES: Record<JobSnapshot["state"], string> = {
   running: "bg-sky-100 text-sky-800",
@@ -39,6 +47,31 @@ function formatTimestamp(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+// Parents before their refined children, newest first at each level; a child
+// whose parent is missing from the list shows as a root.
+export function refineChain(
+  snapshots: SnapshotSummary[]
+): { snap: SnapshotSummary; depth: number }[] {
+  const ids = new Set(snapshots.map((s) => s.id));
+  const children = new Map<string, SnapshotSummary[]>();
+  const roots: SnapshotSummary[] = [];
+  for (const s of snapshots) {
+    const parent = s.parent_snapshot_id;
+    if (parent && ids.has(parent)) {
+      children.set(parent, [...(children.get(parent) ?? []), s]);
+    } else {
+      roots.push(s);
+    }
+  }
+  const out: { snap: SnapshotSummary; depth: number }[] = [];
+  const visit = (snap: SnapshotSummary, depth: number) => {
+    out.push({ snap, depth });
+    for (const child of children.get(snap.id) ?? []) visit(child, depth + 1);
+  };
+  roots.forEach((r) => visit(r, 0));
+  return out;
 }
 
 export default function Dashboard() {
@@ -175,9 +208,19 @@ export default function Dashboard() {
                   </p>
                 ) : (
                   <ul className="mt-2 space-y-1.5">
-                    {project.snapshots.map((snap) => (
-                      <li key={snap.id} className="text-sm">
-                        <div className="flex items-center gap-3">
+                    {refineChain(project.snapshots).map(({ snap, depth }) => (
+                      <li
+                        key={snap.id}
+                        className="text-sm"
+                        style={{ paddingLeft: `${depth * 1.25}rem` }}
+                        data-testid={`snapshot-row-${snap.id}`}
+                      >
+                        <div className="flex flex-wrap items-center gap-3">
+                          {depth > 0 && (
+                            <span className="text-xs text-slate-400" title="Refined from the version above">
+                              ↳ refined
+                            </span>
+                          )}
                           <span
                             className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${RENDER_STATUS_STYLES[snap.render_status] ?? "bg-slate-200 text-slate-700"}`}
                           >
@@ -203,8 +246,9 @@ export default function Dashboard() {
                             to={`/snapshots/${snap.id}/inspect?project=${project.id}`}
                             className="text-xs font-medium text-slate-600 hover:text-slate-900"
                           >
-                            Inspect &amp; feedback
+                            Inspect, refine &amp; publish
                           </Link>
+                          <PublishBadges publishes={snap.publishes} />
                         </div>
                         {playingSnapshot === snap.id && (
                           <video

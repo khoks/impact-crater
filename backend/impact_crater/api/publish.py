@@ -212,7 +212,7 @@ async def publish_snapshot(snapshot_id: str, req: PublishRequest) -> PublishResp
     audit_token = secrets.token_urlsafe(16)
     # Audit row records dry-run vs live so post-hoc you can tell which
     # external_ids are real.
-    audit_platform = f"{req.platform} (dry-run)" if dry_run else req.platform
+    audit_platform = f"{req.platform}{audit.DRY_RUN_SUFFIX}" if dry_run else req.platform
     entry = audit.AuditEntry(
         project_id=row["project_id"],
         snapshot_id=snapshot_id,

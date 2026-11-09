@@ -10,9 +10,11 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 from impact_crater import api_auth, paths
+from impact_crater.api import snapshots as snapshots_api
 from impact_crater.app import create_app
 from impact_crater.pipeline import runner
 from impact_crater.pipeline.stage6_plan import RenderClip, RenderPlan
+from impact_crater.pipeline.stage9_refine import RefinementOutcome, RefinementResult
 from impact_crater.storage.db import connection
 from impact_crater.storage.migrations import run_pending_migrations
 
@@ -154,3 +156,67 @@ async def test_refine_endpoint_422_on_empty_message(client_with_snapshot) -> Non
     client, snapshot_id = client_with_snapshot
     r = await client.post(f"/api/snapshots/{snapshot_id}/refine", json={"refinement_message": ""})
     assert r.status_code == 422
+
+
+async def test_refine_records_the_request_on_parent_and_child(monkeypatch, setup_snapshot) -> None:
+    project_id, snapshot_id, snap_dir = setup_snapshot
+
+    async def fake_build() -> object:
+        return object()
+
+    async def fake_execute(_router, *, project_id, prior_plan, refinement_message):
+        async with connection() as db:
+            await db.execute(
+                "INSERT INTO snapshots (id, project_id, parent_snapshot_id, plan_path, "
+                "render_status) VALUES (?, ?, ?, ?, 'success')",
+                ("snap-child", project_id, prior_plan.snapshot_id, str(child_plan)),
+            )
+            await db.commit()
+        return RefinementResult(
+            outcome=RefinementOutcome(interpretation="tighter middle"),
+            new_snapshot_id="snap-child",
+            rendered=True,
+        )
+
+    child_dir = paths.projects_dir() / project_id / "snapshots" / "snap-child"
+    child_dir.mkdir(parents=True, exist_ok=True)
+    child_plan = child_dir / "plan.json"
+    child_plan.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(runner, "build_router_from_settings", fake_build)
+    monkeypatch.setattr(snapshots_api, "execute_refinement", fake_execute)
+
+    app = create_app()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://127.0.0.1", headers=api_auth.auth_header()
+    ) as ac:
+        r = await ac.post(
+            f"/api/snapshots/{snapshot_id}/refine",
+            json={"refinement_message": "shorter middle part"},
+        )
+        assert r.status_code == 200
+        assert r.json()["new_snapshot_id"] == "snap-child"
+
+        parent_record = json.loads((snap_dir / "refinement_plan.json").read_text("utf-8"))
+        child_record = json.loads((child_dir / "refined_from.json").read_text("utf-8"))
+        assert parent_record == child_record
+        assert child_record["refinement_message"] == "shorter middle part"
+        assert child_record["parent_snapshot_id"] == snapshot_id
+
+        child = (await ac.get("/api/snapshots/snap-child")).json()
+        assert child["parent_snapshot_id"] == snapshot_id
+        assert child["refinement_message"] == "shorter middle part"
+        assert child["refinement_interpretation"] == "tighter middle"
+        assert child["children"] == []
+
+        parent = (await ac.get(f"/api/snapshots/{snapshot_id}")).json()
+        assert parent["parent_snapshot_id"] is None
+        assert parent["children"] == ["snap-child"]
+        assert parent["refinement_message"] is None
+        assert parent["project_name"] == project_id
+
+
+async def test_snapshot_detail_404(client_with_snapshot) -> None:
+    client, _ = client_with_snapshot
+    r = await client.get("/api/snapshots/nope")
+    assert r.status_code == 404
