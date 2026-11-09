@@ -24,6 +24,7 @@ from impact_crater.jobs.registry import (
     StageId,
     get_registry,
 )
+from impact_crater.llm_clients.exceptions import JobHalted
 from impact_crater.llm_clients.router import LLMRouter
 from impact_crater.pipeline.runner import (
     FullJobConfig,
@@ -257,6 +258,11 @@ async def _run_and_capture(
             "failed",
             failure_reason=f"quota_denied:{exc.reason}",
         )
+    except JobHalted as exc:
+        # S-3.11.1: a daily cap reached or a provider out of credit mid-job. The
+        # message is already user-facing; snapshot files written so far stay.
+        log.warning("job_halted job_id=%s reason=%s", job_id, type(exc).__name__)
+        await registry.update_state(job_id, "failed", failure_reason=str(exc))
     except Stage4EmptyCandidateSet as exc:
         # Stage 4 produced zero candidates after the quality floor /
         # dedup / location passes. Surface the funnel stats so the user

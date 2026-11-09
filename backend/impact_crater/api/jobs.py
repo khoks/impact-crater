@@ -26,6 +26,7 @@ from impact_crater import api_auth
 from impact_crater.jobs import get_registry
 from impact_crater.jobs.runner_glue import submit_full_pipeline_job
 from impact_crater.llm_clients.base import MusicSpec
+from impact_crater.llm_clients.exceptions import JobHalted
 from impact_crater.pipeline import runner
 from impact_crater.pipeline.runner import (
     FullJobConfig,
@@ -154,6 +155,11 @@ async def post_headless_job(req: HeadlessJobRequest) -> HeadlessJobResponse:
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail={"reason": exc.reason, "quota": exc.snapshot},
         ) from exc
+    except JobHalted as exc:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={"reason": "job_halted", "message": str(exc)},
+        ) from exc
 
     return HeadlessJobResponse(
         project_id=result.project_id,
@@ -250,6 +256,11 @@ async def post_render_job(req: RenderJobRequest) -> RenderJobResponse:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail={"reason": exc.reason, "quota": exc.snapshot},
+        ) from exc
+    except JobHalted as exc:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={"reason": "job_halted", "message": str(exc)},
         ) from exc
     except RenderError as exc:
         raise HTTPException(

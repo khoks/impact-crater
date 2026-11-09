@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from impact_crater.jobs import runner_glue
 from impact_crater.jobs.registry import JobRegistry, JobSnapshot
+from impact_crater.llm_clients.exceptions import QuotaExceededMidJob
 from impact_crater.pipeline.runner import FullJobConfig, QuotaDeniedError
 from impact_crater.storage.migrations import run_pending_migrations
 
@@ -46,3 +47,40 @@ async def test_quota_denied_job_fails_with_the_quota_reason(
     assert snap is not None
     assert snap.state == "failed"
     assert snap.failure_reason == "quota_denied:daily_cap_reached"
+
+
+async def test_a_job_halted_mid_run_fails_with_the_readable_reason(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    halt = QuotaExceededMidJob(
+        reason="anthropic_cap_would_be_exceeded",
+        provider="anthropic",
+        spent_usd=29.99,
+        cap_usd=30.0,
+        estimate_usd=0.005,
+    )
+
+    async def _halt(*_args: Any, **_kwargs: Any) -> None:
+        raise halt
+
+    monkeypatch.setattr(runner_glue, "run_full_pipeline", _halt)
+    await run_pending_migrations()
+    registry = JobRegistry()
+    await registry.register(JobSnapshot(job_id="j2", project_id="p1"))
+    config = FullJobConfig(
+        media_paths=[], brief="b", target_duration_seconds=30, audio_path=tmp_path / "a.mp3"
+    )
+
+    await runner_glue._run_and_capture(
+        config,
+        _Router(),  # type: ignore[arg-type]
+        runner_glue._RegistryReporter(registry, "j2"),
+        registry,
+        "j2",
+    )
+
+    snap = registry.get("j2")
+    assert snap is not None
+    assert snap.state == "failed"
+    assert snap.failure_reason == str(halt)
+    assert snap.failure_reason.startswith("Stopped at your daily spend cap: $29.99 of your $30.00")

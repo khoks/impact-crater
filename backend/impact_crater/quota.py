@@ -4,19 +4,32 @@ State lives in the SQLite `quota_state` table (one row per (date, provider);
 the synthetic "_total_" provider tracks the all-providers aggregate).
 
 `pipeline/runner.py` calls `check_quota(estimated_cost_per_provider)` once before
-Stage 1 — there is no per-stage or mid-job check yet (S-3.11.1); every successful
-LLM dispatch records into `record_spend()`.
+Stage 1 with a rough whole-job estimate; the router then calls it again before
+every paid call with that call's rate-card estimate (S-3.11.1), and records each
+billed call into `record_spend()`.
+
+The day is the UTC day, matching telemetry and YouTube's quota reset, so a job
+that runs across local midnight keeps counting against the same day.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 
 from impact_crater.storage import settings as settings_store
 from impact_crater.storage.db import connection
 
 _TOTAL_PROVIDER = "_total_"
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _utc_today() -> date:
+    """The quota day: the current UTC date."""
+    return _now().date()
 
 
 @dataclass(frozen=True)
@@ -42,7 +55,7 @@ async def check_quota(
     """Decide whether a job projected to spend `estimated_cost_per_provider`
     can start without breaching either cap.
     """
-    today = today or date.today()
+    today = today or _utc_today()
     iso = today.isoformat()
 
     cap_total = await _read_total_cap()
@@ -110,7 +123,7 @@ async def record_spend(
     """
     if amount_usd <= 0:
         return
-    today = today or date.today()
+    today = today or _utc_today()
     iso = today.isoformat()
     await _bump_spent(provider, iso, amount_usd)
     await _bump_spent(_TOTAL_PROVIDER, iso, amount_usd)
@@ -121,7 +134,7 @@ async def get_today_spend(
     today: date | None = None,
 ) -> dict[str, float]:
     """Return a snapshot of today's per-provider spend (incl. `_total_`)."""
-    today = today or date.today()
+    today = today or _utc_today()
     iso = today.isoformat()
     out: dict[str, float] = {}
     async with connection() as db:
